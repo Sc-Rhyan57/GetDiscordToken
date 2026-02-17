@@ -360,7 +360,7 @@ class MainActivity : ComponentActivity() {
                         exit = shrinkVertically()
                     ) {
                         LinearProgressIndicator(
-                            progress = { progress.floatValue },
+                            progress = progress.floatValue,
                             modifier = Modifier.fillMaxWidth(),
                             color = DiscordColors.Blurple,
                             trackColor = DiscordColors.Tertiary
