@@ -1,27 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+xt"><manifest xa">xmlns:android="http://schemas.android.com/apk/res/android"
+    xa">package="com.discordtokenget">
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    xt"><uses-permission xa">android:name="android.permission.INTERNET" />
+    xt"><uses-permission xa">android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <application
-        android:allowBackup="false"
-        android:label="Discord Token"
-        android:usesCleartextTraffic="true"
-        android:hardwareAccelerated="true"
-        android:largeHeap="true">
+    xt"><application
+        xa">android:allowBackup="true"
+        xa">android:label="Discord Token"
+        xa">android:icon="@mipmap/ic_launcher"
+        xa">android:roundIcon="@mipmap/ic_launcher_round"
+        xa">android:theme="@style/AppTheme"
+        xa">android:usesCleartextTraffic="true"
+        xa">android:hardwareAccelerated="true"
+        xa">android:largeHeap="true">
 
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:configChanges="orientation|screenSize"
-            android:hardwareAccelerated="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+        xt"><activity
+            xa">android:name=".MainActivity"
+            xa">android:exported="true"
+            xa">android:configChanges="orientation|screenSize"
+            xa">android:hardwareAccelerated="true">
+            xt"><intent-filter>
+                xt"><action xa">android:name="android.intent.action.MAIN" />
+                xt"><category xa">android:name="android.intent.category.LAUNCHER" />
+            xt"></intent-filter>
+        xt"></activity>
 
-    </application>
+    xt"></application>
 
-</manifest>
+xt"></manifest>
