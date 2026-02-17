@@ -1,6 +1,5 @@
 package com.discordtokenget
 
-import com.discordtokenget.R
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -49,6 +48,23 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Login
+import androidx.compose.material.icons.outlined.Notes
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Tag
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -76,9 +92,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -217,7 +233,7 @@ $stacktrace"""
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        painter = painterResource(R.drawable.lucide_ic_triangle_alert),
+                        imageVector = Icons.Outlined.Warning,
                         contentDescription = null,
                         tint = AppColors.Error,
                         modifier = Modifier.size(22.dp)
@@ -233,7 +249,6 @@ $stacktrace"""
                     Text("Close", color = AppColors.Error, fontWeight = FontWeight.Bold)
                 }
             }
-
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -241,12 +256,11 @@ $stacktrace"""
                     .padding(bottom = 16.dp)
             ) {
                 Text(
-                    text = "An unexpected error occurred. Copy the log below and report it to the developer.",
+                    text = "An unexpected error occurred. Copy the log and report it to the developer.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = AppColors.TextSecondary,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
-
                 Button(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -259,14 +273,13 @@ $stacktrace"""
                         .padding(bottom = 12.dp)
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.lucide_ic_copy),
+                        imageVector = Icons.Outlined.ContentCopy,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text("Copy Log", fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
                 }
-
                 Card(
                     modifier = Modifier.fillMaxSize(),
                     colors = CardDefaults.cardColors(containerColor = AppColors.ErrorContainer),
@@ -326,10 +339,7 @@ $stacktrace"""
         ) { currentScreen ->
             when (currentScreen) {
                 "webview" -> WebViewScreen(
-                    onTokenReceived = {
-                        token = it
-                        showWebView = false
-                    },
+                    onTokenReceived = { token = it; showWebView = false },
                     onBack = { showWebView = false }
                 )
                 "login" -> LoginScreen(onLoginClick = { showWebView = true })
@@ -339,11 +349,7 @@ $stacktrace"""
                     isLoading = isLoading,
                     showToken = showToken,
                     onToggleToken = { showToken = !showToken },
-                    onLogout = {
-                        token = null
-                        user = null
-                        showToken = false
-                    }
+                    onLogout = { token = null; user = null; showToken = false }
                 )
             }
         }
@@ -355,10 +361,7 @@ $stacktrace"""
         LaunchedEffect(Unit) {
             scale.animateTo(
                 targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessLow
-                )
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
             )
         }
 
@@ -379,7 +382,7 @@ $stacktrace"""
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    painter = painterResource(R.drawable.lucide_ic_key_round),
+                    imageVector = Icons.Outlined.Key,
                     contentDescription = null,
                     tint = AppColors.Primary,
                     modifier = Modifier.size(40.dp)
@@ -426,29 +429,23 @@ $stacktrace"""
                         fontWeight = FontWeight.Bold,
                         color = AppColors.TextPrimary
                     )
-
                     Spacer(Modifier.height(8.dp))
-
                     Text(
                         text = "Sign in with your Discord account to extract your access token.",
                         fontSize = 14.sp,
                         color = AppColors.TextMuted,
                         textAlign = TextAlign.Center
                     )
-
                     Spacer(Modifier.height(28.dp))
-
                     Button(
                         onClick = onLoginClick,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
                         shape = RoundedCornerShape(14.dp),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.lucide_ic_log_in),
+                            imageVector = Icons.Outlined.Login,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
@@ -460,16 +457,14 @@ $stacktrace"""
                             color = AppColors.OnPrimary
                         )
                     }
-
                     Spacer(Modifier.height(20.dp))
-
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SecurityBadge(iconRes = R.drawable.lucide_ic_shield_check, label = "Secure")
-                        SecurityBadge(iconRes = R.drawable.lucide_ic_eye_off, label = "Private")
-                        SecurityBadge(iconRes = R.drawable.lucide_ic_smartphone, label = "Local")
+                        SecurityBadge(icon = Icons.Outlined.Security, label = "Secure")
+                        SecurityBadge(icon = Icons.Outlined.VisibilityOff, label = "Private")
+                        SecurityBadge(icon = Icons.Outlined.Smartphone, label = "Local")
                     }
                 }
             }
@@ -484,21 +479,16 @@ $stacktrace"""
     }
 
     @Composable
-    fun SecurityBadge(iconRes: Int, label: String) {
+    fun SecurityBadge(icon: ImageVector, label: String) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(
-                painter = painterResource(iconRes),
+                imageVector = icon,
                 contentDescription = null,
                 tint = AppColors.Success,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.height(4.dp))
-            Text(
-                text = label,
-                fontSize = 11.sp,
-                color = AppColors.Success,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text(text = label, fontSize = 11.sp, color = AppColors.Success, fontWeight = FontWeight.SemiBold)
         }
     }
 
@@ -528,9 +518,7 @@ $stacktrace"""
                             override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
                                 if (url.contains("/app") || url.endsWith("/channels/@me")) {
                                     view.stopLoading()
-                                    Handler(Looper.getMainLooper()).postDelayed({
-                                        view.loadUrl(JS_TOKEN)
-                                    }, 500)
+                                    Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 500)
                                     return true
                                 }
                                 return false
@@ -539,26 +527,17 @@ $stacktrace"""
                             override fun onPageFinished(view: WebView, url: String) {
                                 super.onPageFinished(view, url)
                                 if (url.contains("/app") || url.endsWith("/channels/@me")) {
-                                    Handler(Looper.getMainLooper()).postDelayed({
-                                        view.loadUrl(JS_TOKEN)
-                                    }, 800)
+                                    Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 800)
                                 }
                             }
                         }
 
                         wv.webChromeClient = object : WebChromeClient() {
-                            override fun onJsAlert(
-                                view: WebView,
-                                url: String,
-                                message: String,
-                                result: JsResult
-                            ): Boolean {
+                            override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
                                 result.confirm()
                                 view.visibility = View.GONE
                                 if (message.isNotBlank() && message != "undefined") {
-                                    Handler(Looper.getMainLooper()).postDelayed({
-                                        currentOnTokenReceived(message.trim())
-                                    }, 200)
+                                    Handler(Looper.getMainLooper()).postDelayed({ currentOnTokenReceived(message.trim()) }, 200)
                                 }
                                 return true
                             }
@@ -584,7 +563,7 @@ $stacktrace"""
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.lucide_ic_arrow_left),
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
@@ -599,10 +578,7 @@ $stacktrace"""
                 webViewRef.value?.apply {
                     stopLoading()
                     loadUrl("about:blank")
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        clearHistory()
-                        destroy()
-                    }, 500)
+                    Handler(Looper.getMainLooper()).postDelayed({ clearHistory(); destroy() }, 500)
                 }
                 webViewRef.value = null
             }
@@ -624,16 +600,8 @@ $stacktrace"""
             scale.animateTo(1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy))
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(140.dp)
-            ) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Box(modifier = Modifier.fillMaxWidth().height(140.dp)) {
                 if (user?.banner != null) {
                     AsyncImage(
                         model = "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.png?size=600",
@@ -647,11 +615,7 @@ $stacktrace"""
                             .fillMaxSize()
                             .background(
                                 Brush.verticalGradient(
-                                    colors = listOf(
-                                        AppColors.Primary,
-                                        Color(0xFF7289DA),
-                                        AppColors.Background
-                                    )
+                                    colors = listOf(AppColors.Primary, Color(0xFF7289DA), AppColors.Background)
                                 )
                             )
                     )
@@ -665,9 +629,7 @@ $stacktrace"""
                     .scale(scale.value)
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
@@ -687,9 +649,7 @@ $stacktrace"""
                             )
                         } else {
                             Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(AppColors.Primary),
+                                modifier = Modifier.fillMaxSize().background(AppColors.Primary),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -711,7 +671,7 @@ $stacktrace"""
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.lucide_ic_log_out),
+                            imageVector = Icons.AutoMirrored.Outlined.Logout,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp)
                         )
@@ -724,9 +684,7 @@ $stacktrace"""
 
                 if (isLoading) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 32.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(
@@ -758,7 +716,7 @@ $stacktrace"""
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.lucide_ic_check_circle),
+                            imageVector = Icons.Outlined.CheckCircle,
                             contentDescription = null,
                             tint = AppColors.Success,
                             modifier = Modifier.size(14.dp)
@@ -782,7 +740,7 @@ $stacktrace"""
                             Column(modifier = Modifier.padding(14.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        painter = painterResource(R.drawable.lucide_ic_notebook_text),
+                                        imageVector = Icons.Outlined.Notes,
                                         contentDescription = null,
                                         tint = AppColors.TextMuted,
                                         modifier = Modifier.size(13.dp)
@@ -797,22 +755,14 @@ $stacktrace"""
                                     )
                                 }
                                 Spacer(Modifier.height(6.dp))
-                                Text(
-                                    text = user.bio,
-                                    fontSize = 14.sp,
-                                    color = AppColors.TextSecondary
-                                )
+                                Text(text = user.bio, fontSize = 14.sp, color = AppColors.TextSecondary)
                             }
                         }
                     }
 
                     Spacer(Modifier.height(14.dp))
 
-                    InfoRow(
-                        iconRes = R.drawable.lucide_ic_hash,
-                        label = "ACCOUNT ID",
-                        value = user.id
-                    )
+                    InfoRow(icon = Icons.Outlined.Tag, label = "ACCOUNT ID", value = user.id)
 
                     Spacer(Modifier.height(12.dp))
 
@@ -825,7 +775,7 @@ $stacktrace"""
                         Column(modifier = Modifier.padding(18.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    painter = painterResource(R.drawable.lucide_ic_fingerprint),
+                                    imageVector = Icons.Outlined.Fingerprint,
                                     contentDescription = null,
                                     tint = AppColors.Primary,
                                     modifier = Modifier.size(18.dp)
@@ -846,9 +796,7 @@ $stacktrace"""
                                 shape = RoundedCornerShape(10.dp)
                             ) {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
@@ -860,15 +808,9 @@ $stacktrace"""
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    IconButton(
-                                        onClick = onToggleToken,
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
+                                    IconButton(onClick = onToggleToken, modifier = Modifier.size(36.dp)) {
                                         Icon(
-                                            painter = painterResource(
-                                                if (showToken) R.drawable.lucide_ic_eye_off
-                                                else R.drawable.lucide_ic_eye
-                                            ),
+                                            imageVector = if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
                                             contentDescription = if (showToken) "Hide" else "Reveal",
                                             tint = AppColors.Primary,
                                             modifier = Modifier.size(18.dp)
@@ -884,31 +826,23 @@ $stacktrace"""
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("Discord Token", token))
                                 },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp),
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = AppColors.Success),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.lucide_ic_clipboard_copy),
+                                    imageVector = Icons.Outlined.ContentCopy,
                                     contentDescription = null,
                                     modifier = Modifier.size(17.dp),
                                     tint = Color.White
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = "Copy Token",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
-                                    color = Color.White
-                                )
+                                Text("Copy Token", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                             }
                         }
                     }
 
                     Spacer(Modifier.height(24.dp))
-
                     Footer()
                     Spacer(Modifier.height(10.dp))
                     GitHubButton()
@@ -920,7 +854,7 @@ $stacktrace"""
     }
 
     @Composable
-    fun InfoRow(iconRes: Int, label: String, value: String) {
+    fun InfoRow(icon: ImageVector, label: String, value: String) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
@@ -930,7 +864,7 @@ $stacktrace"""
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        painter = painterResource(iconRes),
+                        imageVector = icon,
                         contentDescription = null,
                         tint = AppColors.TextMuted,
                         modifier = Modifier.size(13.dp)
@@ -976,7 +910,7 @@ $stacktrace"""
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                painter = painterResource(R.drawable.lucide_ic_sparkles),
+                imageVector = Icons.Outlined.AutoAwesome,
                 contentDescription = null,
                 tint = rgbColor,
                 modifier = Modifier.size(13.dp)
@@ -991,7 +925,7 @@ $stacktrace"""
             )
             Spacer(Modifier.width(5.dp))
             Icon(
-                painter = painterResource(R.drawable.lucide_ic_sparkles),
+                imageVector = Icons.Outlined.AutoAwesome,
                 contentDescription = null,
                 tint = rgbColor,
                 modifier = Modifier.size(13.dp)
@@ -1004,19 +938,15 @@ $stacktrace"""
         val context = LocalContext.current
         OutlinedButton(
             onClick = {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken"))
-                )
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken")))
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(46.dp),
+            modifier = Modifier.fillMaxWidth().height(46.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.TextMuted),
             border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.SurfaceVariant),
             shape = RoundedCornerShape(12.dp)
         ) {
             Icon(
-                painter = painterResource(R.drawable.lucide_ic_code_2),
+                imageVector = Icons.Outlined.Code,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
                 tint = AppColors.TextMuted
