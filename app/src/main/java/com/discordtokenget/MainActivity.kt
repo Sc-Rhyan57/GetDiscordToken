@@ -9,8 +9,12 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.view.ViewGroup
-import android.webkit.*
+import android.webkit.JsResult
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,7 +29,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -62,6 +65,9 @@ object DiscordColors {
     val TextMuted = Color(0xFF80848E)
 }
 
+private const val JS_SNIPPET =
+    "javascript:(function()%7Bvar%20i%3Ddocument.createElement('iframe')%3Bdocument.body.appendChild(i)%3Balert(i.contentWindow.localStorage.token.slice(1,-1))%7D)()"
+
 class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -71,21 +77,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        checkPermissions()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissionLauncher.launch(Manifest.permission.INTERNET)
+        }
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 DiscordTokenApp()
-            }
-        }
-    }
-
-    private fun checkPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                requestPermissionLauncher.launch(Manifest.permission.INTERNET)
             }
         }
     }
@@ -277,9 +278,7 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(16.dp))
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Default.Lock,
                             contentDescription = null,
@@ -300,75 +299,17 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.height(32.dp))
 
-            RainbowText()
+            Credits()
         }
     }
 
     @Composable
     fun WebViewScreen(onTokenReceived: (String) -> Unit, onBack: () -> Unit) {
-        val isPageLoading = remember { mutableStateOf(true) }
-        val progress = remember { mutableFloatStateOf(0f) }
         val currentOnTokenReceived by rememberUpdatedState(onTokenReceived)
         val currentOnBack by rememberUpdatedState(onBack)
         val webViewRef = remember { mutableStateOf<WebView?>(null) }
 
-        Column(Modifier.fillMaxSize()) {
-            Surface(
-                color = DiscordColors.Secondary,
-                shadowElevation = 4.dp
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { currentOnBack() }) {
-                            Icon(
-                                Icons.Default.ArrowBack,
-                                contentDescription = "Back",
-                                tint = DiscordColors.TextPrimary
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Discord Login",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = DiscordColors.TextPrimary
-                        )
-
-                        Spacer(Modifier.weight(1f))
-
-                        AnimatedVisibility(
-                            visible = isPageLoading.value,
-                            enter = fadeIn(),
-                            exit = fadeOut()
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = DiscordColors.Blurple,
-                                strokeWidth = 2.5.dp
-                            )
-                        }
-                    }
-
-                    AnimatedVisibility(
-                        visible = progress.floatValue > 0f && progress.floatValue < 1f,
-                        enter = expandVertically(),
-                        exit = shrinkVertically()
-                    ) {
-                        LinearProgressIndicator(
-                            progress = progress.floatValue,
-                            modifier = Modifier.fillMaxWidth(),
-                            color = DiscordColors.Blurple,
-                            trackColor = DiscordColors.Tertiary
-                        )
-                    }
-                }
-            }
-
+        Box(Modifier.fillMaxSize()) {
             AndroidView(
                 factory = { ctx ->
                     WebView(ctx).also { wv ->
@@ -384,84 +325,36 @@ class MainActivity : ComponentActivity() {
                         wv.settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
-                            databaseEnabled = true
-                            cacheMode = WebSettings.LOAD_DEFAULT
-                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                            userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-                        }
-
-                        wv.webChromeClient = object : WebChromeClient() {
-                            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                super.onProgressChanged(view, newProgress)
-                                progress.floatValue = newProgress / 100f
-                                isPageLoading.value = newProgress < 100
+                            if (android.os.Build.MANUFACTURER.equals("motorola", ignoreCase = true)) {
+                                userAgentString = "Mozilla/5.0 (Linux; Android 14; SM-S921U; Build/UP1A.231005.007) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.363"
                             }
                         }
 
                         wv.webViewClient = object : WebViewClient() {
-                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                                super.onPageStarted(view, url, favicon)
-                                isPageLoading.value = true
+                            @Deprecated("Deprecated in Java")
+                            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                                view.stopLoading()
+                                if (url.endsWith("/app")) {
+                                    view.loadUrl(JS_SNIPPET)
+                                    view.visibility = View.GONE
+                                }
+                                return false
                             }
+                        }
 
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                super.onPageFinished(view, url)
-                                isPageLoading.value = false
-
-                                view?.postDelayed({
-                                    view.evaluateJavascript("""
-                                        (function() {
-                                            try {
-                                                let token = null;
-                                                
-                                                const iframe = document.createElement('iframe');
-                                                iframe.style.display = 'none';
-                                                document.body.appendChild(iframe);
-                                                
-                                                try {
-                                                    const iframeLocalStorage = iframe.contentWindow.localStorage;
-                                                    const storedToken = iframeLocalStorage.getItem('token');
-                                                    if (storedToken) {
-                                                        token = storedToken.replace(/"/g, '');
-                                                    }
-                                                } catch(e) {}
-                                                
-                                                document.body.removeChild(iframe);
-                                                
-                                                if (!token && typeof webpackChunkdiscord_app !== 'undefined') {
-                                                    webpackChunkdiscord_app.push([
-                                                        [Symbol()],
-                                                        {},
-                                                        req => {
-                                                            for (let mod of Object.values(req.c)) {
-                                                                try {
-                                                                    if (mod?.exports?.default?.getToken) {
-                                                                        token = mod.exports.default.getToken();
-                                                                    }
-                                                                    if (mod?.exports?.getToken) {
-                                                                        token = mod.exports.getToken();
-                                                                    }
-                                                                } catch(e) {}
-                                                            }
-                                                        }
-                                                    ]);
-                                                    webpackChunkdiscord_app.pop();
-                                                }
-                                                
-                                                return token || null;
-                                            } catch(err) {
-                                                return null;
-                                            }
-                                        })();
-                                    """.trimIndent()) { result ->
-                                        if (result != null && result != "null" && result != "\"null\"") {
-                                            val cleanToken = result.replace("\"", "").trim()
-                                            if (cleanToken.isNotEmpty() && cleanToken != "null" && cleanToken.length > 20) {
-                                                currentOnTokenReceived(cleanToken)
-                                            }
-                                        }
-                                    }
-                                }, 1000)
+                        wv.webChromeClient = object : WebChromeClient() {
+                            override fun onJsAlert(
+                                view: WebView,
+                                url: String,
+                                message: String,
+                                result: JsResult
+                            ): Boolean {
+                                if (message.isNotBlank()) {
+                                    currentOnTokenReceived(message)
+                                }
+                                view.visibility = View.GONE
+                                result.confirm()
+                                return true
                             }
                         }
 
@@ -470,6 +363,23 @@ class MainActivity : ComponentActivity() {
                 },
                 modifier = Modifier.fillMaxSize()
             )
+
+            IconButton(
+                onClick = { currentOnBack() },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 36.dp, start = 8.dp)
+                    .background(
+                        color = DiscordColors.Background.copy(alpha = 0.75f),
+                        shape = CircleShape
+                    )
+            ) {
+                Icon(
+                    Icons.Default.ArrowBack,
+                    contentDescription = "Back",
+                    tint = DiscordColors.TextPrimary
+                )
+            }
         }
 
         DisposableEffect(Unit) {
@@ -497,7 +407,10 @@ class MainActivity : ComponentActivity() {
         val scale = remember { Animatable(0.8f) }
 
         LaunchedEffect(Unit) {
-            scale.animateTo(1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+            scale.animateTo(
+                1f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+            )
         }
 
         Column(
@@ -619,273 +532,4 @@ class MainActivity : ComponentActivity() {
                     Text(
                         "@${user.username}",
                         fontSize = 16.sp,
-                        color = DiscordColors.TextMuted,
-                        fontWeight = FontWeight.Medium
-                    )
-
-                    if (!user.bio.isNullOrBlank()) {
-                        Spacer(Modifier.height(16.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = DiscordColors.Secondary),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = DiscordColors.TextMuted,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    user.bio,
-                                    fontSize = 14.sp,
-                                    color = DiscordColors.TextSecondary
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(24.dp))
-
-                    InfoCard(title = "User ID", value = user.id)
-
-                    Spacer(Modifier.height(16.dp))
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = DiscordColors.Secondary),
-                        shape = RoundedCornerShape(16.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(20.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.Key,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(28.dp),
-                                    tint = DiscordColors.Blurple
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    "Access Token",
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = DiscordColors.TextPrimary
-                                )
-                            }
-
-                            Spacer(Modifier.height(16.dp))
-
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = DiscordColors.Tertiary),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        if (showToken) token else "•".repeat(60),
-                                        modifier = Modifier.weight(1f),
-                                        fontSize = 13.sp,
-                                        color = DiscordColors.TextSecondary,
-                                        fontWeight = FontWeight.Medium,
-                                        maxLines = if (showToken) Int.MAX_VALUE else 1
-                                    )
-                                    IconButton(
-                                        onClick = onToggleToken,
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Icon(
-                                            if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = if (showToken) "Hide" else "Show",
-                                            tint = DiscordColors.TextMuted
-                                        )
-                                    }
-                                }
-                            }
-
-                            Spacer(Modifier.height(16.dp))
-
-                            Button(
-                                onClick = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Discord Token", token))
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = DiscordColors.Green),
-                                shape = RoundedCornerShape(12.dp),
-                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.ContentCopy,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                Text("Copy to Clipboard", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(24.dp))
-
-                    OutlinedButton(
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-rhyan57/GetDiscordToken"))
-                            context.startActivity(intent)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = DiscordColors.TextPrimary),
-                        border = BorderStroke(1.5.dp, DiscordColors.Tertiary),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Code,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text("Sc-rhyan57/GetDiscordToken", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
-
-                Spacer(Modifier.height(40.dp))
-
-                RainbowText()
-
-                Spacer(Modifier.height(24.dp))
-            }
-        }
-    }
-
-    @Composable
-    fun InfoCard(title: String, value: String) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = DiscordColors.Secondary),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.Badge,
-                    contentDescription = null,
-                    modifier = Modifier.size(28.dp),
-                    tint = DiscordColors.Blurple
-                )
-                Spacer(Modifier.width(14.dp))
-                Column {
-                    Text(title, fontSize = 13.sp, color = DiscordColors.TextMuted, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(4.dp))
-                    Text(value, fontSize = 15.sp, color = DiscordColors.TextPrimary, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-
-    @Composable
-    fun RainbowText() {
-        val infiniteTransition = rememberInfiniteTransition(label = "rainbow")
-        val offset by infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(3000, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "offset"
-        )
-
-        val colors = listOf(
-            Color(0xFFFF0000), Color(0xFFFF7F00), Color(0xFFFFFF00),
-            Color(0xFF00FF00), Color(0xFF0000FF), Color(0xFF4B0082),
-            Color(0xFF9400D3), Color(0xFFFF0000)
-        )
-
-        val brush = Brush.linearGradient(
-            colors = colors,
-            start = androidx.compose.ui.geometry.Offset(offset * 1000f, 0f),
-            end = androidx.compose.ui.geometry.Offset(offset * 1000f + 500f, 0f)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "With",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                style = androidx.compose.ui.text.TextStyle(brush = brush)
-            )
-            Spacer(Modifier.width(6.dp))
-            Icon(
-                Icons.Default.Favorite,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = Color(0xFFFF1744)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                "By rhyan57",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                style = androidx.compose.ui.text.TextStyle(brush = brush)
-            )
-        }
-    }
-
-    private suspend fun fetchUserInfo(token: String): DiscordUser = withContext(Dispatchers.IO) {
-        val client = OkHttpClient()
-        val request = Request.Builder()
-            .url("https://discord.com/api/v10/users/@me")
-            .header("Authorization", token)
-            .build()
-
-        val response = client.newCall(request).execute()
-        val body = response.body?.string() ?: throw IOException("Empty")
-
-        if (!response.isSuccessful) throw IOException("Failed: ${response.code}")
-
-        val lines = body.split(",")
-
-        fun extract(key: String): String? {
-            return lines.find { it.contains("\"$key\"") }
-                ?.substringAfter(":")
-                ?.replace("\"", "")
-                ?.replace("}", "")
-                ?.trim()
-                ?.takeIf { it != "null" && it.isNotEmpty() }
-        }
-
-        DiscordUser(
-            id = extract("id") ?: "",
-            username = extract("username") ?: "",
-            discriminator = extract("discriminator") ?: "0",
-            displayName = extract("global_name"),
-            avatar = extract("avatar"),
-            bio = extract("bio"),
-            banner = extract("banner")
-        )
-    }
-}
+          
