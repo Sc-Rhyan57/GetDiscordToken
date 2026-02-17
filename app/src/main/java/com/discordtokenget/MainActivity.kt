@@ -19,13 +19,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,9 +41,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -46,6 +54,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -65,11 +75,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -103,7 +115,7 @@ private object AppColors {
     val SurfaceVariant = Color(0xFF313338)
     val Primary = Color(0xFF5865F2)
     val OnPrimary = Color(0xFFFFFFFF)
-    val Success = Color(0xFF3BA55D)
+    val Success = Color(0xFF23A55A)
     val Error = Color(0xFFED4245)
     val ErrorContainer = Color(0xFF3B1A1B)
     val OnError = Color(0xFFFFDFDE)
@@ -112,7 +124,7 @@ private object AppColors {
     val TextMuted = Color(0xFF80848E)
 }
 
-private val KizzyDarkColorScheme = darkColorScheme(
+private val DiscordDarkColorScheme = darkColorScheme(
     primary = AppColors.Primary,
     onPrimary = AppColors.OnPrimary,
     background = AppColors.Background,
@@ -144,7 +156,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme(colorScheme = KizzyDarkColorScheme) {
+            MaterialTheme(colorScheme = DiscordDarkColorScheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = AppColors.Background
@@ -183,13 +195,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun buildCrashLog(stacktrace: String): String {
-        val manufacturer = Build.MANUFACTURER
-        val model = Build.MODEL
-        val androidVersion = Build.VERSION.RELEASE
         return """Discord Token — Crash Report
-Fabricante: $manufacturer
-Dispositivo: $model
-Android: $androidVersion
+Manufacturer: ${Build.MANUFACTURER}
+Device: ${Build.MODEL}
+Android: ${Build.VERSION.RELEASE}
 Stacktrace:
 $stacktrace"""
     }
@@ -202,17 +211,24 @@ $stacktrace"""
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            text = "O app crashou",
-                            style = MaterialTheme.typography.headlineSmall.copy(
-                                fontWeight = FontWeight.ExtraBold
-                            ),
-                            color = AppColors.TextPrimary
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                painter = painterResource(R.drawable.lucide_ic_triangle_alert),
+                                contentDescription = null,
+                                tint = AppColors.Error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "App Crashed",
+                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                color = AppColors.TextPrimary
+                            )
+                        }
                     },
                     actions = {
                         TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) {
-                            Text("Fechar", color = AppColors.Error, fontWeight = FontWeight.Bold)
+                            Text("Close", color = AppColors.Error, fontWeight = FontWeight.Bold)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = AppColors.Background)
@@ -228,7 +244,13 @@ $stacktrace"""
                     colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text("Copiar Log", fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
+                    Icon(
+                        painter = painterResource(R.drawable.lucide_ic_copy),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Copy Log", fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
                 }
             }
         ) { padding ->
@@ -239,7 +261,7 @@ $stacktrace"""
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "Um erro inesperado ocorreu. Copie o log abaixo e reporte ao desenvolvedor.",
+                    text = "An unexpected error occurred. Copy the log below and report it to the developer.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = AppColors.TextSecondary,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -349,6 +371,22 @@ $stacktrace"""
         ) {
             Spacer(Modifier.weight(1f))
 
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(AppColors.Primary.copy(alpha = 0.15f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.lucide_ic_key_round),
+                    contentDescription = null,
+                    tint = AppColors.Primary,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
             Text(
                 text = "Discord",
                 fontSize = 48.sp,
@@ -365,7 +403,7 @@ $stacktrace"""
                 modifier = Modifier.scale(scale.value)
             )
 
-            Spacer(Modifier.height(56.dp))
+            Spacer(Modifier.height(48.dp))
 
             Card(
                 modifier = Modifier
@@ -382,7 +420,7 @@ $stacktrace"""
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Obter Token",
+                        text = "Get Your Token",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = AppColors.TextPrimary
@@ -391,7 +429,7 @@ $stacktrace"""
                     Spacer(Modifier.height(8.dp))
 
                     Text(
-                        text = "Faça login com sua conta Discord para extrair o token de acesso.",
+                        text = "Sign in with your Discord account to extract your access token.",
                         fontSize = 14.sp,
                         color = AppColors.TextMuted,
                         textAlign = TextAlign.Center
@@ -408,28 +446,67 @@ $stacktrace"""
                         shape = RoundedCornerShape(14.dp),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                     ) {
+                        Icon(
+                            painter = painterResource(R.drawable.lucide_ic_log_in),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Entrar com Discord",
+                            text = "Sign in with Discord",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = AppColors.OnPrimary
                         )
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(20.dp))
 
-                    Text(
-                        text = "Seguro • Privado • Local",
-                        fontSize = 12.sp,
-                        color = AppColors.Success,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        SecurityBadge(
+                            iconRes = R.drawable.lucide_ic_shield_check,
+                            label = "Secure"
+                        )
+                        SecurityBadge(
+                            iconRes = R.drawable.lucide_ic_eye_off,
+                            label = "Private"
+                        )
+                        SecurityBadge(
+                            iconRes = R.drawable.lucide_ic_smartphone,
+                            label = "Local"
+                        )
+                    }
                 }
             }
 
             Spacer(Modifier.weight(1f))
 
             Footer()
+            Spacer(Modifier.height(12.dp))
+            GitHubButton()
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    @Composable
+    fun SecurityBadge(iconRes: Int, label: String) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = AppColors.Success,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                color = AppColors.Success,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 
@@ -514,7 +591,13 @@ $stacktrace"""
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("← Voltar", fontWeight = FontWeight.Bold)
+                    Icon(
+                        painter = painterResource(R.drawable.lucide_ic_arrow_left),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Back", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -554,7 +637,11 @@ $stacktrace"""
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            Box(modifier = Modifier.fillMaxWidth().height(130.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+            ) {
                 if (user?.banner != null) {
                     AsyncImage(
                         model = "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.png?size=600",
@@ -570,7 +657,8 @@ $stacktrace"""
                                 Brush.verticalGradient(
                                     colors = listOf(
                                         AppColors.Primary,
-                                        AppColors.Primary.copy(alpha = 0.5f)
+                                        Color(0xFF7289DA),
+                                        AppColors.Background
                                     )
                                 )
                             )
@@ -587,18 +675,16 @@ $stacktrace"""
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
+                        .padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Card(
-                        shape = RoundedCornerShape(50),
+                    Box(
                         modifier = Modifier
-                            .padding(top = 0.dp)
-                            .width(80.dp)
-                            .height(80.dp),
-                        colors = CardDefaults.cardColors(containerColor = AppColors.Background),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                            .size(88.dp)
+                            .border(4.dp, AppColors.Background, CircleShape)
+                            .clip(CircleShape)
+                            .background(AppColors.Surface)
                     ) {
                         if (user?.avatar != null) {
                             AsyncImage(
@@ -624,24 +710,38 @@ $stacktrace"""
                         }
                     }
 
-                    OutlinedButton(
+                    Button(
                         onClick = onLogout,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.Error),
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, AppColors.Error),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AppColors.ErrorContainer,
+                            contentColor = AppColors.Error
+                        ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Sair", fontWeight = FontWeight.Bold)
+                        Icon(
+                            painter = painterResource(R.drawable.lucide_ic_log_out),
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Log Out", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(14.dp))
 
                 if (isLoading) {
                     Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = AppColors.Primary, strokeWidth = 3.dp)
+                        CircularProgressIndicator(
+                            color = AppColors.Primary,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(40.dp)
+                        )
                     }
                 } else if (user != null) {
                     Text(
@@ -651,32 +751,78 @@ $stacktrace"""
                         color = AppColors.TextPrimary
                     )
                     Text(
-                        text = "@${user.username}",
+                        text = "@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "",
                         fontSize = 15.sp,
                         color = AppColors.TextMuted,
                         fontWeight = FontWeight.Medium
                     )
 
+                    Spacer(Modifier.height(6.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(AppColors.Success.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.lucide_ic_check_circle),
+                            contentDescription = null,
+                            tint = AppColors.Success,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Token obtained successfully",
+                            fontSize = 12.sp,
+                            color = AppColors.Success,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
                     if (!user.bio.isNullOrBlank()) {
                         Spacer(Modifier.height(12.dp))
                         Card(
                             colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = user.bio,
-                                modifier = Modifier.padding(14.dp),
-                                fontSize = 14.sp,
-                                color = AppColors.TextSecondary
-                            )
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.lucide_ic_notebook_text),
+                                        contentDescription = null,
+                                        tint = AppColors.TextMuted,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = "ABOUT ME",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = AppColors.TextMuted,
+                                        letterSpacing = 0.8.sp
+                                    )
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = user.bio,
+                                    fontSize = 14.sp,
+                                    color = AppColors.TextSecondary
+                                )
+                            }
                         }
                     }
 
-                    Spacer(Modifier.height(20.dp))
-
-                    InfoRow(label = "ID da Conta", value = user.id)
-
                     Spacer(Modifier.height(14.dp))
+
+                    InfoRow(
+                        iconRes = R.drawable.lucide_ic_hash,
+                        label = "ACCOUNT ID",
+                        value = user.id
+                    )
+
+                    Spacer(Modifier.height(12.dp))
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -685,12 +831,21 @@ $stacktrace"""
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
                         Column(modifier = Modifier.padding(18.dp)) {
-                            Text(
-                                text = "Token de Acesso",
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AppColors.TextPrimary
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    painter = painterResource(R.drawable.lucide_ic_fingerprint),
+                                    contentDescription = null,
+                                    tint = AppColors.Primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "Access Token",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppColors.TextPrimary
+                                )
+                            }
 
                             Spacer(Modifier.height(12.dp))
 
@@ -698,25 +853,33 @@ $stacktrace"""
                                 colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVariant),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Text(
-                                        text = if (showToken) token else "●".repeat(40),
+                                        text = if (showToken) token else "•".repeat(40),
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 12.sp,
                                         color = AppColors.TextSecondary,
                                         maxLines = if (showToken) Int.MAX_VALUE else 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
                                     )
-                                    Spacer(Modifier.height(8.dp))
-                                    TextButton(
+                                    IconButton(
                                         onClick = onToggleToken,
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                                        modifier = Modifier.size(36.dp)
                                     ) {
-                                        Text(
-                                            text = if (showToken) "Ocultar token" else "Revelar token",
-                                            fontSize = 12.sp,
-                                            color = AppColors.Primary,
-                                            fontWeight = FontWeight.SemiBold
+                                        Icon(
+                                            painter = painterResource(
+                                                if (showToken) R.drawable.lucide_ic_eye_off
+                                                else R.drawable.lucide_ic_eye
+                                            ),
+                                            contentDescription = if (showToken) "Hide" else "Reveal",
+                                            tint = AppColors.Primary,
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
                                 }
@@ -729,12 +892,21 @@ $stacktrace"""
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("Discord Token", token))
                                 },
-                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = AppColors.Success),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.lucide_ic_clipboard_copy),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(17.dp),
+                                    tint = Color.White
+                                )
+                                Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = "Copiar Token",
+                                    text = "Copy Token",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = Color.White
@@ -743,37 +915,20 @@ $stacktrace"""
                         }
                     }
 
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(24.dp))
 
-                    OutlinedButton(
-                        onClick = {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-rhyan57/GetDiscordToken"))
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.TextMuted),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.SurfaceVariant),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "Sc-rhyan57/GetDiscordToken",
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp
-                        )
-                    }
+                    Footer()
+                    Spacer(Modifier.height(10.dp))
+                    GitHubButton()
                 }
 
-                Spacer(Modifier.height(36.dp))
-                Footer()
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(28.dp))
             }
         }
     }
 
     @Composable
-    fun InfoRow(label: String, value: String) {
+    fun InfoRow(iconRes: Int, label: String, value: String) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
@@ -781,13 +936,22 @@ $stacktrace"""
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = label,
-                    fontSize = 12.sp,
-                    color = AppColors.TextMuted,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 0.5.sp
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(iconRes),
+                        contentDescription = null,
+                        tint = AppColors.TextMuted,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = label,
+                        fontSize = 11.sp,
+                        color = AppColors.TextMuted,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = value,
@@ -802,14 +966,77 @@ $stacktrace"""
 
     @Composable
     fun Footer() {
-        Text(
-            text = "feito com carinho por rhyan57",
-            fontSize = 12.sp,
-            color = AppColors.TextMuted,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth()
+        val infiniteTransition = rememberInfiniteTransition(label = "rgb_footer")
+        val hue by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 3000, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "hue"
         )
+        val rgbColor = Color.hsv(hue, 0.75f, 1f)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.lucide_ic_sparkles),
+                contentDescription = null,
+                tint = rgbColor,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                text = "made with love by rhyan57",
+                fontSize = 12.sp,
+                color = rgbColor,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.width(5.dp))
+            Icon(
+                painter = painterResource(R.drawable.lucide_ic_sparkles),
+                contentDescription = null,
+                tint = rgbColor,
+                modifier = Modifier.size(13.dp)
+            )
+        }
+    }
+
+    @Composable
+    fun GitHubButton() {
+        val context = LocalContext.current
+        OutlinedButton(
+            onClick = {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken"))
+                )
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.TextMuted),
+            border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.SurfaceVariant),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.lucide_ic_code_2),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = AppColors.TextMuted
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "Sc-Rhyan57/GetDiscordToken",
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp
+            )
+        }
     }
 
     private suspend fun fetchUserInfo(token: String): DiscordUser = withContext(Dispatchers.IO) {
