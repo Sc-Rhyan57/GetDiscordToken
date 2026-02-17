@@ -36,7 +36,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import coil.compose.AsyncImage
 import kotlinx.coroutines.*
 import okhttp3.*
@@ -67,14 +66,13 @@ class MainActivity : ComponentActivity() {
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-    }
+    ) { _: Boolean -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         checkPermissions()
-        
+
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 DiscordTokenApp()
@@ -84,8 +82,9 @@ class MainActivity : ComponentActivity() {
 
     private fun checkPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) 
-                != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
                 requestPermissionLauncher.launch(Manifest.permission.INTERNET)
             }
         }
@@ -118,18 +117,20 @@ class MainActivity : ComponentActivity() {
             color = DiscordColors.Background
         ) {
             AnimatedContent(
-                targetState = if (showWebView && token == null) "webview" 
-                             else if (token == null) "login" 
-                             else "profile",
+                targetState = when {
+                    showWebView && token == null -> "webview"
+                    token == null -> "login"
+                    else -> "profile"
+                },
                 transitionSpec = {
                     fadeIn(animationSpec = tween(300)) togetherWith
-                    fadeOut(animationSpec = tween(300))
+                            fadeOut(animationSpec = tween(300))
                 },
                 label = "screen_transition"
             ) { screen ->
                 when (screen) {
                     "webview" -> WebViewScreen(
-                        onTokenReceived = { 
+                        onTokenReceived = {
                             token = it
                             showWebView = false
                         },
@@ -156,7 +157,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun LoginScreen(onLoginClick: () -> Unit) {
         val scale = remember { Animatable(0f) }
-        
+
         LaunchedEffect(Unit) {
             scale.animateTo(
                 targetValue = 1f,
@@ -183,9 +184,9 @@ class MainActivity : ComponentActivity() {
                     .scale(scale.value),
                 tint = DiscordColors.Blurple
             )
-            
+
             Spacer(Modifier.height(24.dp))
-            
+
             Text(
                 "Discord Token",
                 fontSize = 42.sp,
@@ -193,7 +194,7 @@ class MainActivity : ComponentActivity() {
                 color = DiscordColors.TextPrimary,
                 modifier = Modifier.scale(scale.value)
             )
-            
+
             Text(
                 "EXTRACTOR",
                 fontSize = 14.sp,
@@ -222,9 +223,9 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.size(56.dp),
                         tint = DiscordColors.Blurple
                     )
-                    
+
                     Spacer(Modifier.height(24.dp))
-                    
+
                     Text(
                         "Get Your Token",
                         fontSize = 22.sp,
@@ -232,18 +233,18 @@ class MainActivity : ComponentActivity() {
                         color = DiscordColors.TextPrimary,
                         textAlign = TextAlign.Center
                     )
-                    
+
                     Spacer(Modifier.height(8.dp))
-                    
+
                     Text(
                         "Securely extract your Discord access token",
                         fontSize = 14.sp,
                         color = DiscordColors.TextMuted,
                         textAlign = TextAlign.Center
                     )
-                    
+
                     Spacer(Modifier.height(32.dp))
-                    
+
                     Button(
                         onClick = onLoginClick,
                         modifier = Modifier
@@ -273,9 +274,9 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-                    
+
                     Spacer(Modifier.height(16.dp))
-                    
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -298,16 +299,19 @@ class MainActivity : ComponentActivity() {
 
             Spacer(Modifier.weight(1f))
             Spacer(Modifier.height(32.dp))
-            
+
             RainbowText()
         }
     }
 
     @Composable
     fun WebViewScreen(onTokenReceived: (String) -> Unit, onBack: () -> Unit) {
-        var isPageLoading by remember { mutableStateOf(true) }
-        var progress by remember { mutableFloatStateOf(0f) }
-        
+        val isPageLoading = remember { mutableStateOf(true) }
+        val progress = remember { mutableFloatStateOf(0f) }
+        val currentOnTokenReceived by rememberUpdatedState(onTokenReceived)
+        val currentOnBack by rememberUpdatedState(onBack)
+        val webViewRef = remember { mutableStateOf<WebView?>(null) }
+
         Column(Modifier.fillMaxSize()) {
             Surface(
                 color = DiscordColors.Secondary,
@@ -320,7 +324,7 @@ class MainActivity : ComponentActivity() {
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = onBack) {
+                        IconButton(onClick = { currentOnBack() }) {
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = "Back",
@@ -334,11 +338,11 @@ class MainActivity : ComponentActivity() {
                             fontWeight = FontWeight.Bold,
                             color = DiscordColors.TextPrimary
                         )
-                        
+
                         Spacer(Modifier.weight(1f))
-                        
+
                         AnimatedVisibility(
-                            visible = isPageLoading,
+                            visible = isPageLoading.value,
                             enter = fadeIn(),
                             exit = fadeOut()
                         ) {
@@ -349,14 +353,14 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     }
-                    
+
                     AnimatedVisibility(
-                        visible = progress > 0f && progress < 1f,
+                        visible = progress.floatValue > 0f && progress.floatValue < 1f,
                         enter = expandVertically(),
                         exit = shrinkVertically()
                     ) {
                         LinearProgressIndicator(
-                            progress = progress,
+                            progress = { progress.floatValue },
                             modifier = Modifier.fillMaxWidth(),
                             color = DiscordColors.Blurple,
                             trackColor = DiscordColors.Tertiary
@@ -366,16 +370,18 @@ class MainActivity : ComponentActivity() {
             }
 
             AndroidView(
-                factory = { context ->
-                    WebView(context).apply {
-                        layoutParams = ViewGroup.LayoutParams(
+                factory = { ctx ->
+                    WebView(ctx).also { wv ->
+                        webViewRef.value = wv
+
+                        wv.layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
-                        
-                        setBackgroundColor(android.graphics.Color.parseColor("#1E1F22"))
-                        
-                        settings.apply {
+
+                        wv.setBackgroundColor(android.graphics.Color.parseColor("#1E1F22"))
+
+                        wv.settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
                             databaseEnabled = true
@@ -384,24 +390,24 @@ class MainActivity : ComponentActivity() {
                             userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
                         }
 
-                        webChromeClient = object : WebChromeClient() {
+                        wv.webChromeClient = object : WebChromeClient() {
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 super.onProgressChanged(view, newProgress)
-                                progress = newProgress / 100f
-                                isPageLoading = newProgress < 100
+                                progress.floatValue = newProgress / 100f
+                                isPageLoading.value = newProgress < 100
                             }
                         }
 
-                        webViewClient = object : WebViewClient() {
+                        wv.webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                                 super.onPageStarted(view, url, favicon)
-                                isPageLoading = true
+                                isPageLoading.value = true
                             }
-                            
+
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
-                                isPageLoading = false
-                                
+                                isPageLoading.value = false
+
                                 view?.postDelayed({
                                     view.evaluateJavascript("""
                                         (function() {
@@ -451,19 +457,30 @@ class MainActivity : ComponentActivity() {
                                         if (result != null && result != "null" && result != "\"null\"") {
                                             val cleanToken = result.replace("\"", "").trim()
                                             if (cleanToken.isNotEmpty() && cleanToken != "null" && cleanToken.length > 20) {
-                                                onTokenReceived(cleanToken)
+                                                currentOnTokenReceived(cleanToken)
                                             }
                                         }
                                     }
                                 }, 1000)
                             }
                         }
-                        
-                        loadUrl("https://discord.com/login")
+
+                        wv.loadUrl("https://discord.com/login")
                     }
                 },
                 modifier = Modifier.fillMaxSize()
             )
+        }
+
+        DisposableEffect(Unit) {
+            onDispose {
+                webViewRef.value?.apply {
+                    stopLoading()
+                    clearHistory()
+                    destroy()
+                }
+                webViewRef.value = null
+            }
         }
     }
 
@@ -478,11 +495,11 @@ class MainActivity : ComponentActivity() {
     ) {
         val context = LocalContext.current
         val scale = remember { Animatable(0.8f) }
-        
+
         LaunchedEffect(Unit) {
             scale.animateTo(1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy))
         }
-        
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -704,7 +721,9 @@ class MainActivity : ComponentActivity() {
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("Discord Token", token))
                                 },
-                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = DiscordColors.Green),
                                 shape = RoundedCornerShape(12.dp),
                                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
@@ -727,7 +746,9 @@ class MainActivity : ComponentActivity() {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-rhyan57/GetDiscordToken"))
                             context.startActivity(intent)
                         },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = DiscordColors.TextPrimary),
                         border = BorderStroke(1.5.dp, DiscordColors.Tertiary),
                         shape = RoundedCornerShape(12.dp)
@@ -743,9 +764,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Spacer(Modifier.height(40.dp))
-                
+
                 RainbowText()
-                
+
                 Spacer(Modifier.height(24.dp))
             }
         }
@@ -843,11 +864,11 @@ class MainActivity : ComponentActivity() {
 
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: throw IOException("Empty")
-        
+
         if (!response.isSuccessful) throw IOException("Failed: ${response.code}")
 
         val lines = body.split(",")
-        
+
         fun extract(key: String): String? {
             return lines.find { it.contains("\"$key\"") }
                 ?.substringAfter(":")
@@ -856,7 +877,7 @@ class MainActivity : ComponentActivity() {
                 ?.trim()
                 ?.takeIf { it != "null" && it.isNotEmpty() }
         }
-        
+
         DiscordUser(
             id = extract("id") ?: "",
             username = extract("username") ?: "",
