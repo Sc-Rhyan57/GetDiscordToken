@@ -15,6 +15,8 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -128,6 +130,15 @@ class MainActivity : ComponentActivity() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            Icon(
+                Icons.Default.Flag,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = DiscordColors.Blurple
+            )
+            
+            Spacer(Modifier.height(16.dp))
+            
             Text(
                 "Discord",
                 fontSize = 48.sp,
@@ -155,7 +166,12 @@ class MainActivity : ComponentActivity() {
                         .padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("🚀", fontSize = 64.sp)
+                    Icon(
+                        Icons.Default.Rocket,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = DiscordColors.Blurple
+                    )
                     
                     Spacer(Modifier.height(24.dp))
                     
@@ -190,7 +206,11 @@ class MainActivity : ComponentActivity() {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            Text("🎮", fontSize = 24.sp)
+                            Icon(
+                                Icons.Default.Gamepad,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
                             Spacer(Modifier.width(12.dp))
                             Text(
                                 "Log in with Discord",
@@ -210,6 +230,8 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun WebViewScreen(onTokenReceived: (String) -> Unit, onBack: () -> Unit) {
+        var isLoading by remember { mutableStateOf(true) }
+        
         Column(Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
@@ -219,14 +241,29 @@ class MainActivity : ComponentActivity() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onBack) {
-                    Text("←", fontSize = 24.sp, color = DiscordColors.TextPrimary)
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = "Back",
+                        tint = DiscordColors.TextPrimary
+                    )
                 }
+                Spacer(Modifier.width(8.dp))
                 Text(
                     "Discord Login",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = DiscordColors.TextPrimary
                 )
+                
+                Spacer(Modifier.weight(1f))
+                
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = DiscordColors.Blurple,
+                        strokeWidth = 2.dp
+                    )
+                }
             }
 
             AndroidView(
@@ -235,40 +272,76 @@ class MainActivity : ComponentActivity() {
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
-                            userAgentString = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                            databaseEnabled = true
+                            cacheMode = WebSettings.LOAD_DEFAULT
+                            userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
                         }
 
                         webViewClient = object : WebViewClient() {
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                super.onPageStarted(view, url, favicon)
+                                isLoading = true
+                            }
+                            
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
+                                isLoading = false
                                 
-                                view?.evaluateJavascript("""
-                                    (function() {
-                                        const token = (webpackChunkdiscord_app.push([[''],{},e=>{m=[];for(let c in e.c)m.push(e.c[c])}]),m)
-                                            .find(m => m?.exports?.default?.getToken !== void 0)
-                                            ?.exports?.default?.getToken();
-                                        
-                                        if (token) {
-                                            return token;
-                                        }
-                                        
-                                        const localStorage_token = localStorage.getItem('token');
-                                        if (localStorage_token) {
-                                            return localStorage_token.replace(/"/g, '');
-                                        }
-                                        
-                                        return null;
-                                    })();
-                                """.trimIndent()) { result ->
-                                    if (result != null && result != "null" && result.length > 10) {
-                                        val cleanToken = result.replace("\"", "")
-                                        if (cleanToken.isNotEmpty()) {
-                                            onTokenReceived(cleanToken)
+                                if (url?.contains("discord.com") == true) {
+                                    view?.evaluateJavascript("""
+                                        (function() {
+                                            try {
+                                                let token = null;
+                                                
+                                                const iframe = document.createElement('iframe');
+                                                document.body.appendChild(iframe);
+                                                const ls = iframe.contentWindow.localStorage;
+                                                const tkn = ls.getItem('token');
+                                                if (tkn) {
+                                                    token = JSON.parse(tkn);
+                                                    document.body.removeChild(iframe);
+                                                    return token;
+                                                }
+                                                document.body.removeChild(iframe);
+                                                
+                                                if (typeof webpackChunkdiscord_app !== 'undefined') {
+                                                    webpackChunkdiscord_app.push([[Symbol()], {}, o => {
+                                                        for (let e of Object.values(o.c)) {
+                                                            try {
+                                                                if (!e.exports || e.exports === window) continue;
+                                                                if (e.exports?.getToken) {
+                                                                    token = e.exports.getToken();
+                                                                }
+                                                                for (let prop in e.exports) {
+                                                                    if (e.exports?.[prop]?.getToken && 
+                                                                        "IntlMessagesProxy" !== e.exports[prop][Symbol.toStringTag]) {
+                                                                        token = e.exports[prop].getToken();
+                                                                    }
+                                                                }
+                                                            } catch {}
+                                                        }
+                                                    }]);
+                                                    webpackChunkdiscord_app.pop();
+                                                }
+                                                
+                                                return token;
+                                            } catch (e) {
+                                                return null;
+                                            }
+                                        })();
+                                    """.trimIndent()) { result ->
+                                        if (result != null && result != "null" && result != "\"null\"" && result.length > 10) {
+                                            val cleanToken = result.replace("\"", "").trim()
+                                            if (cleanToken.isNotEmpty() && cleanToken != "null") {
+                                                onTokenReceived(cleanToken)
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                        
+                        webChromeClient = WebChromeClient()
                         
                         loadUrl("https://discord.com/login")
                     }
@@ -341,11 +414,11 @@ class MainActivity : ComponentActivity() {
                                 .border(6.dp, DiscordColors.Background, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                user?.username?.firstOrNull()?.uppercase() ?: "?",
-                                fontSize = 32.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
+                            Icon(
+                                Icons.Default.Person,
+                                contentDescription = null,
+                                modifier = Modifier.size(40.dp),
+                                tint = Color.White
                             )
                         }
                     }
@@ -358,6 +431,12 @@ class MainActivity : ComponentActivity() {
                         border = BorderStroke(1.dp, Color(0xFFED4245)),
                         shape = RoundedCornerShape(8.dp)
                     ) {
+                        Icon(
+                            Icons.Default.ExitToApp,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Text("Logout", fontWeight = FontWeight.Bold)
                     }
                 }
@@ -402,7 +481,7 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(24.dp))
 
-                    InfoCard(title = "User ID", value = user.id, icon = "🆔")
+                    InfoCard(title = "User ID", value = user.id)
 
                     Spacer(Modifier.height(12.dp))
 
@@ -416,7 +495,12 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("🔑", fontSize = 24.sp)
+                                Icon(
+                                    Icons.Default.Key,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = DiscordColors.Blurple
+                                )
                                 Spacer(Modifier.width(12.dp))
                                 Text(
                                     "Access Token",
@@ -449,7 +533,11 @@ class MainActivity : ComponentActivity() {
                                         onClick = onToggleToken,
                                         modifier = Modifier.size(32.dp)
                                     ) {
-                                        Text(if (showToken) "👁️" else "👁️‍🗨️", fontSize = 18.sp)
+                                        Icon(
+                                            if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                            contentDescription = if (showToken) "Hide" else "Show",
+                                            tint = DiscordColors.TextMuted
+                                        )
                                     }
                                 }
                             }
@@ -465,7 +553,13 @@ class MainActivity : ComponentActivity() {
                                 colors = ButtonDefaults.buttonColors(containerColor = DiscordColors.Green),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("📋 Copy to Clipboard", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text("Copy to Clipboard", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
                         }
                     }
@@ -482,11 +576,13 @@ class MainActivity : ComponentActivity() {
                         border = BorderStroke(1.dp, DiscordColors.Tertiary),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("💻", fontSize = 20.sp)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Sc-rhyan57/GetDiscordToken", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
+                        Icon(
+                            Icons.Default.Code,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Sc-rhyan57/GetDiscordToken", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
 
@@ -498,7 +594,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun InfoCard(title: String, value: String, icon: String) {
+    fun InfoCard(title: String, value: String) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = DiscordColors.Secondary),
@@ -510,7 +606,12 @@ class MainActivity : ComponentActivity() {
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(icon, fontSize = 24.sp)
+                Icon(
+                    Icons.Default.Badge,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = DiscordColors.Blurple
+                )
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(title, fontSize = 12.sp, color = DiscordColors.TextMuted, fontWeight = FontWeight.Medium)
@@ -550,14 +651,32 @@ class MainActivity : ComponentActivity() {
             end = androidx.compose.ui.geometry.Offset(offset * 1000f + 500f, 0f)
         )
 
-        Text(
-            "With ❤️ By rhyan57",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            style = androidx.compose.ui.text.TextStyle(brush = brush),
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "With",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                style = androidx.compose.ui.text.TextStyle(brush = brush)
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Default.Favorite,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = Color.Red
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "By rhyan57",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                style = androidx.compose.ui.text.TextStyle(brush = brush)
+            )
+        }
     }
 
     private suspend fun fetchUserInfo(token: String): DiscordUser = withContext(Dispatchers.IO) {
