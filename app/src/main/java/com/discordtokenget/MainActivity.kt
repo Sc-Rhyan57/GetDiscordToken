@@ -401,11 +401,13 @@ class MainActivity : ComponentActivity() {
                                 message: String,
                                 result: JsResult
                             ): Boolean {
-                                if (message.isNotBlank()) {
-                                    currentOnTokenReceived(message)
-                                }
-                                view.visibility = View.GONE
                                 result.confirm()
+                                view.visibility = View.GONE
+                                if (message.isNotBlank()) {
+                                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                        currentOnTokenReceived(message)
+                                    }, 200)
+                                }
                                 return true
                             }
                         }
@@ -438,8 +440,11 @@ class MainActivity : ComponentActivity() {
             onDispose {
                 webViewRef.value?.apply {
                     stopLoading()
-                    clearHistory()
-                    destroy()
+                    loadUrl("about:blank")
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        clearHistory()
+                        destroy()
+                    }, 500)
                 }
                 webViewRef.value = null
             }
