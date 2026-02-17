@@ -1,5 +1,6 @@
 package com.discordtokenget
 
+import com.discordtokenget.R
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
