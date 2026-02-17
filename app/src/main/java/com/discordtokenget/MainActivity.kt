@@ -1,14 +1,19 @@
 package com.discordtokenget
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.view.ViewGroup
 import android.webkit.*
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -21,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -29,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import coil.compose.AsyncImage
 import kotlinx.coroutines.*
@@ -46,23 +53,40 @@ data class DiscordUser(
 )
 
 object DiscordColors {
-    val Background = Color(0xFF23272A)
-    val Secondary = Color(0xFF2C2F33)
-    val Tertiary = Color(0xFF36393F)
+    val Background = Color(0xFF1E1F22)
+    val Secondary = Color(0xFF2B2D31)
+    val Tertiary = Color(0xFF313338)
     val Blurple = Color(0xFF5865F2)
     val Green = Color(0xFF3BA55D)
-    val TextPrimary = Color(0xFFDCDDDE)
-    val TextSecondary = Color(0xFFB9BBBE)
-    val TextMuted = Color(0xFF72767D)
+    val TextPrimary = Color(0xFFF2F3F5)
+    val TextSecondary = Color(0xFFB5BAC1)
+    val TextMuted = Color(0xFF80848E)
 }
 
 class MainActivity : ComponentActivity() {
 
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        checkPermissions()
+        
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 DiscordTokenApp()
+            }
+        }
+    }
+
+    private fun checkPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) 
+                != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(Manifest.permission.INTERNET)
             }
         }
     }
@@ -78,6 +102,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(token) {
             if (token != null) {
                 isLoading = true
+                delay(300)
                 try {
                     user = fetchUserInfo(token!!)
                 } catch (e: Exception) {
@@ -92,19 +117,26 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier.fillMaxSize(),
             color = DiscordColors.Background
         ) {
-            Column(Modifier.fillMaxSize()) {
-                if (showWebView && token == null) {
-                    WebViewScreen(
+            AnimatedContent(
+                targetState = if (showWebView && token == null) "webview" 
+                             else if (token == null) "login" 
+                             else "profile",
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(300)) togetherWith
+                    fadeOut(animationSpec = tween(300))
+                },
+                label = "screen_transition"
+            ) { screen ->
+                when (screen) {
+                    "webview" -> WebViewScreen(
                         onTokenReceived = { 
                             token = it
                             showWebView = false
                         },
                         onBack = { showWebView = false }
                     )
-                } else if (token == null) {
-                    LoginScreen(onLoginClick = { showWebView = true })
-                } else {
-                    UserProfileScreen(
+                    "login" -> LoginScreen(onLoginClick = { showWebView = true })
+                    "profile" -> UserProfileScreen(
                         user = user,
                         token = token!!,
                         isLoading = isLoading,
@@ -123,42 +155,60 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun LoginScreen(onLoginClick: () -> Unit) {
+        val scale = remember { Animatable(0f) }
+        
+        LaunchedEffect(Unit) {
+            scale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
+                )
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             Icon(
-                Icons.Default.Flag,
+                Icons.Default.ChatBubble,
                 contentDescription = null,
-                modifier = Modifier.size(64.dp),
+                modifier = Modifier
+                    .size(100.dp)
+                    .scale(scale.value),
                 tint = DiscordColors.Blurple
             )
             
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
             
             Text(
-                "Discord",
-                fontSize = 48.sp,
+                "Discord Token",
+                fontSize = 42.sp,
                 fontWeight = FontWeight.Black,
-                color = DiscordColors.Blurple
+                color = DiscordColors.TextPrimary,
+                modifier = Modifier.scale(scale.value)
             )
             
             Text(
-                "TOKEN GET",
-                fontSize = 16.sp,
+                "EXTRACTOR",
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = DiscordColors.TextSecondary,
-                letterSpacing = 4.sp
+                color = DiscordColors.TextMuted,
+                letterSpacing = 6.sp,
+                modifier = Modifier.scale(scale.value)
             )
 
             Spacer(Modifier.height(60.dp))
 
             Card(
                 colors = CardDefaults.cardColors(containerColor = DiscordColors.Secondary),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.scale(scale.value)
             ) {
                 Column(
                     modifier = Modifier
@@ -167,17 +217,17 @@ class MainActivity : ComponentActivity() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
-                        Icons.Default.Rocket,
+                        Icons.Default.VpnKey,
                         contentDescription = null,
-                        modifier = Modifier.size(64.dp),
+                        modifier = Modifier.size(56.dp),
                         tint = DiscordColors.Blurple
                     )
                     
                     Spacer(Modifier.height(24.dp))
                     
                     Text(
-                        "Get Your Discord Token",
-                        fontSize = 20.sp,
+                        "Get Your Token",
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = DiscordColors.TextPrimary,
                         textAlign = TextAlign.Center
@@ -186,8 +236,8 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(8.dp))
                     
                     Text(
-                        "Login with your Discord account to retrieve your token",
-                        fontSize = 13.sp,
+                        "Securely extract your Discord access token",
+                        fontSize = 14.sp,
                         color = DiscordColors.TextMuted,
                         textAlign = TextAlign.Center
                     )
@@ -198,31 +248,56 @@ class MainActivity : ComponentActivity() {
                         onClick = onLoginClick,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp),
+                            .height(54.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = DiscordColors.Blurple),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = ButtonDefaults.buttonElevation(
+                            defaultElevation = 4.dp,
+                            pressedElevation = 8.dp
+                        )
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                Icons.Default.Gamepad,
+                                Icons.Default.ChatBubble,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
-                                "Log in with Discord",
+                                "Login with Discord",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
+                    
+                    Spacer(Modifier.height(16.dp))
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = DiscordColors.Green
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Secure & Private",
+                            fontSize = 12.sp,
+                            color = DiscordColors.Green,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
             Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(32.dp))
             
             RainbowText()
         }
@@ -230,118 +305,159 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun WebViewScreen(onTokenReceived: (String) -> Unit, onBack: () -> Unit) {
-        var isLoading by remember { mutableStateOf(true) }
+        var isPageLoading by remember { mutableStateOf(true) }
+        var progress by remember { mutableFloatStateOf(0f) }
         
         Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(DiscordColors.Secondary)
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                color = DiscordColors.Secondary,
+                shadowElevation = 4.dp
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.Default.ArrowBack,
-                        contentDescription = "Back",
-                        tint = DiscordColors.TextPrimary
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "Discord Login",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = DiscordColors.TextPrimary
-                )
-                
-                Spacer(Modifier.weight(1f))
-                
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = DiscordColors.Blurple,
-                        strokeWidth = 2.dp
-                    )
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                Icons.Default.ArrowBack,
+                                contentDescription = "Back",
+                                tint = DiscordColors.TextPrimary
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Discord Login",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DiscordColors.TextPrimary
+                        )
+                        
+                        Spacer(Modifier.weight(1f))
+                        
+                        AnimatedVisibility(
+                            visible = isPageLoading,
+                            enter = fadeIn(),
+                            exit = fadeOut()
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = DiscordColors.Blurple,
+                                strokeWidth = 2.5.dp
+                            )
+                        }
+                    }
+                    
+                    AnimatedVisibility(
+                        visible = progress > 0f && progress < 1f,
+                        enter = expandVertically(),
+                        exit = shrinkVertically()
+                    ) {
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = DiscordColors.Blurple,
+                            trackColor = DiscordColors.Tertiary
+                        )
+                    }
                 }
             }
 
             AndroidView(
                 factory = { context ->
                     WebView(context).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        
+                        setBackgroundColor(android.graphics.Color.parseColor("#1E1F22"))
+                        
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
                             databaseEnabled = true
                             cacheMode = WebSettings.LOAD_DEFAULT
-                            userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                            userAgentString = "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                        }
+
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                super.onProgressChanged(view, newProgress)
+                                progress = newProgress / 100f
+                                isPageLoading = newProgress < 100
+                            }
                         }
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                                 super.onPageStarted(view, url, favicon)
-                                isLoading = true
+                                isPageLoading = true
                             }
                             
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
-                                isLoading = false
+                                isPageLoading = false
                                 
-                                if (url?.contains("discord.com") == true) {
-                                    view?.evaluateJavascript("""
+                                view?.postDelayed({
+                                    view.evaluateJavascript("""
                                         (function() {
                                             try {
                                                 let token = null;
                                                 
                                                 const iframe = document.createElement('iframe');
+                                                iframe.style.display = 'none';
                                                 document.body.appendChild(iframe);
-                                                const ls = iframe.contentWindow.localStorage;
-                                                const tkn = ls.getItem('token');
-                                                if (tkn) {
-                                                    token = JSON.parse(tkn);
-                                                    document.body.removeChild(iframe);
-                                                    return token;
-                                                }
+                                                
+                                                try {
+                                                    const iframeLocalStorage = iframe.contentWindow.localStorage;
+                                                    const storedToken = iframeLocalStorage.getItem('token');
+                                                    if (storedToken) {
+                                                        token = storedToken.replace(/"/g, '');
+                                                    }
+                                                } catch(e) {}
+                                                
                                                 document.body.removeChild(iframe);
                                                 
-                                                if (typeof webpackChunkdiscord_app !== 'undefined') {
-                                                    webpackChunkdiscord_app.push([[Symbol()], {}, o => {
-                                                        for (let e of Object.values(o.c)) {
-                                                            try {
-                                                                if (!e.exports || e.exports === window) continue;
-                                                                if (e.exports?.getToken) {
-                                                                    token = e.exports.getToken();
-                                                                }
-                                                                for (let prop in e.exports) {
-                                                                    if (e.exports?.[prop]?.getToken && 
-                                                                        "IntlMessagesProxy" !== e.exports[prop][Symbol.toStringTag]) {
-                                                                        token = e.exports[prop].getToken();
+                                                if (!token && typeof webpackChunkdiscord_app !== 'undefined') {
+                                                    webpackChunkdiscord_app.push([
+                                                        [Symbol()],
+                                                        {},
+                                                        req => {
+                                                            for (let mod of Object.values(req.c)) {
+                                                                try {
+                                                                    if (mod?.exports?.default?.getToken) {
+                                                                        token = mod.exports.default.getToken();
                                                                     }
-                                                                }
-                                                            } catch {}
+                                                                    if (mod?.exports?.getToken) {
+                                                                        token = mod.exports.getToken();
+                                                                    }
+                                                                } catch(e) {}
+                                                            }
                                                         }
-                                                    }]);
+                                                    ]);
                                                     webpackChunkdiscord_app.pop();
                                                 }
                                                 
-                                                return token;
-                                            } catch (e) {
+                                                return token || null;
+                                            } catch(err) {
                                                 return null;
                                             }
                                         })();
                                     """.trimIndent()) { result ->
-                                        if (result != null && result != "null" && result != "\"null\"" && result.length > 10) {
+                                        if (result != null && result != "null" && result != "\"null\"") {
                                             val cleanToken = result.replace("\"", "").trim()
-                                            if (cleanToken.isNotEmpty() && cleanToken != "null") {
+                                            if (cleanToken.isNotEmpty() && cleanToken != "null" && cleanToken.length > 20) {
                                                 onTokenReceived(cleanToken)
                                             }
                                         }
                                     }
-                                }
+                                }, 1000)
                             }
                         }
-                        
-                        webChromeClient = WebChromeClient()
                         
                         loadUrl("https://discord.com/login")
                     }
@@ -361,65 +477,85 @@ class MainActivity : ComponentActivity() {
         onLogout: () -> Unit
     ) {
         val context = LocalContext.current
+        val scale = remember { Animatable(0.8f) }
+        
+        LaunchedEffect(Unit) {
+            scale.animateTo(1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+        }
         
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            if (user?.banner != null) {
-                AsyncImage(
-                    model = "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.png?size=600",
-                    contentDescription = "Banner",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .background(DiscordColors.Blurple)
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+            ) {
+                if (user?.banner != null) {
+                    AsyncImage(
+                        model = "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.png?size=600",
+                        contentDescription = "Banner",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        DiscordColors.Blurple,
+                                        DiscordColors.Blurple.copy(alpha = 0.7f)
+                                    )
+                                )
+                            )
+                    )
+                }
             }
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(24.dp)
+                    .scale(scale.value)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset(y = (-50).dp),
                     verticalAlignment = Alignment.Top
                 ) {
-                    if (user?.avatar != null) {
-                        AsyncImage(
-                            model = "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128",
-                            contentDescription = "Avatar",
-                            modifier = Modifier
-                                .size(80.dp)
-                                .offset(y = (-40).dp)
-                                .clip(CircleShape)
-                                .border(6.dp, DiscordColors.Background, CircleShape)
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(80.dp)
-                                .offset(y = (-40).dp)
-                                .clip(CircleShape)
-                                .background(DiscordColors.Blurple)
-                                .border(6.dp, DiscordColors.Background, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Person,
-                                contentDescription = null,
-                                modifier = Modifier.size(40.dp),
-                                tint = Color.White
-                            )
+                    Card(
+                        shape = CircleShape,
+                        modifier = Modifier.size(96.dp),
+                        colors = CardDefaults.cardColors(containerColor = DiscordColors.Background),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            if (user?.avatar != null) {
+                                AsyncImage(
+                                    model = "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=256",
+                                    contentDescription = "Avatar",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(DiscordColors.Blurple),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Person,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp),
+                                        tint = Color.White
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -428,8 +564,8 @@ class MainActivity : ComponentActivity() {
                     OutlinedButton(
                         onClick = onLogout,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFED4245)),
-                        border = BorderStroke(1.dp, Color(0xFFED4245)),
-                        shape = RoundedCornerShape(8.dp)
+                        border = BorderStroke(1.5.dp, Color(0xFFED4245)),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(
                             Icons.Default.ExitToApp,
@@ -444,38 +580,55 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.height(8.dp))
 
                 if (isLoading) {
-                    CircularProgressIndicator(
+                    Box(
                         modifier = Modifier
-                            .size(40.dp)
-                            .align(Alignment.CenterHorizontally),
-                        color = DiscordColors.Blurple
-                    )
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = DiscordColors.Blurple,
+                            strokeWidth = 3.dp
+                        )
+                    }
                 } else if (user != null) {
                     Text(
                         user.displayName ?: user.username,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
                         color = DiscordColors.TextPrimary
                     )
 
                     Text(
                         "@${user.username}",
                         fontSize = 16.sp,
-                        color = DiscordColors.TextMuted
+                        color = DiscordColors.TextMuted,
+                        fontWeight = FontWeight.Medium
                     )
 
                     if (!user.bio.isNullOrBlank()) {
                         Spacer(Modifier.height(16.dp))
                         Card(
                             colors = CardDefaults.cardColors(containerColor = DiscordColors.Secondary),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text(
-                                user.bio,
-                                modifier = Modifier.padding(12.dp),
-                                fontSize = 14.sp,
-                                color = DiscordColors.TextSecondary
-                            )
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Info,
+                                    contentDescription = null,
+                                    tint = DiscordColors.TextMuted,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    user.bio,
+                                    fontSize = 14.sp,
+                                    color = DiscordColors.TextSecondary
+                                )
+                            }
                         }
                     }
 
@@ -483,14 +636,15 @@ class MainActivity : ComponentActivity() {
 
                     InfoCard(title = "User ID", value = user.id)
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(16.dp))
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = DiscordColors.Secondary),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.padding(20.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
@@ -498,40 +652,41 @@ class MainActivity : ComponentActivity() {
                                 Icon(
                                     Icons.Default.Key,
                                     contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
+                                    modifier = Modifier.size(28.dp),
                                     tint = DiscordColors.Blurple
                                 )
                                 Spacer(Modifier.width(12.dp))
                                 Text(
                                     "Access Token",
-                                    fontSize = 16.sp,
+                                    fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = DiscordColors.TextPrimary
                                 )
                             }
 
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(16.dp))
 
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = DiscordColors.Tertiary),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(12.dp),
+                                        .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        if (showToken) token else "*".repeat(60),
+                                        if (showToken) token else "•".repeat(60),
                                         modifier = Modifier.weight(1f),
-                                        fontSize = 12.sp,
+                                        fontSize = 13.sp,
                                         color = DiscordColors.TextSecondary,
+                                        fontWeight = FontWeight.Medium,
                                         maxLines = if (showToken) Int.MAX_VALUE else 1
                                     )
                                     IconButton(
                                         onClick = onToggleToken,
-                                        modifier = Modifier.size(32.dp)
+                                        modifier = Modifier.size(36.dp)
                                     ) {
                                         Icon(
                                             if (showToken) Icons.Default.VisibilityOff else Icons.Default.Visibility,
@@ -542,16 +697,17 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
 
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(16.dp))
 
                             Button(
                                 onClick = {
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("Discord Token", token))
                                 },
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = DiscordColors.Green),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                             ) {
                                 Icon(
                                     Icons.Default.ContentCopy,
@@ -559,7 +715,7 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(Modifier.width(12.dp))
-                                Text("Copy to Clipboard", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Copy to Clipboard", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                             }
                         }
                     }
@@ -571,24 +727,26 @@ class MainActivity : ComponentActivity() {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-rhyan57/GetDiscordToken"))
                             context.startActivity(intent)
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = DiscordColors.TextPrimary),
-                        border = BorderStroke(1.dp, DiscordColors.Tertiary),
-                        shape = RoundedCornerShape(8.dp)
+                        border = BorderStroke(1.5.dp, DiscordColors.Tertiary),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(
                             Icons.Default.Code,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp)
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(10.dp))
                         Text("Sc-rhyan57/GetDiscordToken", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
 
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(40.dp))
                 
                 RainbowText()
+                
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -598,24 +756,26 @@ class MainActivity : ComponentActivity() {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = DiscordColors.Secondary),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(16.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     Icons.Default.Badge,
                     contentDescription = null,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(28.dp),
                     tint = DiscordColors.Blurple
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(14.dp))
                 Column {
-                    Text(title, fontSize = 12.sp, color = DiscordColors.TextMuted, fontWeight = FontWeight.Medium)
-                    Text(value, fontSize = 14.sp, color = DiscordColors.TextPrimary, fontWeight = FontWeight.Bold)
+                    Text(title, fontSize = 13.sp, color = DiscordColors.TextMuted, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    Text(value, fontSize = 15.sp, color = DiscordColors.TextPrimary, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -635,14 +795,9 @@ class MainActivity : ComponentActivity() {
         )
 
         val colors = listOf(
-            Color(0xFFFF0000),
-            Color(0xFFFF7F00),
-            Color(0xFFFFFF00),
-            Color(0xFF00FF00),
-            Color(0xFF0000FF),
-            Color(0xFF4B0082),
-            Color(0xFF9400D3),
-            Color(0xFFFF0000)
+            Color(0xFFFF0000), Color(0xFFFF7F00), Color(0xFFFFFF00),
+            Color(0xFF00FF00), Color(0xFF0000FF), Color(0xFF4B0082),
+            Color(0xFF9400D3), Color(0xFFFF0000)
         )
 
         val brush = Brush.linearGradient(
@@ -667,7 +822,7 @@ class MainActivity : ComponentActivity() {
                 Icons.Default.Favorite,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
-                tint = Color.Red
+                tint = Color(0xFFFF1744)
             )
             Spacer(Modifier.width(6.dp))
             Text(
@@ -687,11 +842,9 @@ class MainActivity : ComponentActivity() {
             .build()
 
         val response = client.newCall(request).execute()
-        val body = response.body?.string() ?: throw IOException("Empty response")
+        val body = response.body?.string() ?: throw IOException("Empty")
         
-        if (!response.isSuccessful) {
-            throw IOException("Failed: ${response.code}")
-        }
+        if (!response.isSuccessful) throw IOException("Failed: ${response.code}")
 
         val lines = body.split(",")
         
