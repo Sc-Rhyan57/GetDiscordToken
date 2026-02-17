@@ -53,17 +53,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -203,46 +199,63 @@ Stacktrace:
 $stacktrace"""
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun CrashScreen(trace: String) {
         val context = LocalContext.current
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                painter = painterResource(R.drawable.lucide_ic_triangle_alert),
-                                contentDescription = null,
-                                tint = AppColors.Error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = "App Crashed",
-                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                color = AppColors.TextPrimary
-                            )
-                        }
-                    },
-                    actions = {
-                        TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) {
-                            Text("Close", color = AppColors.Error, fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = AppColors.Background)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(AppColors.Background)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        painter = painterResource(R.drawable.lucide_ic_triangle_alert),
+                        contentDescription = null,
+                        tint = AppColors.Error,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text = "App Crashed",
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
+                        color = AppColors.TextPrimary
+                    )
+                }
+                TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) {
+                    Text("Close", color = AppColors.Error, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 16.dp)
+            ) {
+                Text(
+                    text = "An unexpected error occurred. Copy the log below and report it to the developer.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = AppColors.TextSecondary,
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
-            },
-            containerColor = AppColors.Background,
-            floatingActionButton = {
+
                 Button(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("Crash Log", trace))
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.lucide_ic_copy),
@@ -252,20 +265,7 @@ $stacktrace"""
                     Spacer(Modifier.width(8.dp))
                     Text("Copy Log", fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
                 }
-            }
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp)
-            ) {
-                Text(
-                    text = "An unexpected error occurred. Copy the log below and report it to the developer.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = AppColors.TextSecondary,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
+
                 Card(
                     modifier = Modifier.fillMaxSize(),
                     colors = CardDefaults.cardColors(containerColor = AppColors.ErrorContainer),
@@ -466,18 +466,9 @@ $stacktrace"""
                         horizontalArrangement = Arrangement.spacedBy(20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        SecurityBadge(
-                            iconRes = R.drawable.lucide_ic_shield_check,
-                            label = "Secure"
-                        )
-                        SecurityBadge(
-                            iconRes = R.drawable.lucide_ic_eye_off,
-                            label = "Private"
-                        )
-                        SecurityBadge(
-                            iconRes = R.drawable.lucide_ic_smartphone,
-                            label = "Local"
-                        )
+                        SecurityBadge(iconRes = R.drawable.lucide_ic_shield_check, label = "Secure")
+                        SecurityBadge(iconRes = R.drawable.lucide_ic_eye_off, label = "Private")
+                        SecurityBadge(iconRes = R.drawable.lucide_ic_smartphone, label = "Local")
                     }
                 }
             }
