@@ -1,31 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-xt"><manifest xa">xmlns:android="http://schemas.android.com/apk/res/android"
-    xa">package="com.discordtokenget">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.discordtokenget">
 
-    xt"><uses-permission xa">android:name="android.permission.INTERNET" />
-    xt"><uses-permission xa">android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    xt"><application
-        xa">android:allowBackup="true"
-        xa">android:label="Discord Token"
-        xa">android:icon="@mipmap/ic_launcher"
-        xa">android:roundIcon="@mipmap/ic_launcher_round"
-        xa">android:theme="@style/AppTheme"
-        xa">android:usesCleartextTraffic="true"
-        xa">android:hardwareAccelerated="true"
-        xa">android:largeHeap="true">
+    <application
+        android:allowBackup="false"
+        android:label="Discord Token"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true">
 
-        xt"><activity
-            xa">android:name=".MainActivity"
-            xa">android:exported="true"
-            xa">android:configChanges="orientation|screenSize"
-            xa">android:hardwareAccelerated="true">
-            xt"><intent-filter>
-                xt"><action xa">android:name="android.intent.action.MAIN" />
-                xt"><category xa">android:name="android.intent.category.LAUNCHER" />
-            xt"></intent-filter>
-        xt"></activity>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
-    xt"></application>
+    </application>
 
-xt"></manifest>
+</manifest>
