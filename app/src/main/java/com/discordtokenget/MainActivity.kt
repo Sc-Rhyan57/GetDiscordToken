@@ -1086,7 +1086,7 @@ class MainActivity : ComponentActivity() {
                     gatewaySessionId = ""
                     gatewaySequence = -1
                     currentPresence = null
-                    connectGatewayInternal(t) { updated -> presence = updated }
+                    connectGatewayInternal(t, false) { updated -> presence = updated }
                     var waited = 0
                     while (presence == null && waited < 15000) { delay(100); waited += 100 }
                     if (presence == null) addLog("WARN", "Gateway", "Timed out waiting for READY (${waited}ms)")
