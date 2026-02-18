@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,8 +13,10 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -30,6 +34,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -62,19 +67,24 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Games
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Login
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Notes
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Tag
+import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material.icons.outlined.WorkspacePremium
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -101,6 +111,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -121,7 +132,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -132,6 +142,10 @@ import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
+import kotlin.math.sin
+import kotlin.math.cos
+import kotlin.random.Random
 
 data class DiscordUser(
     val id: String,
@@ -152,43 +166,77 @@ data class DiscordUser(
     val accentColor: Int?
 )
 
+data class LanyardStatus(
+    val status: String,
+    val activityName: String?,
+    val activityDetails: String?,
+    val activityState: String?,
+    val listeningToSpotify: Boolean,
+    val spotifySong: String?,
+    val spotifyArtist: String?,
+    val spotifyAlbum: String?,
+    val activeOnMobile: Boolean,
+    val activeOnDesktop: Boolean
+)
+
 private object AppColors {
-    val Background = Color(0xFF1E1F22)
-    val Surface = Color(0xFF2B2D31)
-    val SurfaceVariant = Color(0xFF313338)
-    val CodeBg = Color(0xFF1A1B1E)
-    val Primary = Color(0xFF5865F2)
-    val OnPrimary = Color(0xFFFFFFFF)
-    val Success = Color(0xFF23A55A)
-    val Error = Color(0xFFED4245)
+    val Background   = Color(0xFF1E1F22)
+    val Surface      = Color(0xFF2B2D31)
+    val SurfaceVar   = Color(0xFF313338)
+    val CodeBg       = Color(0xFF1A1B1E)
+    val Primary      = Color(0xFF5865F2)
+    val OnPrimary    = Color(0xFFFFFFFF)
+    val Success      = Color(0xFF23A55A)
+    val Warning      = Color(0xFFFAA61A)
+    val Error        = Color(0xFFED4245)
     val ErrorContainer = Color(0xFF3B1A1B)
-    val OnError = Color(0xFFFFDFDE)
-    val TextPrimary = Color(0xFFF2F3F5)
-    val TextSecondary = Color(0xFFB5BAC1)
-    val TextMuted = Color(0xFF80848E)
-    val Divider = Color(0xFF3F4147)
+    val OnError      = Color(0xFFFFDFDE)
+    val TextPrimary  = Color(0xFFF2F3F5)
+    val TextSecondary= Color(0xFFB5BAC1)
+    val TextMuted    = Color(0xFF80848E)
+    val Divider      = Color(0xFF3F4147)
+    val Spotify      = Color(0xFF1DB954)
+    val LoginBg1     = Color(0xFF1A1C3A)
+    val LoginBg2     = Color(0xFF111228)
+    val LoginBg3     = Color(0xFF0A0B19)
+}
+
+private object Radius {
+    val Small  = 8.dp
+    val Medium = 12.dp
+    val Large  = 16.dp
+    val XLarge = 20.dp
+    val Card   = 18.dp
+    val Button = 14.dp
+    val Badge  = 20.dp
+    val Token  = 10.dp
 }
 
 private val DiscordDarkColorScheme = darkColorScheme(
-    primary = AppColors.Primary,
-    onPrimary = AppColors.OnPrimary,
-    background = AppColors.Background,
-    surface = AppColors.Surface,
-    surfaceVariant = AppColors.SurfaceVariant,
-    onBackground = AppColors.TextPrimary,
-    onSurface = AppColors.TextPrimary,
-    error = AppColors.Error,
-    errorContainer = AppColors.ErrorContainer,
-    onError = AppColors.OnError
+    primary          = AppColors.Primary,
+    onPrimary        = AppColors.OnPrimary,
+    background       = AppColors.Background,
+    surface          = AppColors.Surface,
+    surfaceVariant   = AppColors.SurfaceVar,
+    onBackground     = AppColors.TextPrimary,
+    onSurface        = AppColors.TextPrimary,
+    error            = AppColors.Error,
+    errorContainer   = AppColors.ErrorContainer,
+    onError          = AppColors.OnError
 )
 
 private const val JS_TOKEN =
     "javascript:(function()%7Bvar%20i%3Ddocument.createElement('iframe')%3Bdocument.body.appendChild(i)%3Balert(i.contentWindow.localStorage.token.slice(1,-1))%7D)()"
-private const val PREF_CRASH = "crash_prefs"
+private const val PREF_CRASH   = "crash_prefs"
 private const val KEY_CRASH_TRACE = "crash_trace"
 private const val PREF_SESSION = "session_prefs"
-private const val KEY_TOKEN = "saved_token"
+private const val KEY_TOKEN    = "saved_token"
 private const val DISCORD_EPOCH = 1420070400000L
+private const val CURRENT_VERSION = "1.0.20"
+private const val GITHUB_RELEASES_API =
+    "https://api.github.com/repos/Sc-Rhyan57/GetDiscordToken/releases/latest"
+private const val GITHUB_RELEASES_URL =
+    "https://github.com/Sc-Rhyan57/GetDiscordToken/releases/latest"
 
 private fun snowflakeToDate(id: String): String = try {
     val ts = (id.toLong() ushr 22) + DISCORD_EPOCH
@@ -203,6 +251,20 @@ private fun localeLabel(l: String): String = try {
     val p = l.split("-", "_")
     (if (p.size >= 2) Locale(p[0], p[1]) else Locale(p[0])).displayName
 } catch (_: Exception) { l }
+
+private fun statusColor(status: String): Color = when (status) {
+    "online"  -> AppColors.Success
+    "idle"    -> AppColors.Warning
+    "dnd"     -> AppColors.Error
+    else      -> AppColors.TextMuted
+}
+
+private fun statusLabel(status: String): String = when (status) {
+    "online" -> "Online"
+    "idle"   -> "Idle"
+    "dnd"    -> "Do Not Disturb"
+    else     -> "Offline"
+}
 
 private fun parseBadges(flags: Long, premium: Int): List<Pair<String, Color>> {
     val list = mutableListOf<Pair<String, Color>>()
@@ -223,14 +285,37 @@ private fun parseBadges(flags: Long, premium: Int): List<Pair<String, Color>> {
     return list
 }
 
-// ── Discord Markdown ──────────────────────────────────────────────────────────
+private fun isNewerVersion(latest: String, current: String): Boolean {
+    val l = latest.trimStart('v').split(".").mapNotNull { it.toIntOrNull() }
+    val c = current.trimStart('v').split(".").mapNotNull { it.toIntOrNull() }
+    for (i in 0 until maxOf(l.size, c.size)) {
+        val lv = l.getOrElse(i) { 0 }
+        val cv = c.getOrElse(i) { 0 }
+        if (lv > cv) return true
+        if (lv < cv) return false
+    }
+    return false
+}
+
+private fun isNetworkAvailable(context: Context): Boolean {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val network = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(network) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+           caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
+
+private val httpClient = OkHttpClient.Builder()
+    .connectTimeout(10, TimeUnit.SECONDS)
+    .readTimeout(10, TimeUnit.SECONDS)
+    .build()
 
 private sealed class MdBlock {
-    data class Heading(val text: String, val level: Int) : MdBlock()
-    data class Blockquote(val text: String) : MdBlock()
+    data class Heading(val text: String, val level: Int)   : MdBlock()
+    data class Blockquote(val text: String)                : MdBlock()
     data class CodeBlock(val code: String, val lang: String) : MdBlock()
-    data class SubText(val text: String) : MdBlock()
-    data class Paragraph(val text: String) : MdBlock()
+    data class SubText(val text: String)                   : MdBlock()
+    data class Paragraph(val text: String)                 : MdBlock()
 }
 
 private fun parseBlocks(raw: String): List<MdBlock> {
@@ -252,10 +337,10 @@ private fun parseBlocks(raw: String): List<MdBlock> {
                 blocks.add(MdBlock.CodeBlock(sb.toString(), lang))
             }
             line.startsWith("### ") -> blocks.add(MdBlock.Heading(line.removePrefix("### "), 3))
-            line.startsWith("## ") -> blocks.add(MdBlock.Heading(line.removePrefix("## "), 2))
-            line.startsWith("# ") -> blocks.add(MdBlock.Heading(line.removePrefix("# "), 1))
-            line.startsWith("-# ") -> blocks.add(MdBlock.SubText(line.removePrefix("-# ")))
-            line.startsWith("> ") -> blocks.add(MdBlock.Blockquote(line.removePrefix("> ")))
+            line.startsWith("## ")  -> blocks.add(MdBlock.Heading(line.removePrefix("## "), 2))
+            line.startsWith("# ")   -> blocks.add(MdBlock.Heading(line.removePrefix("# "), 1))
+            line.startsWith("-# ")  -> blocks.add(MdBlock.SubText(line.removePrefix("-# ")))
+            line.startsWith("> ")   -> blocks.add(MdBlock.Blockquote(line.removePrefix("> ")))
             line.startsWith(">") && line.length > 1 -> blocks.add(MdBlock.Blockquote(line.drop(1)))
             else -> {
                 val pLines = mutableListOf(line)
@@ -275,46 +360,59 @@ private fun parseBlocks(raw: String): List<MdBlock> {
     return blocks
 }
 
-private fun parseInline(text: String, base: Color = AppColors.TextSecondary): AnnotatedString {
-    data class Pat(val regex: Regex, val style: SpanStyle)
-    val pats = listOf(
-        Pat(Regex("\\*\\*\\*(.+?)\\*\\*\\*", RegexOption.DOT_MATCHES_ALL),
-            SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)),
-        Pat(Regex("\\*\\*(.+?)\\*\\*", RegexOption.DOT_MATCHES_ALL),
-            SpanStyle(fontWeight = FontWeight.Bold)),
-        Pat(Regex("__(.+?)__", RegexOption.DOT_MATCHES_ALL),
-            SpanStyle(textDecoration = TextDecoration.Underline)),
-        Pat(Regex("~~(.+?)~~", RegexOption.DOT_MATCHES_ALL),
-            SpanStyle(textDecoration = TextDecoration.LineThrough)),
-        Pat(Regex("\\|\\|(.+?)\\|\\|", RegexOption.DOT_MATCHES_ALL),
-            SpanStyle(color = AppColors.SurfaceVariant, background = AppColors.SurfaceVariant)),
-        Pat(Regex("`([^`]+?)`"),
-            SpanStyle(fontFamily = FontFamily.Monospace, background = AppColors.CodeBg, color = Color(0xFFE8739C))),
-        Pat(Regex("\\*(.+?)\\*", RegexOption.DOT_MATCHES_ALL),
-            SpanStyle(fontStyle = FontStyle.Italic)),
-        Pat(Regex("_([^_]+?)_"),
-            SpanStyle(fontStyle = FontStyle.Italic)),
-    )
-    return buildAnnotatedString {
-        withStyle(SpanStyle(color = base)) {
-            var cursor = 0
-            while (cursor < text.length) {
-                var earliest: MatchResult? = null
-                var earliestStyle: SpanStyle? = null
-                for (p in pats) {
-                    val m = p.regex.find(text, cursor)
-                    if (m != null && (earliest == null || m.range.first < earliest.range.first)) {
-                        earliest = m; earliestStyle = p.style
+private data class InlinePattern(
+    val marker: String,
+    val style: SpanStyle,
+    val isCode: Boolean = false
+)
+
+private val inlinePatterns = listOf(
+    InlinePattern("***", SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)),
+    InlinePattern("**",  SpanStyle(fontWeight = FontWeight.Bold)),
+    InlinePattern("__",  SpanStyle(textDecoration = TextDecoration.Underline)),
+    InlinePattern("~~",  SpanStyle(textDecoration = TextDecoration.LineThrough)),
+    InlinePattern("||",  SpanStyle(color = AppColors.SurfaceVar, background = AppColors.SurfaceVar)),
+    InlinePattern("`",   SpanStyle(fontFamily = FontFamily.Monospace, background = AppColors.CodeBg, color = Color(0xFFE8739C)), isCode = true),
+    InlinePattern("*",   SpanStyle(fontStyle = FontStyle.Italic)),
+    InlinePattern("_",   SpanStyle(fontStyle = FontStyle.Italic))
+)
+
+private fun appendStyledText(builder: AnnotatedString.Builder, text: String, baseColor: Color) {
+    var i = 0
+    while (i < text.length) {
+        var matched = false
+        for (pattern in inlinePatterns) {
+            if (text.startsWith(pattern.marker, i)) {
+                val contentStart = i + pattern.marker.length
+                val closeIdx = text.indexOf(pattern.marker, contentStart)
+                if (closeIdx > contentStart) {
+                    val inner = text.substring(contentStart, closeIdx)
+                    builder.withStyle(pattern.style) {
+                        if (pattern.isCode) {
+                            append(inner)
+                        } else {
+                            appendStyledText(this, inner, baseColor)
+                        }
                     }
+                    i = closeIdx + pattern.marker.length
+                    matched = true
+                    break
                 }
-                if (earliest == null || earliestStyle == null) { append(text.substring(cursor)); break }
-                if (earliest.range.first > cursor) append(text.substring(cursor, earliest.range.first))
-                withStyle(earliestStyle) { append(earliest.groupValues[1]) }
-                cursor = earliest.range.last + 1
             }
+        }
+        if (!matched) {
+            builder.append(text[i])
+            i++
         }
     }
 }
+
+private fun parseInline(text: String, base: Color = AppColors.TextSecondary): AnnotatedString =
+    buildAnnotatedString {
+        withStyle(SpanStyle(color = base)) {
+            appendStyledText(this, text, base)
+        }
+    }
 
 @Composable
 private fun DiscordMarkdown(text: String, modifier: Modifier = Modifier) {
@@ -333,7 +431,7 @@ private fun DiscordMarkdown(text: String, modifier: Modifier = Modifier) {
                 )
                 is MdBlock.Blockquote -> Row(
                     modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
-                        .background(AppColors.Surface.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                        .background(AppColors.Surface.copy(alpha = 0.5f), RoundedCornerShape(Radius.Small))
                         .padding(vertical = 6.dp)
                 ) {
                     Box(
@@ -349,7 +447,8 @@ private fun DiscordMarkdown(text: String, modifier: Modifier = Modifier) {
                 }
                 is MdBlock.CodeBlock -> Box(
                     modifier = Modifier.fillMaxWidth()
-                        .background(AppColors.CodeBg, RoundedCornerShape(6.dp)).padding(12.dp)
+                        .background(AppColors.CodeBg, RoundedCornerShape(Radius.Medium))
+                        .padding(12.dp)
                 ) {
                     Column {
                         if (block.lang.isNotEmpty()) {
@@ -370,7 +469,70 @@ private fun DiscordMarkdown(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-// ── Activity ──────────────────────────────────────────────────────────────────
+@Composable
+private fun ParticleBackground(modifier: Modifier = Modifier) {
+    data class Particle(
+        val x: Float, val y: Float, val speed: Float,
+        val size: Float, val alpha: Float, val phase: Float, val wobble: Float
+    )
+    data class Glob(val x: Float, val y: Float, val r: Float, val color: Color)
+
+    val particles = remember {
+        List(65) {
+            Particle(
+                x       = Random.nextFloat(),
+                y       = Random.nextFloat(),
+                speed   = Random.nextFloat() * 0.35f + 0.05f,
+                size    = Random.nextFloat() * 2.2f + 0.4f,
+                alpha   = Random.nextFloat() * 0.35f + 0.04f,
+                phase   = Random.nextFloat() * 6.28f,
+                wobble  = Random.nextFloat() * 0.06f + 0.01f
+            )
+        }
+    }
+    val globs = remember {
+        listOf(
+            Glob(0.15f, 0.25f, 380f, Color(0xFF5865F2)),
+            Glob(0.80f, 0.60f, 320f, Color(0xFF7B5EA7)),
+            Glob(0.50f, 0.85f, 260f, Color(0xFF3B4EC8)),
+            Glob(0.70f, 0.10f, 200f, Color(0xFF5865F2))
+        )
+    }
+
+    val transition = rememberInfiniteTransition(label = "bg_anim")
+    val time by transition.animateFloat(
+        initialValue = 0f, targetValue = 10000f,
+        animationSpec = infiniteRepeatable(tween(200000, easing = LinearEasing)),
+        label = "t"
+    )
+
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        globs.forEach { g ->
+            val gx = g.x * w + sin(time * 0.0001f + g.phase) * 60f
+            val gy = g.y * h + cos(time * 0.00013f + g.phase) * 50f
+            drawCircle(
+                color  = g.color.copy(alpha = 0.07f),
+                radius = g.r,
+                center = Offset(gx, gy)
+            )
+        }
+
+        particles.forEach { p ->
+            val px = ((p.x + sin(time * 0.001f * p.speed + p.phase) * p.wobble).mod(1f) + 1f).mod(1f) * w
+            val py = ((p.y + time * p.speed * 0.00018f).mod(1f)) * h
+            drawCircle(
+                color  = Color.White.copy(alpha = p.alpha),
+                radius = p.size,
+                center = Offset(px, py)
+            )
+        }
+    }
+}
+
+private val Glob.phase: Float get() = x * 3.14f + y
 
 class MainActivity : ComponentActivity() {
 
@@ -402,6 +564,9 @@ class MainActivity : ComponentActivity() {
     private fun clearToken() {
         getSharedPreferences(PREF_SESSION, Context.MODE_PRIVATE)
             .edit().remove(KEY_TOKEN).apply()
+        CookieManager.getInstance().removeAllCookies(null)
+        CookieManager.getInstance().flush()
+        WebStorage.getInstance().deleteAllData()
     }
 
     private fun setupCrashHandler() {
@@ -435,7 +600,9 @@ class MainActivity : ComponentActivity() {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Warning, null, tint = AppColors.Error, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("App Crashed", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold), color = AppColors.TextPrimary)
+                    Text("App Crashed",
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
+                        color = AppColors.TextPrimary)
                 }
                 TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) {
                     Text("Close", color = AppColors.Error, fontWeight = FontWeight.Bold)
@@ -452,15 +619,17 @@ class MainActivity : ComponentActivity() {
                     },
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(Radius.Button)
                 ) {
                     Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Copy Log", fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
                 }
-                Card(modifier = Modifier.fillMaxSize(),
+                Card(
+                    modifier = Modifier.fillMaxSize(),
                     colors = CardDefaults.cardColors(containerColor = AppColors.ErrorContainer),
-                    shape = RoundedCornerShape(14.dp)) {
+                    shape = RoundedCornerShape(Radius.Card)
+                ) {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         item {
                             Text(trace, modifier = Modifier.padding(14.dp),
@@ -475,25 +644,111 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun DiscordTokenApp(initialToken: String?) {
-        var token by remember { mutableStateOf(initialToken) }
-        var user by remember { mutableStateOf<DiscordUser?>(null) }
-        var isLoading by remember { mutableStateOf(false) }
-        var showWebView by remember { mutableStateOf(false) }
+        val ctx = LocalContext.current
+        var token         by remember { mutableStateOf(initialToken) }
+        var user          by remember { mutableStateOf<DiscordUser?>(null) }
+        var lanyardStatus by remember { mutableStateOf<LanyardStatus?>(null) }
+        var isLoading     by remember { mutableStateOf(false) }
+        var showWebView   by remember { mutableStateOf(false) }
+        var updateTag     by remember { mutableStateOf<String?>(null) }
+        var noInternet    by remember { mutableStateOf(false) }
+
+        LaunchedEffect(Unit) {
+            if (!isNetworkAvailable(ctx)) {
+                noInternet = true
+                return@LaunchedEffect
+            }
+            try {
+                val latest = checkLatestVersion()
+                if (latest != null && isNewerVersion(latest, CURRENT_VERSION)) {
+                    updateTag = latest
+                }
+            } catch (_: Exception) {}
+        }
 
         LaunchedEffect(token) {
             val t = token ?: return@LaunchedEffect
             isLoading = true
             try {
-                user = fetchUserInfo(t)
+                val u = fetchUserInfo(t)
+                user = u
+                lanyardStatus = try { fetchLanyardStatus(u.id) } catch (_: Exception) { null }
             } catch (_: Exception) {
                 if (initialToken != null && user == null) { clearToken(); token = null }
             } finally { isLoading = false }
         }
 
+        if (noInternet) {
+            AlertDialog(
+                onDismissRequest = { noInternet = false },
+                icon = { Icon(Icons.Outlined.WifiOff, null, tint = AppColors.Error, modifier = Modifier.size(32.dp)) },
+                title = {
+                    Text("No Internet Connection", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text(
+                        "This app requires an internet connection to work. Some features may not be available.",
+                        color = AppColors.TextSecondary
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            noInternet = false
+                            if (!isNetworkAvailable(ctx)) noInternet = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
+                        shape = RoundedCornerShape(Radius.Button)
+                    ) { Text("Retry", color = AppColors.OnPrimary, fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { noInternet = false }) {
+                        Text("Dismiss", color = AppColors.TextMuted)
+                    }
+                },
+                containerColor = AppColors.Surface,
+                shape = RoundedCornerShape(Radius.Card)
+            )
+        }
+
+        if (updateTag != null) {
+            AlertDialog(
+                onDismissRequest = { updateTag = null },
+                icon = { Icon(Icons.Outlined.Update, null, tint = AppColors.Primary, modifier = Modifier.size(32.dp)) },
+                title = {
+                    Text("Update Available", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text(
+                        "A new version ${updateTag!!.trimStart('v')} is available. You are on v$CURRENT_VERSION.",
+                        color = AppColors.TextSecondary
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken/releases/tag/$updateTag")))
+                            updateTag = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
+                        shape = RoundedCornerShape(Radius.Button)
+                    ) { Text("Update", color = AppColors.OnPrimary, fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { updateTag = null }) {
+                        Text("Continue", color = AppColors.TextMuted)
+                    }
+                },
+                containerColor = AppColors.Surface,
+                shape = RoundedCornerShape(Radius.Card)
+            )
+        }
+
         val screen = when {
             showWebView && token == null -> "webview"
-            token == null -> "login"
-            else -> "profile"
+            token == null               -> "login"
+            else                        -> "profile"
         }
 
         AnimatedContent(
@@ -506,10 +761,11 @@ class MainActivity : ComponentActivity() {
                     onTokenReceived = { t -> token = t; saveToken(t); showWebView = false },
                     onBack = { showWebView = false }
                 )
-                "login" -> LoginScreen(onLoginClick = { showWebView = true })
-                else -> UserProfileScreen(
+                "login"   -> LoginScreen(onLoginClick = { showWebView = true })
+                else      -> UserProfileScreen(
                     user = user, token = token ?: "", isLoading = isLoading,
-                    onLogout = { clearToken(); token = null; user = null }
+                    lanyardStatus = lanyardStatus,
+                    onLogout = { clearToken(); token = null; user = null; lanyardStatus = null }
                 )
             }
         }
@@ -521,54 +777,113 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow))
         }
-        Column(
-            modifier = Modifier.fillMaxSize().padding(28.dp).verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Spacer(Modifier.weight(1f))
-            Box(modifier = Modifier.size(80.dp).background(AppColors.Primary.copy(0.15f), CircleShape),
-                contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Key, null, tint = AppColors.Primary, modifier = Modifier.size(40.dp))
-            }
-            Spacer(Modifier.height(20.dp))
-            Text("Discord", fontSize = 48.sp, fontWeight = FontWeight.Black, color = AppColors.Primary,
-                modifier = Modifier.scale(scale.value))
-            Text("TOKEN EXTRACTOR", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = AppColors.TextMuted,
-                letterSpacing = 5.sp, modifier = Modifier.scale(scale.value))
-            Spacer(Modifier.height(48.dp))
-            Card(modifier = Modifier.fillMaxWidth().scale(scale.value),
-                colors = CardDefaults.cardColors(containerColor = AppColors.Surface),
-                shape = RoundedCornerShape(20.dp),
-                elevation = CardDefaults.cardElevation(4.dp)) {
-                Column(modifier = Modifier.fillMaxWidth().padding(28.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Get Your Token", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Sign in with your Discord account to extract your access token.",
-                        fontSize = 14.sp, color = AppColors.TextMuted, textAlign = TextAlign.Center)
-                    Spacer(Modifier.height(28.dp))
-                    Button(onClick = onLoginClick, modifier = Modifier.fillMaxWidth().height(52.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
-                        shape = RoundedCornerShape(14.dp),
-                        elevation = ButtonDefaults.buttonElevation(4.dp)) {
-                        Icon(Icons.Outlined.Login, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Sign in with Discord", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SecurityBadge(Icons.Outlined.Security, "Secure")
-                        SecurityBadge(Icons.Outlined.VisibilityOff, "Private")
-                        SecurityBadge(Icons.Outlined.Smartphone, "Local")
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(
+                        listOf(AppColors.LoginBg1, AppColors.LoginBg2, AppColors.LoginBg3)
+                    )
+                )
+            )
+            ParticleBackground(modifier = Modifier.fillMaxSize())
+
+            Column(
+                modifier = Modifier.fillMaxSize().padding(28.dp).verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Spacer(Modifier.weight(1f))
+
+                Box(
+                    modifier = Modifier.size(88.dp)
+                        .background(AppColors.Primary.copy(0.18f), CircleShape)
+                        .border(1.dp, AppColors.Primary.copy(0.3f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.Key, null, tint = AppColors.Primary, modifier = Modifier.size(44.dp))
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Text(
+                    "Discord",
+                    fontSize = 52.sp,
+                    fontWeight = FontWeight.Black,
+                    color = AppColors.Primary,
+                    modifier = Modifier.scale(scale.value)
+                )
+                Text(
+                    "TOKEN EXTRACTOR",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = AppColors.TextMuted.copy(alpha = 0.8f),
+                    letterSpacing = 5.sp,
+                    modifier = Modifier.scale(scale.value)
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    "v$CURRENT_VERSION",
+                    fontSize = 10.sp,
+                    color = AppColors.TextMuted.copy(0.5f),
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Spacer(Modifier.height(48.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth().scale(scale.value),
+                    colors = CardDefaults.cardColors(containerColor = AppColors.Surface.copy(0.85f)),
+                    shape = RoundedCornerShape(Radius.XLarge),
+                    elevation = CardDefaults.cardElevation(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, AppColors.Primary.copy(0.15f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("Welcome Back", fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                            color = AppColors.TextPrimary)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Sign in with your Discord account to extract your access token.",
+                            fontSize = 14.sp, color = AppColors.TextMuted, textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(28.dp))
+                        Button(
+                            onClick = onLoginClick,
+                            modifier = Modifier.fillMaxWidth().height(54.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
+                            shape = RoundedCornerShape(Radius.Button),
+                            elevation = ButtonDefaults.buttonElevation(6.dp)
+                        ) {
+                            Icon(Icons.Outlined.Login, null, modifier = Modifier.size(19.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text("Sign in with Discord", fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
+                        }
+                        Spacer(Modifier.height(22.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            SecurityBadge(Icons.Outlined.Security, "Secure")
+                            SecurityBadge(Icons.Outlined.VisibilityOff, "Private")
+                            SecurityBadge(Icons.Outlined.Smartphone, "Local")
+                        }
                     }
                 }
+
+                Spacer(Modifier.weight(1f))
+                Footer()
+                Spacer(Modifier.height(12.dp))
+                GitHubButton()
+                Spacer(Modifier.height(8.dp))
             }
-            Spacer(Modifier.weight(1f))
-            Footer()
-            Spacer(Modifier.height(12.dp))
-            GitHubButton()
-            Spacer(Modifier.height(8.dp))
         }
     }
 
@@ -591,7 +906,9 @@ class MainActivity : ComponentActivity() {
             AndroidView(factory = { ctx ->
                 WebView(ctx).also { wv ->
                     webRef.value = wv
-                    wv.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    wv.layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+                    )
                     wv.setBackgroundColor(android.graphics.Color.parseColor("#1E1F22"))
                     wv.settings.javaScriptEnabled = true
                     wv.settings.domStorageEnabled = true
@@ -602,7 +919,9 @@ class MainActivity : ComponentActivity() {
                         override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
                             if (url.contains("/app") || url.endsWith("/channels/@me")) {
                                 view.stopLoading()
-                                Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 500)
+                                Handler(Looper.getMainLooper()).postDelayed(
+                                    { view.loadUrl(JS_TOKEN) }, 500
+                                )
                                 return true
                             }
                             return false
@@ -610,15 +929,21 @@ class MainActivity : ComponentActivity() {
                         override fun onPageFinished(view: WebView, url: String) {
                             super.onPageFinished(view, url)
                             if (url.contains("/app") || url.endsWith("/channels/@me")) {
-                                Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 800)
+                                Handler(Looper.getMainLooper()).postDelayed(
+                                    { view.loadUrl(JS_TOKEN) }, 800
+                                )
                             }
                         }
                     }
                     wv.webChromeClient = object : WebChromeClient() {
-                        override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
+                        override fun onJsAlert(
+                            view: WebView, url: String, message: String, result: JsResult
+                        ): Boolean {
                             result.confirm(); view.visibility = View.GONE
                             if (message.isNotBlank() && message != "undefined") {
-                                Handler(Looper.getMainLooper()).postDelayed({ currentOnTokenReceived(message.trim()) }, 200)
+                                Handler(Looper.getMainLooper()).postDelayed(
+                                    { currentOnTokenReceived(message.trim()) }, 200
+                                )
                             }
                             return true
                         }
@@ -628,11 +953,14 @@ class MainActivity : ComponentActivity() {
             }, modifier = Modifier.fillMaxSize())
 
             Box(modifier = Modifier.align(Alignment.TopStart).padding(top = 40.dp, start = 12.dp)) {
-                TextButton(onClick = { currentOnBack() },
+                TextButton(
+                    onClick = { currentOnBack() },
                     colors = ButtonDefaults.textButtonColors(
                         containerColor = AppColors.Background.copy(0.85f),
-                        contentColor = AppColors.TextPrimary),
-                    shape = RoundedCornerShape(12.dp)) {
+                        contentColor   = AppColors.TextPrimary
+                    ),
+                    shape = RoundedCornerShape(Radius.Medium)
+                ) {
                     Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Back", fontWeight = FontWeight.Bold)
@@ -644,7 +972,9 @@ class MainActivity : ComponentActivity() {
             onDispose {
                 webRef.value?.apply {
                     stopLoading(); loadUrl("about:blank")
-                    Handler(Looper.getMainLooper()).postDelayed({ clearHistory(); destroy() }, 500)
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        clearHistory(); destroy()
+                    }, 500)
                 }
                 webRef.value = null
             }
@@ -652,18 +982,27 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun UserProfileScreen(user: DiscordUser?, token: String, isLoading: Boolean, onLogout: () -> Unit) {
+    fun UserProfileScreen(
+        user: DiscordUser?,
+        token: String,
+        isLoading: Boolean,
+        lanyardStatus: LanyardStatus?,
+        onLogout: () -> Unit
+    ) {
         val ctx = LocalContext.current
         var showToken by remember { mutableStateOf(false) }
         val scale = remember { Animatable(0.94f) }
         LaunchedEffect(Unit) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy)) }
 
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Box(modifier = Modifier.fillMaxWidth().height(140.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().height(150.dp)) {
                 if (user?.banner != null) {
                     AsyncImage(
                         model = "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.png?size=600",
-                        contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
                 } else {
                     val bannerBrush = if (user?.accentColor != null) {
                         val c = Color(0xFF000000 or user.accentColor.toLong())
@@ -675,28 +1014,50 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).scale(scale.value)) {
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            Column(
+                modifier = Modifier.fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .scale(scale.value)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Box(modifier = Modifier.size(88.dp)
-                        .border(4.dp, AppColors.Background, CircleShape)
-                        .clip(CircleShape).background(AppColors.Surface)) {
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Box(
+                        modifier = Modifier.size(90.dp)
+                            .border(4.dp, AppColors.Background, CircleShape)
+                            .clip(CircleShape)
+                            .background(AppColors.Surface)
+                    ) {
                         if (user?.avatar != null) {
                             AsyncImage(
                                 model = "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=256",
-                                contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
                         } else {
-                            Box(modifier = Modifier.fillMaxSize().background(AppColors.Primary),
-                                contentAlignment = Alignment.Center) {
-                                Text(user?.username?.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                                    fontSize = 32.sp, fontWeight = FontWeight.Black, color = AppColors.OnPrimary)
+                            Box(
+                                modifier = Modifier.fillMaxSize().background(AppColors.Primary),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    user?.username?.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                                    fontSize = 34.sp, fontWeight = FontWeight.Black,
+                                    color = AppColors.OnPrimary
+                                )
                             }
                         }
                     }
-                    Button(onClick = onLogout,
-                        colors = ButtonDefaults.buttonColors(containerColor = AppColors.ErrorContainer, contentColor = AppColors.Error),
-                        shape = RoundedCornerShape(12.dp)) {
+
+                    Button(
+                        onClick = onLogout,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AppColors.ErrorContainer, contentColor = AppColors.Error
+                        ),
+                        shape = RoundedCornerShape(Radius.Medium)
+                    ) {
                         Icon(Icons.AutoMirrored.Outlined.Logout, null, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Log Out", fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -706,34 +1067,75 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.height(14.dp))
 
                 if (isLoading) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AppColors.Primary, strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = AppColors.Primary, strokeWidth = 3.dp,
+                            modifier = Modifier.size(40.dp)
+                        )
                     }
                 } else if (user != null) {
-                    Text(user.globalName ?: user.username, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
-                    Text("@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "",
-                        fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            user.globalName ?: user.username,
+                            fontSize = 26.sp, fontWeight = FontWeight.Black,
+                            color = AppColors.TextPrimary
+                        )
+                        if (lanyardStatus != null) {
+                            val sColor = statusColor(lanyardStatus.status)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .background(sColor.copy(0.12f), RoundedCornerShape(Radius.Badge))
+                                    .border(1.dp, sColor.copy(0.25f), RoundedCornerShape(Radius.Badge))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(7.dp)
+                                        .background(sColor, CircleShape)
+                                )
+                                Spacer(Modifier.width(5.dp))
+                                Text(statusLabel(lanyardStatus.status), fontSize = 11.sp,
+                                    color = sColor, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    Text(
+                        "@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "",
+                        fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium
+                    )
 
                     Spacer(Modifier.height(8.dp))
 
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.background(AppColors.Success.copy(0.12f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(AppColors.Success.copy(0.12f), RoundedCornerShape(Radius.Small))
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
                         Icon(Icons.Outlined.CheckCircle, null, tint = AppColors.Success, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Token obtained", fontSize = 12.sp, color = AppColors.Success, fontWeight = FontWeight.SemiBold)
+                        Text("Token obtained", fontSize = 12.sp, color = AppColors.Success,
+                            fontWeight = FontWeight.SemiBold)
                     }
 
                     val badges = parseBadges(user.publicFlags, user.premiumType)
                     if (badges.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
-                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             badges.forEach { (label, color) ->
-                                Box(modifier = Modifier
-                                    .background(color.copy(0.15f), RoundedCornerShape(20.dp))
-                                    .border(1.dp, color.copy(0.4f), RoundedCornerShape(20.dp))
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(color.copy(0.15f), RoundedCornerShape(Radius.Badge))
+                                        .border(1.dp, color.copy(0.4f), RoundedCornerShape(Radius.Badge))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
                                     Text(label, fontSize = 11.sp, color = color, fontWeight = FontWeight.SemiBold)
                                 }
                             }
@@ -749,9 +1151,94 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    Spacer(Modifier.height(16.dp))
-                    HorizontalDivider(color = AppColors.Divider)
-                    Spacer(Modifier.height(16.dp))
+                    if (lanyardStatus != null) {
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider(color = AppColors.Divider)
+                        Spacer(Modifier.height(16.dp))
+
+                        if (lanyardStatus.listeningToSpotify &&
+                            !lanyardStatus.spotifySong.isNullOrBlank()) {
+                            ProfileSection("Now Playing", Icons.Outlined.MusicNote) {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = AppColors.Spotify.copy(0.08f)),
+                                    shape = RoundedCornerShape(Radius.Card),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Spotify.copy(0.25f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.size(40.dp)
+                                                .background(AppColors.Spotify.copy(0.2f), RoundedCornerShape(Radius.Small)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Outlined.MusicNote, null,
+                                                tint = AppColors.Spotify, modifier = Modifier.size(22.dp))
+                                        }
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Listening to Spotify", fontSize = 10.sp,
+                                                color = AppColors.Spotify, fontWeight = FontWeight.Bold,
+                                                letterSpacing = 0.5.sp)
+                                            Text(lanyardStatus.spotifySong, fontSize = 13.sp,
+                                                color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            if (!lanyardStatus.spotifyArtist.isNullOrBlank()) {
+                                                Text(lanyardStatus.spotifyArtist, fontSize = 12.sp,
+                                                    color = AppColors.TextMuted, maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            HorizontalDivider(color = AppColors.Divider)
+                            Spacer(Modifier.height(16.dp))
+                        } else if (!lanyardStatus.activityName.isNullOrBlank()) {
+                            ProfileSection("Current Activity", Icons.Outlined.Games) {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = AppColors.Primary.copy(0.07f)),
+                                    shape = RoundedCornerShape(Radius.Card),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Primary.copy(0.2f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.size(40.dp)
+                                                .background(AppColors.Primary.copy(0.15f), RoundedCornerShape(Radius.Small)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Outlined.Games, null,
+                                                tint = AppColors.Primary, modifier = Modifier.size(22.dp))
+                                        }
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(lanyardStatus.activityName, fontSize = 13.sp,
+                                                color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            if (!lanyardStatus.activityDetails.isNullOrBlank()) {
+                                                Text(lanyardStatus.activityDetails, fontSize = 12.sp,
+                                                    color = AppColors.TextMuted, maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis)
+                                            }
+                                            if (!lanyardStatus.activityState.isNullOrBlank()) {
+                                                Text(lanyardStatus.activityState, fontSize = 12.sp,
+                                                    color = AppColors.TextMuted, maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            HorizontalDivider(color = AppColors.Divider)
+                            Spacer(Modifier.height(16.dp))
+                        }
+                    }
 
                     ProfileSection("Account Info", Icons.Outlined.Tag) {
                         InfoRow(Icons.Outlined.Tag, "ID", user.id)
@@ -759,12 +1246,48 @@ class MainActivity : ComponentActivity() {
                         if (!user.email.isNullOrBlank()) InfoRow(Icons.Outlined.Email, "Email", user.email)
                         if (!user.phone.isNullOrBlank()) InfoRow(Icons.Outlined.Phone, "Phone", user.phone)
                         if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale", localeLabel(user.locale))
-                        InfoRow(Icons.Outlined.Lock, "2FA", if (user.mfaEnabled) "Enabled" else "Disabled",
+                        InfoRow(Icons.Outlined.Lock, "2FA",
+                            if (user.mfaEnabled) "Enabled" else "Disabled",
                             if (user.mfaEnabled) AppColors.Success else AppColors.TextMuted)
-                        InfoRow(Icons.Outlined.CheckCircle, "Verified", if (user.verified) "Yes" else "No",
+                        InfoRow(Icons.Outlined.CheckCircle, "Verified",
+                            if (user.verified) "Yes" else "No",
                             if (user.verified) AppColors.Success else AppColors.TextMuted)
                         if (user.premiumType > 0) InfoRow(Icons.Outlined.WorkspacePremium, "Nitro",
                             nitroLabel(user.premiumType), Color(0xFF5865F2))
+                        if (!user.bannerColor.isNullOrBlank()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Outlined.AutoAwesome, null,
+                                    tint = AppColors.TextMuted, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Text("Accent", fontSize = 13.sp, color = AppColors.TextMuted,
+                                    modifier = androidx.compose.ui.Modifier.width(80.dp))
+                                try {
+                                    val c = Color(android.graphics.Color.parseColor(user.bannerColor))
+                                    Box(
+                                        modifier = Modifier.size(20.dp)
+                                            .background(c, RoundedCornerShape(4.dp))
+                                            .border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp))
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(user.bannerColor.uppercase(), fontSize = 13.sp,
+                                        color = AppColors.TextPrimary, fontWeight = FontWeight.Medium,
+                                        fontFamily = FontFamily.Monospace)
+                                } catch (_: Exception) {}
+                            }
+                        }
+                        if (lanyardStatus != null) {
+                            val platforms = buildList {
+                                if (lanyardStatus.activeOnDesktop) add("Desktop")
+                                if (lanyardStatus.activeOnMobile) add("Mobile")
+                            }
+                            if (platforms.isNotEmpty()) {
+                                InfoRow(Icons.Outlined.Smartphone, "Active On",
+                                    platforms.joinToString(", "), AppColors.Success)
+                            }
+                        }
                     }
 
                     Spacer(Modifier.height(16.dp))
@@ -772,46 +1295,49 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(16.dp))
 
                     ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
-                        Card(colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVariant),
-                            shape = RoundedCornerShape(10.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVar),
+                            shape = RoundedCornerShape(Radius.Token)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
                                     text = if (showToken) token else "•".repeat(40),
                                     fontFamily = FontFamily.Monospace, fontSize = 12.sp,
                                     color = AppColors.TextSecondary,
                                     maxLines = if (showToken) Int.MAX_VALUE else 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f))
-                                IconButton(onClick = { showToken = !showToken }, modifier = Modifier.size(36.dp)) {
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = { showToken = !showToken },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
                                     Icon(
                                         imageVector = if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                        contentDescription = null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
+                                        contentDescription = null,
+                                        tint = AppColors.Primary, modifier = Modifier.size(18.dp)
+                                    )
                                 }
                             }
                         }
                         Spacer(Modifier.height(10.dp))
-                        Button(onClick = {
-                            (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                                .setPrimaryClip(ClipData.newPlainText("Discord Token", token))
-                        }, modifier = Modifier.fillMaxWidth().height(46.dp),
+                        Button(
+                            onClick = {
+                                (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                                    .setPrimaryClip(ClipData.newPlainText("Discord Token", token))
+                            },
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = AppColors.Success),
-                            shape = RoundedCornerShape(10.dp)) {
-                            Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp), tint = Color.White)
+                            shape = RoundedCornerShape(Radius.Token)
+                        ) {
+                            Icon(Icons.Outlined.ContentCopy, null,
+                                modifier = Modifier.size(16.dp), tint = Color.White)
                             Spacer(Modifier.width(8.dp))
                             Text("Copy Token", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(onClick = {
-                            (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                                .setPrimaryClip(ClipData.newPlainText("Authorization Header", "Authorization: $token"))
-                        }, modifier = Modifier.fillMaxWidth().height(46.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.TextSecondary),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Divider),
-                            shape = RoundedCornerShape(10.dp)) {
-                            Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Copy as Header", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         }
                     }
 
@@ -832,19 +1358,28 @@ class MainActivity : ComponentActivity() {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
                 Icon(icon, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
                 Spacer(Modifier.width(5.dp))
-                Text(title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    color = AppColors.TextMuted, letterSpacing = 0.8.sp)
+                Text(
+                    title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    color = AppColors.TextMuted, letterSpacing = 0.8.sp
+                )
             }
             content()
         }
     }
 
     @Composable
-    fun InfoRow(icon: ImageVector, label: String, value: String, valueColor: Color = AppColors.TextPrimary) {
-        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+    fun InfoRow(
+        icon: ImageVector, label: String, value: String,
+        valueColor: Color = AppColors.TextPrimary
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Icon(icon, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(12.dp))
-            Text(label, fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(80.dp))
+            Text(label, fontSize = 13.sp, color = AppColors.TextMuted,
+                modifier = Modifier.width(80.dp))
             Text(value, fontSize = 13.sp, color = valueColor, fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -853,10 +1388,17 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun Footer() {
         val transition = rememberInfiniteTransition(label = "rgb")
-        val hue by transition.animateFloat(0f, 360f,
-            infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Restart), label = "hue")
+        val hue by transition.animateFloat(
+            0f, 360f,
+            infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Restart),
+            label = "hue"
+        )
         val c = Color.hsv(hue, 0.75f, 1f)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Icon(Icons.Outlined.AutoAwesome, null, tint = c, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(6.dp))
             Text("By Rhyan57", fontSize = 12.sp, color = c, fontWeight = FontWeight.Bold)
@@ -868,12 +1410,16 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun GitHubButton() {
         val ctx = LocalContext.current
-        OutlinedButton(onClick = {
-            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken")))
-        }, modifier = Modifier.fillMaxWidth().height(46.dp),
+        OutlinedButton(
+            onClick = {
+                ctx.startActivity(Intent(Intent.ACTION_VIEW,
+                    Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken")))
+            },
+            modifier = Modifier.fillMaxWidth().height(46.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.TextMuted),
             border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Divider),
-            shape = RoundedCornerShape(12.dp)) {
+            shape = RoundedCornerShape(Radius.Button)
+        ) {
             Icon(Icons.Outlined.Code, null, modifier = Modifier.size(16.dp), tint = AppColors.TextMuted)
             Spacer(Modifier.width(8.dp))
             Text("Sc-Rhyan57/GetDiscordToken", fontWeight = FontWeight.SemiBold,
@@ -882,30 +1428,88 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun fetchUserInfo(token: String): DiscordUser = withContext(Dispatchers.IO) {
-        val response = OkHttpClient().newCall(
-            Request.Builder().url("https://discord.com/api/v10/users/@me").header("Authorization", token).build()
+        val response = httpClient.newCall(
+            Request.Builder()
+                .url("https://discord.com/api/v10/users/@me")
+                .header("Authorization", token)
+                .build()
         ).execute()
         val body = response.body?.string() ?: throw IOException("Empty response")
         if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
         val j = JSONObject(body)
         fun str(k: String) = j.optString(k).takeIf { it.isNotEmpty() && it != "null" }
         DiscordUser(
-            id = j.optString("id"),
-            username = j.optString("username"),
-            discriminator = j.optString("discriminator", "0"),
-            globalName = str("global_name"),
-            avatar = str("avatar"),
-            banner = str("banner"),
-            bannerColor = str("banner_color"),
-            bio = str("bio"),
-            email = str("email"),
-            phone = str("phone"),
-            verified = j.optBoolean("verified", false),
-            mfaEnabled = j.optBoolean("mfa_enabled", false),
-            locale = str("locale"),
-            premiumType = j.optInt("premium_type", 0),
-            publicFlags = j.optLong("public_flags", 0L),
-            accentColor = if (!j.isNull("accent_color")) j.optInt("accent_color") else null
+            id           = j.optString("id"),
+            username     = j.optString("username"),
+            discriminator= j.optString("discriminator", "0"),
+            globalName   = str("global_name"),
+            avatar       = str("avatar"),
+            banner       = str("banner"),
+            bannerColor  = str("banner_color"),
+            bio          = str("bio"),
+            email        = str("email"),
+            phone        = str("phone"),
+            verified     = j.optBoolean("verified", false),
+            mfaEnabled   = j.optBoolean("mfa_enabled", false),
+            locale       = str("locale"),
+            premiumType  = j.optInt("premium_type", 0),
+            publicFlags  = j.optLong("public_flags", 0L),
+            accentColor  = if (!j.isNull("accent_color")) j.optInt("accent_color") else null
         )
+    }
+
+    private suspend fun fetchLanyardStatus(userId: String): LanyardStatus? = withContext(Dispatchers.IO) {
+        try {
+            val response = httpClient.newCall(
+                Request.Builder()
+                    .url("https://api.lanyard.rest/v1/users/$userId")
+                    .build()
+            ).execute()
+            if (!response.isSuccessful) return@withContext null
+            val body = response.body?.string() ?: return@withContext null
+            val j = JSONObject(body)
+            if (!j.optBoolean("success")) return@withContext null
+            val data = j.getJSONObject("data")
+            val activities = data.getJSONArray("activities")
+            var activityName: String? = null
+            var activityDetails: String? = null
+            var activityState: String? = null
+            for (i in 0 until activities.length()) {
+                val act = activities.getJSONObject(i)
+                if (act.optInt("type") == 0) {
+                    activityName    = act.optString("name").takeIf { it.isNotEmpty() }
+                    activityDetails = act.optString("details").takeIf { it.isNotEmpty() && it != "null" }
+                    activityState   = act.optString("state").takeIf { it.isNotEmpty() && it != "null" }
+                    break
+                }
+            }
+            val spotify = data.optJSONObject("spotify")
+            LanyardStatus(
+                status             = data.optString("discord_status", "offline"),
+                activityName       = activityName,
+                activityDetails    = activityDetails,
+                activityState      = activityState,
+                listeningToSpotify = data.optBoolean("listening_to_spotify"),
+                spotifySong        = spotify?.optString("song")?.takeIf { it.isNotEmpty() },
+                spotifyArtist      = spotify?.optString("artist")?.takeIf { it.isNotEmpty() },
+                spotifyAlbum       = spotify?.optString("album")?.takeIf { it.isNotEmpty() },
+                activeOnMobile     = data.optBoolean("active_on_discord_mobile"),
+                activeOnDesktop    = data.optBoolean("active_on_discord_desktop")
+            )
+        } catch (_: Exception) { null }
+    }
+
+    private suspend fun checkLatestVersion(): String? = withContext(Dispatchers.IO) {
+        try {
+            val response = httpClient.newCall(
+                Request.Builder()
+                    .url(GITHUB_RELEASES_API)
+                    .header("Accept", "application/vnd.github.v3+json")
+                    .build()
+            ).execute()
+            if (!response.isSuccessful) return@withContext null
+            val body = response.body?.string() ?: return@withContext null
+            JSONObject(body).optString("tag_name").takeIf { it.isNotEmpty() }
+        } catch (_: Exception) { null }
     }
 }
