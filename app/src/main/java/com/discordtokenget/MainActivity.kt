@@ -320,7 +320,7 @@ private const val PREF_SESSION      = "session_prefs"
 private const val KEY_TOKEN         = "saved_token"
 private const val KEY_RISK_ACCEPTED  = "risk_accepted"
 private const val DISCORD_EPOCH     = 1420070400000L
-private const val CURRENT_VERSION   = "1.0.27"
+private const val CURRENT_VERSION   = "1.0.29"
 private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/GetDiscordToken/releases/latest"
 private const val GATEWAY_URL       = "wss://gateway.discord.gg/?v=10&encoding=json"
 private const val GATEWAY_RECONNECT_DELAY_MS = 3000L
