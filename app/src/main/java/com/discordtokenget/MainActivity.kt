@@ -64,6 +64,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -80,9 +81,8 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Login
+import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.Notes
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Security
@@ -393,6 +393,26 @@ private fun connectionColor(type: String): Color = when (type) {
     else              -> AppColors.Primary
 }
 
+private fun connectionIconUrl(type: String): String =
+    "https://cdn.discordapp.com/assets/profile/profile_connections/icon_${type}.svg"
+
+private fun connectionProfileUrl(type: String, name: String): String? = when (type) {
+    "spotify"         -> "https://open.spotify.com/user/$name"
+    "steam"           -> "https://steamcommunity.com/id/$name"
+    "github"          -> "https://github.com/$name"
+    "twitch"          -> "https://twitch.tv/$name"
+    "youtube"         -> "https://youtube.com/@$name"
+    "twitter"         -> "https://x.com/$name"
+    "reddit"          -> "https://reddit.com/u/$name"
+    "instagram"       -> "https://instagram.com/$name"
+    "tiktok"          -> "https://tiktok.com/@$name"
+    "facebook"        -> "https://facebook.com/$name"
+    "soundcloud"      -> "https://soundcloud.com/$name"
+    "leagueoflegends" -> "https://www.op.gg/summoners/br/$name"
+    "riotgames"       -> "https://tracker.gg/valorant/profile/riot/$name"
+    else              -> null
+}
+
 private fun parseBadges(publicFlags: Long, premiumType: Int): List<BadgeInfo> {
     val list = mutableListOf<BadgeInfo>()
     if (premiumType == 2) list.add(BadgeInfo("Nitro", Color(0xFF5865F2),
@@ -428,18 +448,30 @@ private fun parseBadges(publicFlags: Long, premiumType: Int): List<BadgeInfo> {
     if (publicFlags and 512L != 0L) list.add(BadgeInfo("Early Supporter", Color(0xFF8B5CF6),
         "https://cdn.discordapp.com/badge-icons/7060786766c9c840eb3019e725d2b358.png",
         "Subscribed to Nitro before October 10, 2018. One of Discord's earliest paying supporters."))
+    if (publicFlags and 1024L != 0L) list.add(BadgeInfo("Team User", Color(0xFF5865F2),
+        "https://cdn.discordapp.com/badge-icons/5e74e9b61934fc1f67c65515d1f7e60d.png",
+        "This account is part of a Discord development team."))
     if (publicFlags and 16384L != 0L) list.add(BadgeInfo("Bug Hunter Lv.2", Color(0xFFF59E0B),
         "https://cdn.discordapp.com/badge-icons/848f79194d4be5ff5f81505cbd0ce1e6.png",
         "Gold Bug Hunter — found and reported a large number of verified bugs. Higher rank than Level 1."))
-    if (publicFlags and 131072L != 0L) list.add(BadgeInfo("Verified Bot Dev", Color(0xFF6366F1),
+    if (publicFlags and 65536L != 0L) list.add(BadgeInfo("Verified Bot", Color(0xFF5865F2),
         "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
-        "Verified Bot Developer — verified their bot before August 19, 2020. This badge is no longer earnable."))
+        "This is a verified Discord bot application."))
+    if (publicFlags and 131072L != 0L) list.add(BadgeInfo("Early Verified Bot Dev", Color(0xFF6366F1),
+        "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
+        "Early Verified Bot Developer — verified their bot before August 19, 2020. This badge is no longer earnable."))
     if (publicFlags and 262144L != 0L) list.add(BadgeInfo("Moderator Alumni", Color(0xFF5865F2),
         "https://cdn.discordapp.com/badge-icons/fee6e2d6a2d22e6de7f5c40a75cc4b2d.png",
         "Discord Certified Moderator Programs Alumni — completed Discord's moderator exam."))
+    if (publicFlags and 524288L != 0L) list.add(BadgeInfo("Supports Commands", Color(0xFF5865F2),
+        "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
+        "This bot supports application commands (slash commands)."))
     if (publicFlags and 4194304L != 0L) list.add(BadgeInfo("Active Developer", Color(0xFF10B981),
         "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
         "Actively develops at least one Discord app — has used Discord's developer tools in the last 30 days."))
+    if (publicFlags and 16777216L != 0L) list.add(BadgeInfo("Uses Automod", Color(0xFF10B981),
+        "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
+        "This bot has 100+ active automod rules created."))
     return list
 }
 
@@ -536,7 +568,7 @@ private fun activitiesFromArray(acts: JSONArray?): List<PresenceActivity> {
     return list
 }
 
-private fun activitiesFromSessions(sessions: JSONArray?, ownUserId: String): List<PresenceActivity> {
+private fun activitiesFromSessions(sessions: JSONArray?): List<PresenceActivity> {
     if (sessions == null) return emptyList()
     val list = mutableListOf<PresenceActivity>()
     for (i in 0 until sessions.length()) {
@@ -1040,7 +1072,7 @@ class MainActivity : ComponentActivity() {
                                     listOf(Color.Transparent, Color.White.copy(0.28f), Color.Transparent),
                                     start = Offset(shimmer * 400f + 200f, 0f), end = Offset(shimmer * 400f + 350f, 80f))))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Outlined.Login, null, modifier = Modifier.size(19.dp), tint = Color.White)
+                                    Icon(Icons.AutoMirrored.Outlined.Login, null, modifier = Modifier.size(19.dp), tint = Color.White)
                                     Spacer(Modifier.width(10.dp))
                                     Text("Sign in with Discord", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                                 }
@@ -1124,12 +1156,47 @@ class MainActivity : ComponentActivity() {
         footerClicks: Int, onFooterClick: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit
     ) {
         val ctx = LocalContext.current
-        var showToken     by remember { mutableStateOf(false) }
-        var copied        by remember { mutableStateOf(false) }
-        var expandConns   by remember { mutableStateOf(false) }
-        var selectedBadge by remember { mutableStateOf<BadgeInfo?>(null) }
+        var showToken       by remember { mutableStateOf(false) }
+        var copied          by remember { mutableStateOf(false) }
+        var expandConns     by remember { mutableStateOf(false) }
+        var selectedBadge   by remember { mutableStateOf<BadgeInfo?>(null) }
+        var showTokenWarning by remember { mutableStateOf(false) }
+        var pendingAction   by remember { mutableStateOf<String?>(null) }
         val scale = remember { Animatable(0.95f) }
         LaunchedEffect(user?.id) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy)) }
+
+        if (showTokenWarning) {
+            AlertDialog(
+                onDismissRequest = { showTokenWarning = false; pendingAction = null },
+                icon = { Icon(Icons.Outlined.Warning, null, tint = AppColors.Warning, modifier = Modifier.size(32.dp)) },
+                title = { Text("⚠️ Safety Warning", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Your access token is like a password. Never share it with anyone!", color = AppColors.Warning, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("This app is not responsible for any consequences arising from the misuse or missharing of your token, including account loss, banning, or unauthorized access.", color = AppColors.TextSecondary, fontSize = 13.sp, lineHeight = 18.sp)
+                        Text("By continuing, you confirm that you understand the risks.", color = AppColors.TextMuted, fontSize = 12.sp)
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        showTokenWarning = false
+                        when (pendingAction) {
+                            "copy" -> {
+                                (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Token", token))
+                                copied = true
+                                addLog("INFO", "Token", "Copied to clipboard", "len=${token.length}")
+                                CoroutineScope(Dispatchers.Main).launch { delay(2000); copied = false }
+                            }
+                            "show" -> { showToken = !showToken }
+                        }
+                        pendingAction = null
+                    }, colors = ButtonDefaults.buttonColors(containerColor = AppColors.Warning), shape = RoundedCornerShape(Radius.Button)) {
+                        Text("I understand, continue.", fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
+                },
+                dismissButton = { TextButton(onClick = { showTokenWarning = false; pendingAction = null }) { Text("Cancel", color = AppColors.TextMuted) } },
+                containerColor = AppColors.Surface, shape = RoundedCornerShape(Radius.Card))
+        }
 
         if (selectedBadge != null) {
             AlertDialog(
@@ -1186,9 +1253,8 @@ class MainActivity : ComponentActivity() {
 
                     ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
                         Button(onClick = {
-                            (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Token", token))
-                            copied = true; addLog("INFO", "Token", "Copied to clipboard", "len=${token.length}")
-                            CoroutineScope(Dispatchers.Main).launch { delay(2000); copied = false }
+                            pendingAction = "copy"
+                            showTokenWarning = true
                         }, modifier = Modifier.fillMaxWidth().height(46.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = if (copied) AppColors.Success.copy(0.8f) else AppColors.Success),
                             shape = RoundedCornerShape(Radius.Token)) {
@@ -1198,10 +1264,13 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(8.dp))
                         Card(colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVar), shape = RoundedCornerShape(Radius.Token)) {
                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(if (showToken) token else "•".repeat(token.length),
+                                Text(if (showToken) token else "•".repeat(token.length.coerceAtMost(40)),
                                     fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = AppColors.TextSecondary,
                                     maxLines = if (showToken) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { showToken = !showToken }, modifier = Modifier.size(36.dp)) {
+                                IconButton(onClick = {
+                                    pendingAction = "show"
+                                    showTokenWarning = true
+                                }, modifier = Modifier.size(36.dp)) {
                                     Icon(if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
                                 }
                             }
@@ -1240,19 +1309,29 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (presence?.customStatus != null) {
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
                         val cs = presence.customStatus
-                        Row(Modifier.background(AppColors.Surface, RoundedCornerShape(Radius.Small)).padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier
+                                .background(AppColors.Surface, RoundedCornerShape(Radius.Medium))
+                                .border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             if (cs.emojiId != null) {
                                 val ext = if (cs.emojiAnimated) "gif" else "png"
-                                AsyncImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=32", null, Modifier.size(18.dp))
+                                AsyncImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=32", null, Modifier.size(20.dp))
                                 if (cs.text != null) Spacer(Modifier.width(6.dp))
-                            } else if (cs.emojiName != null && cs.text == null) {
-                                Text(cs.emojiName, fontSize = 16.sp)
                             } else if (cs.emojiName != null) {
-                                Text(cs.emojiName, fontSize = 16.sp); Spacer(Modifier.width(6.dp))
+                                Text(cs.emojiName, fontSize = 18.sp)
+                                if (cs.text != null) Spacer(Modifier.width(6.dp))
                             }
-                            if (cs.text != null) Text(cs.text, fontSize = 13.sp, color = AppColors.TextSecondary)
+                            if (cs.text != null) {
+                                Text(cs.text, fontSize = 13.sp, color = AppColors.TextSecondary, modifier = Modifier.weight(1f))
+                            } else if (cs.emojiName != null && cs.emojiId == null && cs.text == null) {
+                            } else if (cs.emojiId == null && cs.text == null) {
+                                Text("Status personalizado", fontSize = 13.sp, color = AppColors.TextMuted)
+                            }
                         }
                     }
 
@@ -1287,7 +1366,7 @@ class MainActivity : ComponentActivity() {
 
                     if (!user.bio.isNullOrBlank()) {
                         Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
-                        ProfileSection("About Me", Icons.Outlined.Notes) { DiscordMarkdown(user.bio, Modifier.fillMaxWidth()) }
+                        ProfileSection("About Me", Icons.AutoMirrored.Outlined.Notes) { DiscordMarkdown(user.bio, Modifier.fillMaxWidth()) }
                     }
 
                     if (loadingPresence) {
@@ -1318,6 +1397,7 @@ class MainActivity : ComponentActivity() {
                         InfoRow(Icons.Outlined.Security, "Public Flags", "0x${user.publicFlags.toString(16).uppercase()} (${user.publicFlags})")
                         if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
                         if (user.avatarDecorationAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Decoration", "Active ✓", AppColors.Success)
+                        if (user.nameplateAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Nameplate", if (!user.nameplateLabel.isNullOrBlank()) user.nameplateLabel else "Active ✓", AppColors.Success)
                         if (!user.bannerColor.isNullOrBlank()) {
                             val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrNull()
                             if (c != null) {
@@ -1343,11 +1423,36 @@ class MainActivity : ComponentActivity() {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 visible.forEach { conn ->
                                     val cc = connectionColor(conn.type)
-                                    Row(Modifier.fillMaxWidth().background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium)).border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium)).padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Box(Modifier.size(30.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) { Text(connectionLabel(conn.type).first().toString(), fontSize = 14.sp, color = cc, fontWeight = FontWeight.Black) }
+                                    val profileUrl = connectionProfileUrl(conn.type, conn.name)
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium))
+                                            .border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium))
+                                            .then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier)
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AsyncImage(
+                                            model = "https://cdn.discordapp.com/assets/profile/profile_connections/icon_${conn.type}.svg",
+                                            contentDescription = conn.type,
+                                            modifier = Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)),
+                                            error = androidx.compose.ui.graphics.painter.BitmapPainter(
+                                                android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+                                            )
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Box(Modifier.size(28.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) {
+                                            Text(connectionLabel(conn.type).first().toString(), fontSize = 13.sp, color = cc, fontWeight = FontWeight.Black)
+                                        }
                                         Spacer(Modifier.width(10.dp))
                                         Column(Modifier.weight(1f)) {
-                                            Text(connectionLabel(conn.type), fontSize = 11.sp, color = cc, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(connectionLabel(conn.type), fontSize = 11.sp, color = cc, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
+                                                if (profileUrl != null) {
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Icon(Icons.Outlined.Link, null, tint = cc.copy(0.6f), modifier = Modifier.size(10.dp))
+                                                }
+                                            }
                                             Text(conn.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                         if (conn.verified) Box(Modifier.background(AppColors.Success.copy(0.12f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 7.dp, vertical = 2.dp)) { Text("✓", fontSize = 11.sp, color = AppColors.Success, fontWeight = FontWeight.Bold) }
@@ -1527,8 +1632,8 @@ class MainActivity : ComponentActivity() {
         var readyReceived = false
 
         val listener = object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, resp: Response) = addLog("INFO", "Gateway", "WebSocket opened", "HTTP ${resp.code} ${resp.message}")
-            override fun onMessage(ws: WebSocket, text: String) {
+            override fun onOpen(webSocket: WebSocket, response: Response) = addLog("INFO", "Gateway", "WebSocket opened", "HTTP ${response.code} ${response.message}")
+            override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
                     val json = JSONObject(text)
                     val op   = json.optInt("op", -1)
@@ -1542,12 +1647,12 @@ class MainActivity : ComponentActivity() {
                                 delay((interval * 0.8).toLong())
                                 while (true) {
                                     val s = if (gatewaySequence > 0) gatewaySequence.toString() else "null"
-                                    ws.send("""{"op":1,"d":$s}""")
+                                    webSocket.send("""{"op":1,"d":$s}""")
                                     addLog("INFO", "Gateway", "♥ Heartbeat sent", "seq=$s")
                                     delay(interval)
                                 }
                             }
-                            ws.send(JSONObject().apply {
+                            webSocket.send(JSONObject().apply {
                                 put("op", 2)
                                 put("d", JSONObject().apply {
                                     put("token", token); put("capabilities", 16381)
@@ -1569,7 +1674,7 @@ class MainActivity : ComponentActivity() {
                                     if (ownUserId.isEmpty()) ownUserId = selfId
                                     val sessions = data.optJSONArray("sessions")
                                     val (status, platforms, customStatus) = resolvePresenceFromSessions(sessions)
-                                    val activities = activitiesFromSessions(sessions, selfId)
+                                    val activities = activitiesFromSessions(sessions)
                                     val presence   = DiscordPresence(status, activities, platforms, customStatus)
                                     initialPresence = presence; readyReceived = true
                                     addLog("SUCCESS", "Gateway", "READY event received", "userId=$selfId status=$status platforms=${platforms.joinToString()} activities=${activities.size} customStatus=${customStatus?.text}")
@@ -1597,7 +1702,7 @@ class MainActivity : ComponentActivity() {
                                 "SESSION_REPLACE" -> {
                                     val sessions = json.optJSONArray("d") ?: return
                                     val (status, platforms, cs) = resolvePresenceFromSessions(sessions)
-                                    val activities = activitiesFromSessions(sessions, ownUserId)
+                                    val activities = activitiesFromSessions(sessions)
                                     addLog("INFO", "Gateway", "SESSION_REPLACE", "sessions=${sessions.length()} status=$status")
                                     onPresenceLive?.invoke(DiscordPresence(status, activities, platforms, cs))
                                 }
@@ -1609,8 +1714,8 @@ class MainActivity : ComponentActivity() {
                     addLog("ERROR", "Gateway", "Parse error: ${e.message}", e.stackTraceToString().take(400))
                 }
             }
-            override fun onFailure(ws: WebSocket, t: Throwable, resp: Response?) = addLog("ERROR", "Gateway", "Failure: ${t.message}", "code=${resp?.code}")
-            override fun onClosed(ws: WebSocket, code: Int, reason: String)      = addLog("INFO",  "Gateway", "Closed: $code", reason.ifBlank { "no reason" })
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = addLog("ERROR", "Gateway", "Failure: ${t.message}", "code=${response?.code}")
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String)      = addLog("INFO",  "Gateway", "Closed: $code", reason.ifBlank { "no reason" })
         }
 
         val ws = httpClient.newWebSocket(Request.Builder().url(GATEWAY_URL).build(), listener)
