@@ -230,7 +230,8 @@ data class PresenceActivity(
     val timestamps: RichTimestamps?,
     val assets: RichAssets?,
     val syncId: String?,
-    val albumCoverUrl: String?,
+    val largeImageUrl: String?,
+    val smallImageUrl: String?,
     val buttons: List<ActivityButton>
 )
 
@@ -249,10 +250,12 @@ data class DiscordConnection(
 )
 
 data class BadgeInfo(
+    val id: String,
     val label: String,
     val color: Color,
     val cdnUrl: String,
-    val description: String
+    val description: String,
+    val link: String? = null
 )
 
 data class AppLog(
@@ -317,9 +320,11 @@ private const val PREF_SESSION      = "session_prefs"
 private const val KEY_TOKEN         = "saved_token"
 private const val KEY_RISK_ACCEPTED  = "risk_accepted"
 private const val DISCORD_EPOCH     = 1420070400000L
-private const val CURRENT_VERSION   = "1.0.26"
+private const val CURRENT_VERSION   = "1.0.27"
 private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/GetDiscordToken/releases/latest"
 private const val GATEWAY_URL       = "wss://gateway.discord.gg/?v=10&encoding=json"
+private const val GATEWAY_RECONNECT_DELAY_MS = 3000L
+private const val GATEWAY_MAX_RECONNECT_ATTEMPTS = 5
 
 private val httpClient = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
@@ -401,9 +406,6 @@ private fun connectionColor(type: String): Color = when (type) {
     else              -> AppColors.Primary
 }
 
-private fun connectionIconUrl(type: String): String =
-    "https://cdn.discordapp.com/assets/profile/profile_connections/icon_${type}.svg"
-
 private fun connectionProfileUrl(type: String, name: String): String? = when (type) {
     "spotify"         -> "https://open.spotify.com/user/$name"
     "steam"           -> "https://steamcommunity.com/id/$name"
@@ -421,75 +423,24 @@ private fun connectionProfileUrl(type: String, name: String): String? = when (ty
     else              -> null
 }
 
-private fun parseBadges(publicFlags: Long, premiumType: Int, hasLegacyUsername: Boolean = false, hasQuestBadge: Boolean = false, hasOrbsBadge: Boolean = false): List<BadgeInfo> {
-    val list = mutableListOf<BadgeInfo>()
-    if (premiumType == 2) list.add(BadgeInfo("Nitro", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/2ba85e8026a8614b640c2837bcdfe21b.png",
-        "Discord Nitro subscriber — full access to custom emoji, animated avatars, profile banner, server boosts & more."))
-    if (premiumType == 1) list.add(BadgeInfo("Nitro Classic", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/f1e96cb3268ee9f1e39c4c74fa7e9ae5.png",
-        "Subscribed to the original Nitro Classic plan (now discontinued)."))
-    if (premiumType == 3) list.add(BadgeInfo("Nitro Basic", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/2ba85e8026a8614b640c2837bcdfe21b.png",
-        "Subscribed to Nitro Basic — the entry-level Nitro plan."))
-    if (publicFlags and 1L != 0L) list.add(BadgeInfo("Discord Staff", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/5e74e9b61934fc1f67c65515d1f7e60d.png",
-        "Official member of the Discord staff team. These users help run the platform."))
-    if (publicFlags and 2L != 0L) list.add(BadgeInfo("Discord Partner", Color(0xFF7289DA),
-        "https://cdn.discordapp.com/badge-icons/3f9748e53446a137a052f3454e2de41e.png",
-        "Owner of a Discord Partner server. Granted to verified, high-quality communities."))
-    if (publicFlags and 4L != 0L) list.add(BadgeInfo("HypeSquad Events", Color(0xFFFB923C),
-        "https://cdn.discordapp.com/badge-icons/bf01d1073931f921909045f3a39fd264.png",
-        "Attended or helped run an official Discord HypeSquad event."))
-    if (publicFlags and 8L != 0L) list.add(BadgeInfo("Bug Hunter Lv.1", Color(0xFF22C55E),
-        "https://cdn.discordapp.com/badge-icons/2717692c7dca7289b35297368a940dd0.png",
-        "Reported verified bugs to Discord. Level 1 Bug Hunter badge."))
-    if (publicFlags and 64L != 0L) list.add(BadgeInfo("HypeSquad Bravery", Color(0xFFA855F7),
-        "https://cdn.discordapp.com/badge-icons/8a88d63823d8a71cd5e390baa45efa02.png",
-        "Member of HypeSquad House of Bravery. Completed the HypeSquad quiz choosing Bravery."))
-    if (publicFlags and 128L != 0L) list.add(BadgeInfo("HypeSquad Brilliance", Color(0xFFEF4444),
-        "https://cdn.discordapp.com/badge-icons/011940fd013082d85d0ceb1ce53ffe02.png",
-        "Member of HypeSquad House of Brilliance. Completed the HypeSquad quiz choosing Brilliance."))
-    if (publicFlags and 256L != 0L) list.add(BadgeInfo("HypeSquad Balance", Color(0xFF22D3EE),
-        "https://cdn.discordapp.com/badge-icons/3aa41de486fa12454c3761e8e223442e.png",
-        "Member of HypeSquad House of Balance. Completed the HypeSquad quiz choosing Balance."))
-    if (publicFlags and 512L != 0L) list.add(BadgeInfo("Early Supporter", Color(0xFF8B5CF6),
-        "https://cdn.discordapp.com/badge-icons/7060786766c9c840eb3019e725d2b358.png",
-        "Subscribed to Nitro before October 10, 2018. One of Discord's earliest paying supporters."))
-    if (publicFlags and 1024L != 0L) list.add(BadgeInfo("Team User", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/5e74e9b61934fc1f67c65515d1f7e60d.png",
-        "This account is part of a Discord development team."))
-    if (publicFlags and 16384L != 0L) list.add(BadgeInfo("Bug Hunter Lv.2", Color(0xFFF59E0B),
-        "https://cdn.discordapp.com/badge-icons/848f79194d4be5ff5f81505cbd0ce1e6.png",
-        "Gold Bug Hunter — found and reported a large number of verified bugs. Higher rank than Level 1."))
-    if (publicFlags and 65536L != 0L) list.add(BadgeInfo("Verified Bot", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
-        "This is a verified Discord bot application."))
-    if (publicFlags and 131072L != 0L) list.add(BadgeInfo("Early Verified Bot Dev", Color(0xFF6366F1),
-        "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
-        "Early Verified Bot Developer — verified their bot before August 19, 2020. This badge is no longer earnable."))
-    if (publicFlags and 262144L != 0L) list.add(BadgeInfo("Moderator Alumni", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/fee6e2d6a2d22e6de7f5c40a75cc4b2d.png",
-        "Discord Certified Moderator Programs Alumni — completed Discord's moderator exam."))
-    if (publicFlags and 524288L != 0L) list.add(BadgeInfo("Supports Commands", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
-        "This bot supports application commands (slash commands)."))
-    if (publicFlags and 4194304L != 0L) list.add(BadgeInfo("Active Developer", Color(0xFF10B981),
-        "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
-        "Actively develops at least one Discord app — has used Discord's developer tools in the last 30 days."))
-    if (publicFlags and 16777216L != 0L) list.add(BadgeInfo("Uses Automod", Color(0xFF10B981),
-        "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
-        "This bot has 100+ active automod rules created."))
-    if (hasQuestBadge) list.add(BadgeInfo("Quest Completed", Color(0xFF5865F2),
-        "https://cdn.discordapp.com/badge-icons/7d3c0e6eb46c8d7d58b5e5fd54bfef84.png",
-        "Completed a Discord Quest — a sponsored in-app challenge like streaming a game for a set duration."))
-    if (hasOrbsBadge) list.add(BadgeInfo("Orbs Apprentice", Color(0xFF7B68EE),
-        "https://cdn.discordapp.com/badge-icons/e20739d5e58fc2d8be3b94fb9b11fd58.png",
-        "Purchased the Orbs Apprentice badge from the Discord Shop using Discord Orbs earned from Quests."))
-    if (hasLegacyUsername) list.add(BadgeInfo("Legacy Username", Color(0xFF8B949E),
-        "https://cdn.discordapp.com/badge-icons/6de6d34650760ba5551a79732e98ed60.png",
-        "This user had a username in the old user#1234 format and changed it during Discord's username migration."))
-    return list
+private fun badgeColorFromId(id: String): Color = when {
+    id.contains("staff")              -> Color(0xFF5865F2)
+    id.contains("partner")            -> Color(0xFF7289DA)
+    id.contains("hypesquad_events")   -> Color(0xFFFB923C)
+    id.contains("bug_hunter_level_2") -> Color(0xFFF59E0B)
+    id.contains("bug_hunter")         -> Color(0xFF22C55E)
+    id.contains("bravery")            -> Color(0xFFA855F7)
+    id.contains("brilliance")         -> Color(0xFFEF4444)
+    id.contains("balance")            -> Color(0xFF22D3EE)
+    id.contains("early_supporter")    -> Color(0xFF8B5CF6)
+    id.contains("verified_developer") -> Color(0xFF6366F1)
+    id.contains("moderator_programs_alumni") -> Color(0xFF5865F2)
+    id.contains("active_developer")   -> Color(0xFF10B981)
+    id.contains("premium") || id.contains("nitro") -> Color(0xFF5865F2)
+    id.contains("guild_booster")      -> Color(0xFFFF73FA)
+    id.contains("legacy_username")    -> Color(0xFF8B949E)
+    id.contains("quest")              -> Color(0xFF5865F2)
+    else                              -> AppColors.Primary
 }
 
 private fun resolvePresenceFromSessions(sessions: JSONArray?): Triple<String, List<String>, CustomStatus?> {
@@ -530,6 +481,30 @@ private fun resolvePresenceFromSessions(sessions: JSONArray?): Triple<String, Li
     return Triple(bestStatus, platforms, customStatus)
 }
 
+private fun resolveActivityImageUrl(image: String, appId: String?): String? = when {
+    image.startsWith("spotify:") ->
+        "https://i.scdn.co/image/${image.removePrefix("spotify:")}"
+    image.startsWith("mp:external/") ->
+        "https://media.discordapp.net/external/${image.removePrefix("mp:external/")}"
+    image.startsWith("mp:") ->
+        "https://media.discordapp.net/${image.removePrefix("mp:")}"
+    image.isEmpty() || image == "null" -> null
+    appId != null -> "https://cdn.discordapp.com/app-assets/$appId/$image.png"
+    else -> null
+}
+
+private fun resolveSmallImageUrl(image: String, appId: String?): String? = when {
+    image.startsWith("mp:external/") ->
+        "https://media.discordapp.net/external/${image.removePrefix("mp:external/")}"
+    image.startsWith("mp:") ->
+        "https://media.discordapp.net/${image.removePrefix("mp:")}"
+    image.startsWith("spotify:") ->
+        "https://i.scdn.co/image/${image.removePrefix("spotify:")}"
+    image.isEmpty() || image == "null" -> null
+    appId != null -> "https://cdn.discordapp.com/app-assets/$appId/$image.png"
+    else -> null
+}
+
 private fun buildActivity(a: JSONObject): PresenceActivity {
     val type  = a.optInt("type", 0)
     val name  = a.optString("name")
@@ -540,31 +515,14 @@ private fun buildActivity(a: JSONObject): PresenceActivity {
         end   = if (!ts.isNull("end"))   ts.optLong("end")   else null
     ) else null
     val as_ = a.optJSONObject("assets")
-    var albumUrl: String? = null
-    val richAs = if (as_ != null) {
-        val li = as_.optString("large_image").takeIf { it.isNotEmpty() && it != "null" }
-        if (type == 2 && li != null) {
-            albumUrl = if (li.startsWith("spotify:")) {
-                "https://i.scdn.co/image/${li.removePrefix("spotify:")}"
-            } else if (appId != null) {
-                "https://cdn.discordapp.com/app-assets/$appId/$li.png"
-            } else null
-        } else if (type != 2 && appId != null && li != null && !li.startsWith("mp:")) {
-            albumUrl = "https://cdn.discordapp.com/app-assets/$appId/$li.png"
-        }
-        RichAssets(
-            largeImage = li,
-            largeText  = as_.optString("large_text").takeIf { it.isNotEmpty() && it != "null" },
-            smallImage = as_.optString("small_image").takeIf { it.isNotEmpty() && it != "null" },
-            smallText  = as_.optString("small_text").takeIf  { it.isNotEmpty() && it != "null" }
-        )
-    } else null
-    if (as_ != null && albumUrl == null) {
-        val li = as_.optString("large_image").takeIf { it.isNotEmpty() && it != "null" }
-        if (li != null && li.startsWith("mp:external/")) {
-            albumUrl = "https://media.discordapp.net/" + li.removePrefix("mp:")
-        }
-    }
+    val richAs = if (as_ != null) RichAssets(
+        largeImage = as_.optString("large_image").takeIf { it.isNotEmpty() && it != "null" },
+        largeText  = as_.optString("large_text").takeIf { it.isNotEmpty() && it != "null" },
+        smallImage = as_.optString("small_image").takeIf { it.isNotEmpty() && it != "null" },
+        smallText  = as_.optString("small_text").takeIf  { it.isNotEmpty() && it != "null" }
+    ) else null
+    val largeImageUrl = richAs?.largeImage?.let { resolveActivityImageUrl(it, appId) }
+    val smallImageUrl = richAs?.smallImage?.let { resolveSmallImageUrl(it, appId) }
     val btns = mutableListOf<ActivityButton>()
     val btnsArr = a.optJSONArray("buttons")
     if (btnsArr != null) {
@@ -586,7 +544,8 @@ private fun buildActivity(a: JSONObject): PresenceActivity {
         timestamps    = richTs,
         assets        = richAs,
         syncId        = a.optString("sync_id").takeIf { it.isNotEmpty() && it != "null" },
-        albumCoverUrl = albumUrl,
+        largeImageUrl = largeImageUrl,
+        smallImageUrl = smallImageUrl,
         buttons       = btns
     )
 }
@@ -791,9 +750,14 @@ class MainActivity : ComponentActivity() {
 
     private var gatewayWs: WebSocket? = null
     private var heartbeatJob: Job? = null
+    private var reconnectJob: Job? = null
     private var gatewaySequence = -1
+    private var gatewaySessionId: String = ""
     private var ownUserId: String = ""
     private var onPresenceLive: ((DiscordPresence) -> Unit)? = null
+    private var gatewayToken: String = ""
+    private var gatewayReconnectAttempts = 0
+    private var currentPresence: DiscordPresence? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -814,6 +778,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         heartbeatJob?.cancel()
+        reconnectJob?.cancel()
         gatewayWs?.close(1000, null)
     }
 
@@ -835,6 +800,212 @@ class MainActivity : ComponentActivity() {
             } catch (_: Exception) { def?.uncaughtException(t, e) }
             android.os.Process.killProcess(android.os.Process.myPid()); System.exit(2)
         }
+    }
+
+    private fun scheduleReconnect(token: String) {
+        if (gatewayReconnectAttempts >= GATEWAY_MAX_RECONNECT_ATTEMPTS) {
+            addLog("WARN", "Gateway", "Max reconnect attempts reached ($GATEWAY_MAX_RECONNECT_ATTEMPTS), giving up")
+            return
+        }
+        val delay = GATEWAY_RECONNECT_DELAY_MS * (1L shl gatewayReconnectAttempts.coerceAtMost(4))
+        gatewayReconnectAttempts++
+        addLog("INFO", "Gateway", "Scheduling reconnect in ${delay}ms (attempt $gatewayReconnectAttempts/$GATEWAY_MAX_RECONNECT_ATTEMPTS)")
+        reconnectJob?.cancel()
+        reconnectJob = CoroutineScope(Dispatchers.IO).launch {
+            delay(delay)
+            val canResume = gatewaySessionId.isNotEmpty() && gatewaySequence > 0
+            addLog("INFO", "Gateway", "Reconnecting… canResume=$canResume sessionId=$gatewaySessionId seq=$gatewaySequence")
+            connectGatewayInternal(token, canResume) { updated ->
+                currentPresence = updated
+                onPresenceLive?.invoke(updated)
+            }
+        }
+    }
+
+    private fun buildIdentifyPayload(token: String): String = JSONObject().apply {
+        put("op", 2)
+        put("d", JSONObject().apply {
+            put("token", token)
+            put("capabilities", 16381)
+            put("properties", JSONObject().apply {
+                put("os", "Android")
+                put("browser", "Discord Android")
+                put("device", "Android")
+                put("system_locale", Locale.getDefault().toLanguageTag())
+                put("browser_version", "")
+                put("os_version", Build.VERSION.RELEASE)
+                put("referrer", "")
+                put("referring_domain", "")
+                put("release_channel", "stable")
+                put("client_build_number", 0)
+            })
+            put("compress", false)
+            put("presence", JSONObject().apply {
+                put("status", "unknown")
+                put("since", 0)
+                put("activities", JSONArray())
+                put("afk", false)
+            })
+        })
+    }.toString()
+
+    private fun buildResumePayload(token: String): String = JSONObject().apply {
+        put("op", 6)
+        put("d", JSONObject().apply {
+            put("token", token)
+            put("session_id", gatewaySessionId)
+            put("seq", gatewaySequence)
+        })
+    }.toString()
+
+    private fun connectGatewayInternal(token: String, tryResume: Boolean, onUpdate: (DiscordPresence) -> Unit) {
+        heartbeatJob?.cancel()
+        gatewayWs?.close(1000, null)
+        onPresenceLive = onUpdate
+
+        val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                addLog("INFO", "Gateway", "WebSocket opened", "HTTP ${response.code}")
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    val json = JSONObject(text)
+                    val op   = json.optInt("op", -1)
+                    val seq  = json.optInt("s", -1)
+                    if (seq > 0) gatewaySequence = seq
+
+                    when (op) {
+                        10 -> {
+                            val interval = json.getJSONObject("d").getLong("heartbeat_interval")
+                            addLog("INFO", "Gateway", "Hello OP10 — heartbeat every ${interval}ms")
+                            heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
+                                delay((interval * Random.nextFloat() * 0.5f).toLong())
+                                while (true) {
+                                    val s = if (gatewaySequence > 0) gatewaySequence.toString() else "null"
+                                    webSocket.send("""{"op":1,"d":$s}""")
+                                    addLog("INFO", "Gateway", "♥ Heartbeat sent", "seq=$s")
+                                    delay(interval)
+                                }
+                            }
+                            if (tryResume && gatewaySessionId.isNotEmpty() && gatewaySequence > 0) {
+                                webSocket.send(buildResumePayload(token))
+                                addLog("INFO", "Gateway", "Resume OP6 sent", "sessionId=$gatewaySessionId seq=$gatewaySequence")
+                            } else {
+                                webSocket.send(buildIdentifyPayload(token))
+                                addLog("INFO", "Gateway", "Identify OP2 sent")
+                            }
+                        }
+
+                        11 -> addLog("INFO", "Gateway", "♥ Heartbeat ACK received")
+
+                        7 -> {
+                            addLog("WARN", "Gateway", "Reconnect requested OP7 — scheduling reconnect")
+                            webSocket.close(4000, "Reconnect requested")
+                            scheduleReconnect(token)
+                        }
+
+                        9 -> {
+                            val resumable = json.optBoolean("d", false)
+                            addLog("WARN", "Gateway", "Invalid session OP9 — resumable=$resumable")
+                            if (!resumable) {
+                                gatewaySessionId = ""
+                                gatewaySequence = -1
+                            }
+                            webSocket.close(4000, "Invalid session")
+                            scheduleReconnect(token)
+                        }
+
+                        0 -> {
+                            val ev = json.optString("t")
+                            when (ev) {
+                                "READY" -> {
+                                    gatewayReconnectAttempts = 0
+                                    val data     = json.getJSONObject("d")
+                                    gatewaySessionId = data.optString("session_id", "")
+                                    val selfUser = data.optJSONObject("user")
+                                    val selfId   = selfUser?.optString("id") ?: ownUserId
+                                    if (ownUserId.isEmpty()) ownUserId = selfId
+                                    val sessions = data.optJSONArray("sessions")
+                                    val (status, platforms, customStatus) = resolvePresenceFromSessions(sessions)
+                                    val activities = activitiesFromSessions(sessions)
+                                    val presence   = DiscordPresence(status, activities, platforms, customStatus)
+                                    currentPresence = presence
+                                    addLog("SUCCESS", "Gateway", "READY — userId=$selfId status=$status platforms=${platforms.joinToString()} acts=${activities.size}")
+                                    onPresenceLive?.invoke(presence)
+                                }
+
+                                "RESUMED" -> {
+                                    gatewayReconnectAttempts = 0
+                                    addLog("SUCCESS", "Gateway", "RESUMED — session restored seq=$gatewaySequence")
+                                    currentPresence?.let { onPresenceLive?.invoke(it) }
+                                }
+
+                                "PRESENCE_UPDATE" -> {
+                                    val data   = json.getJSONObject("d")
+                                    val userId = data.optJSONObject("user")?.optString("id") ?: ""
+                                    if (userId.isNotEmpty() && ownUserId.isNotEmpty() && userId != ownUserId) return
+                                    val status     = data.optString("status", "offline")
+                                    val acts       = data.optJSONArray("activities")
+                                    val activities = activitiesFromArray(acts)
+                                    var cs: CustomStatus? = null
+                                    if (acts != null) {
+                                        for (i in 0 until acts.length()) {
+                                            val a = acts.getJSONObject(i)
+                                            if (a.optInt("type", -1) == 4) {
+                                                val em = a.optJSONObject("emoji")
+                                                cs = CustomStatus(
+                                                    text          = a.optString("state").takeIf { it.isNotEmpty() && it != "null" },
+                                                    emojiName     = em?.optString("name")?.takeIf { it.isNotEmpty() },
+                                                    emojiId       = em?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" },
+                                                    emojiAnimated = em?.optBoolean("animated", false) ?: false
+                                                )
+                                                break
+                                            }
+                                        }
+                                    }
+                                    val updated = DiscordPresence(status, activities, currentPresence?.platforms ?: emptyList(), cs)
+                                    currentPresence = updated
+                                    addLog("INFO", "Gateway", "PRESENCE_UPDATE uid=$userId", "status=$status acts=${activities.size} customStatus=${cs?.text}")
+                                    onPresenceLive?.invoke(updated)
+                                }
+
+                                "SESSION_REPLACE" -> {
+                                    val sessions = json.optJSONArray("d") ?: return
+                                    val (status, platforms, cs) = resolvePresenceFromSessions(sessions)
+                                    val activities = activitiesFromSessions(sessions)
+                                    addLog("INFO", "Gateway", "SESSION_REPLACE", "sessions=${sessions.length()} status=$status acts=${activities.size}")
+                                    val updated = DiscordPresence(status, activities, platforms, cs)
+                                    currentPresence = updated
+                                    onPresenceLive?.invoke(updated)
+                                }
+
+                                "READY_SUPPLEMENTAL" -> addLog("INFO", "Gateway", "READY_SUPPLEMENTAL received")
+                                else -> if (ev.isNotEmpty()) addLog("INFO", "Gateway", "Event: $ev")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    addLog("ERROR", "Gateway", "Parse error: ${e.message}", e.stackTraceToString().take(400))
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                addLog("ERROR", "Gateway", "Failure: ${t.message}", "code=${response?.code}")
+                scheduleReconnect(token)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                addLog("INFO", "Gateway", "Closed: $code", reason.ifBlank { "no reason" })
+                if (code != 1000 && code != 4004) {
+                    scheduleReconnect(token)
+                }
+            }
+        }
+
+        val ws = httpClient.newWebSocket(Request.Builder().url(GATEWAY_URL).build(), listener)
+        gatewayWs = ws
+        gatewayToken = token
     }
 
     @Composable
@@ -868,10 +1039,12 @@ class MainActivity : ComponentActivity() {
         var user             by remember { mutableStateOf<DiscordUser?>(null) }
         var presence         by remember { mutableStateOf<DiscordPresence?>(null) }
         var connections      by remember { mutableStateOf<List<DiscordConnection>?>(null) }
+        var badges           by remember { mutableStateOf<List<BadgeInfo>>(emptyList()) }
         var guildCount       by remember { mutableStateOf<Int?>(null) }
         var loadingUser      by remember { mutableStateOf(false) }
         var loadingPresence  by remember { mutableStateOf(false) }
         var loadingConns     by remember { mutableStateOf(false) }
+        var loadingBadges    by remember { mutableStateOf(false) }
         var loadingGuilds    by remember { mutableStateOf(false) }
         var showWebView      by remember { mutableStateOf(false) }
         var updateTag        by remember { mutableStateOf<String?>(null) }
@@ -896,7 +1069,7 @@ class MainActivity : ComponentActivity() {
             val fetched: DiscordUser? = try {
                 fetchUserInfo(t).also { u ->
                     ownUserId = u.id
-                    addLog("SUCCESS", "API", "User: ${u.username} (id=${u.id})", "flags=${u.publicFlags} nitro=${u.premiumType} badge_count=${parseBadges(u.publicFlags, u.premiumType, u.hasLegacyUsername, u.hasQuestBadge, u.hasOrbsBadge).size}")
+                    addLog("SUCCESS", "API", "User: ${u.username} (id=${u.id})", "flags=${u.publicFlags} nitro=${u.premiumType}")
                 }
             } catch (e: Exception) {
                 addLog("ERROR", "API", "User fetch failed: ${e.message}", e.stackTraceToString().take(600))
@@ -909,12 +1082,30 @@ class MainActivity : ComponentActivity() {
             loadingPresence = true
             launch {
                 try {
-                    val p = connectGateway(t) { updated -> presence = updated }
-                    presence = p
+                    gatewayReconnectAttempts = 0
+                    gatewaySessionId = ""
+                    gatewaySequence = -1
+                    currentPresence = null
+                    connectGatewayInternal(t) { updated -> presence = updated }
+                    var waited = 0
+                    while (presence == null && waited < 15000) { delay(100); waited += 100 }
+                    if (presence == null) addLog("WARN", "Gateway", "Timed out waiting for READY (${waited}ms)")
                 } catch (e: Exception) {
-                    addLog("ERROR", "Gateway", "Gateway failed: ${e.message}")
+                    addLog("ERROR", "Gateway", "Gateway init failed: ${e.message}")
                 }
                 loadingPresence = false
+            }
+
+            loadingBadges = true
+            launch {
+                badges = try {
+                    val uid = fetched?.id ?: ""
+                    if (uid.isNotEmpty()) fetchUserBadges(t, uid) else emptyList()
+                } catch (e: Exception) {
+                    addLog("ERROR", "API", "Badges: ${e.message}")
+                    emptyList()
+                }
+                loadingBadges = false
             }
 
             loadingConns = true
@@ -969,19 +1160,22 @@ class MainActivity : ComponentActivity() {
                     onFooterClick = { footerClicks++; if (footerClicks >= 5) { showLogs = true; footerClicks = 0 } })
                 else      -> UserProfileScreen(
                     user = user, token = token ?: "", loadingUser = loadingUser, loadingPresence = loadingPresence,
-                    loadingConns = loadingConns, loadingGuilds = loadingGuilds, presence = presence,
-                    connections = connections, guildCount = guildCount,
+                    loadingConns = loadingConns, loadingGuilds = loadingGuilds, loadingBadges = loadingBadges,
+                    presence = presence, connections = connections, guildCount = guildCount, badges = badges,
                     footerClicks = footerClicks,
                     onFooterClick = { footerClicks++; if (footerClicks >= 5) { showLogs = true; footerClicks = 0 } },
                     onRefresh = {
                         addLog("INFO", "Session", "Manual refresh triggered")
-                        user = null; presence = null; connections = null; guildCount = null
+                        user = null; presence = null; connections = null; guildCount = null; badges = emptyList()
+                        heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
+                        gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0
                         refreshTick++
                     },
                     onLogout = {
                         addLog("INFO", "Session", "Logout — clearing state")
-                        heartbeatJob?.cancel(); gatewayWs?.close(1000, null)
-                        clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null
+                        heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
+                        gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; ownUserId = ""
+                        clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null; badges = emptyList()
                     })
             }
         }
@@ -1187,8 +1381,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun UserProfileScreen(
         user: DiscordUser?, token: String, loadingUser: Boolean, loadingPresence: Boolean,
-        loadingConns: Boolean, loadingGuilds: Boolean, presence: DiscordPresence?,
-        connections: List<DiscordConnection>?, guildCount: Int?,
+        loadingConns: Boolean, loadingGuilds: Boolean, loadingBadges: Boolean,
+        presence: DiscordPresence?, connections: List<DiscordConnection>?,
+        guildCount: Int?, badges: List<BadgeInfo>,
         footerClicks: Int, onFooterClick: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit
     ) {
         val ctx = LocalContext.current
@@ -1229,8 +1424,7 @@ class MainActivity : ComponentActivity() {
                         riskPrefs.edit().putBoolean(KEY_RISK_ACCEPTED, true).apply()
                         riskAccepted.value = true
                         showTokenWarning = false
-                        val act = pendingAction
-                        pendingAction = null
+                        val act = pendingAction; pendingAction = null
                         if (act != null) triggerTokenAction(act)
                     }, colors = ButtonDefaults.buttonColors(containerColor = AppColors.Warning), shape = RoundedCornerShape(Radius.Button)) {
                         Text("I understand, continue", fontWeight = FontWeight.Bold, color = Color.Black)
@@ -1294,9 +1488,7 @@ class MainActivity : ComponentActivity() {
                 } else if (user != null) {
 
                     ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
-                        Button(onClick = {
-                            triggerTokenAction("copy")
-                        }, modifier = Modifier.fillMaxWidth().height(46.dp),
+                        Button(onClick = { triggerTokenAction("copy") }, modifier = Modifier.fillMaxWidth().height(46.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = if (copied) AppColors.Success.copy(0.8f) else AppColors.Success),
                             shape = RoundedCornerShape(Radius.Token)) {
                             Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp), tint = Color.White); Spacer(Modifier.width(8.dp))
@@ -1308,9 +1500,7 @@ class MainActivity : ComponentActivity() {
                                 Text(if (showToken) token else "•".repeat(token.length),
                                     fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = AppColors.TextSecondary,
                                     maxLines = if (showToken) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                IconButton(onClick = {
-                                    triggerTokenAction("show")
-                                }, modifier = Modifier.size(36.dp)) {
+                                IconButton(onClick = { triggerTokenAction("show") }, modifier = Modifier.size(36.dp)) {
                                     Icon(if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
                                 }
                             }
@@ -1351,13 +1541,7 @@ class MainActivity : ComponentActivity() {
                     if (presence?.customStatus != null) {
                         Spacer(Modifier.height(8.dp))
                         val cs = presence.customStatus
-                        Row(
-                            Modifier
-                                .background(AppColors.Surface, RoundedCornerShape(Radius.Medium))
-                                .border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium))
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Row(Modifier.background(AppColors.Surface, RoundedCornerShape(Radius.Medium)).border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             if (cs.emojiId != null) {
                                 val ext = if (cs.emojiAnimated) "gif" else "png"
                                 AsyncImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=32", null, Modifier.size(20.dp))
@@ -1383,8 +1567,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val badges = parseBadges(user.publicFlags, user.premiumType, user.hasLegacyUsername, user.hasQuestBadge, user.hasOrbsBadge)
-                    if (badges.isNotEmpty()) {
+                    if (loadingBadges) {
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(Modifier.size(12.dp), color = AppColors.Primary, strokeWidth = 1.5.dp)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Loading badges...", fontSize = 11.sp, color = AppColors.TextMuted)
+                        }
+                    } else if (badges.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             badges.forEach { badge ->
@@ -1461,14 +1651,12 @@ class MainActivity : ComponentActivity() {
                                 visible.forEach { conn ->
                                     val cc = connectionColor(conn.type)
                                     val profileUrl = connectionProfileUrl(conn.type, conn.name)
-                                    Row(
-                                        Modifier.fillMaxWidth()
-                                            .background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium))
-                                            .border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium))
-                                            .then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier)
-                                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                    Row(Modifier.fillMaxWidth()
+                                        .background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium))
+                                        .border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium))
+                                        .then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier)
+                                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically) {
                                         Box(Modifier.size(32.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) {
                                             Text(connectionLabel(conn.type).first().toString(), fontSize = 14.sp, color = cc, fontWeight = FontWeight.Black)
                                         }
@@ -1476,10 +1664,7 @@ class MainActivity : ComponentActivity() {
                                         Column(Modifier.weight(1f)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(connectionLabel(conn.type), fontSize = 11.sp, color = cc, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
-                                                if (profileUrl != null) {
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Icon(Icons.Outlined.Link, null, tint = cc.copy(0.6f), modifier = Modifier.size(10.dp))
-                                                }
+                                                if (profileUrl != null) { Spacer(Modifier.width(4.dp)); Icon(Icons.Outlined.Link, null, tint = cc.copy(0.6f), modifier = Modifier.size(10.dp)) }
                                             }
                                             Text(conn.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
@@ -1507,14 +1692,24 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun ActivityCard(activity: PresenceActivity) {
         val isSpotify = activity.type == 2
-        val accent = if (isSpotify) AppColors.Spotify else AppColors.Primary
+        val isStreaming = activity.type == 1
+        val accent = when {
+            isSpotify   -> AppColors.Spotify
+            isStreaming  -> Color(0xFF9147FF)
+            else         -> AppColors.Primary
+        }
         var elapsed   by remember { mutableStateOf("") }
         var remaining by remember { mutableStateOf("") }
-        LaunchedEffect(activity.name) {
+        var progFraction by remember { mutableStateOf(0f) }
+        LaunchedEffect(activity.name, activity.timestamps?.start, activity.timestamps?.end) {
             while (true) {
                 val ts = activity.timestamps
                 if (ts?.start != null) elapsed = formatElapsed(ts.start)
-                if (ts?.end   != null) remaining = formatRemaining(ts.end)
+                if (ts?.end != null) {
+                    remaining = formatRemaining(ts.end)
+                    val total = (ts.end - (ts.start ?: ts.end)).coerceAtLeast(1L)
+                    progFraction = ((System.currentTimeMillis() - (ts.start ?: ts.end)).toFloat() / total).coerceIn(0f, 1f)
+                }
                 delay(1000)
             }
         }
@@ -1522,17 +1717,24 @@ class MainActivity : ComponentActivity() {
             border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(0.22f))) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                 Row(verticalAlignment = Alignment.Top) {
-                    val imgUrl = activity.albumCoverUrl
-                        ?: if (activity.applicationId != null && activity.assets?.largeImage != null && !activity.assets.largeImage.startsWith("mp:"))
-                            "https://cdn.discordapp.com/app-assets/${activity.applicationId}/${activity.assets.largeImage}.png" else null
-                    if (imgUrl != null) {
+                    val largeUrl = activity.largeImageUrl
+                    if (largeUrl != null) {
                         Box(Modifier.size(60.dp)) {
-                            AsyncImage(imgUrl, null, Modifier.fillMaxSize().clip(RoundedCornerShape(Radius.Small)), contentScale = ContentScale.Crop)
-                            if (activity.assets?.smallImage != null && activity.applicationId != null && !activity.assets.smallImage.startsWith("mp:")) {
-                                AsyncImage("https://cdn.discordapp.com/app-assets/${activity.applicationId}/${activity.assets.smallImage}.png", null,
-                                    Modifier.size(20.dp).align(Alignment.BottomEnd).clip(CircleShape).border(1.dp, AppColors.Background, CircleShape))
+                            AsyncImage(largeUrl, null, Modifier.fillMaxSize().clip(RoundedCornerShape(Radius.Small)), contentScale = ContentScale.Crop)
+                            val smallUrl = activity.smallImageUrl
+                            if (smallUrl != null) {
+                                AsyncImage(smallUrl, null,
+                                    Modifier.size(22.dp).align(Alignment.BottomEnd).clip(CircleShape).border(2.dp, AppColors.Background, CircleShape),
+                                    contentScale = ContentScale.Crop)
                             }
                         }
+                    } else if (activity.applicationId != null) {
+                        AsyncImage(
+                            model = "https://cdn.discordapp.com/app-icons/${activity.applicationId}/icon.png",
+                            contentDescription = null,
+                            modifier = Modifier.size(60.dp).clip(RoundedCornerShape(Radius.Small)),
+                            contentScale = ContentScale.Crop
+                        )
                     } else {
                         Box(Modifier.size(60.dp).background(accent.copy(0.15f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) {
                             Icon(if (isSpotify) Icons.Outlined.MusicNote else Icons.Outlined.Games, null, tint = accent, modifier = Modifier.size(28.dp))
@@ -1548,20 +1750,22 @@ class MainActivity : ComponentActivity() {
                         if (!activity.assets?.smallText.isNullOrBlank()) Text(activity.assets!!.smallText!!, fontSize = 11.sp, color = AppColors.TextMuted.copy(0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                if (activity.timestamps != null) {
+                val ts = activity.timestamps
+                if (ts != null) {
                     Spacer(Modifier.height(8.dp))
-                    val ts = activity.timestamps
                     if (ts.start != null && ts.end != null) {
-                        val total = (ts.end - ts.start).coerceAtLeast(1L)
-                        val prog  = ((System.currentTimeMillis() - ts.start).toFloat() / total).coerceIn(0f, 1f)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(elapsed, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
                             Spacer(Modifier.width(6.dp))
-                            Box(Modifier.weight(1f).height(3.dp).background(accent.copy(0.2f), CircleShape)) { Box(Modifier.fillMaxHeight().fillMaxWidth(prog).background(accent, CircleShape)) }
+                            Box(Modifier.weight(1f).height(3.dp).background(accent.copy(0.2f), CircleShape)) {
+                                Box(Modifier.fillMaxHeight().fillMaxWidth(progFraction).background(accent, CircleShape))
+                            }
                             Spacer(Modifier.width(6.dp))
                             Text(remaining, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
                         }
-                    } else if (ts.start != null) { Text("$elapsed elapsed", fontSize = 10.sp, color = AppColors.TextMuted) }
+                    } else if (ts.start != null) {
+                        Text("$elapsed elapsed", fontSize = 10.sp, color = AppColors.TextMuted)
+                    }
                 }
                 if (activity.buttons.isNotEmpty()) {
                     val btnCtx = LocalContext.current
@@ -1633,7 +1837,7 @@ class MainActivity : ComponentActivity() {
 
     private suspend fun fetchUserInfo(token: String): DiscordUser = withContext(Dispatchers.IO) {
         val startMs = System.currentTimeMillis()
-        addLog("INFO", "API", "GET /users/@me", "Authorization: ${token.take(20)}...  (Bearer token)")
+        addLog("INFO", "API", "GET /users/@me", "Authorization: ${token.take(20)}...")
         val req  = Request.Builder().url("https://discord.com/api/v10/users/@me").header("Authorization", token).build()
         val resp = httpClient.newCall(req).execute()
         val body = resp.body?.string() ?: throw IOException("Empty body")
@@ -1642,7 +1846,7 @@ class MainActivity : ComponentActivity() {
             addLog("ERROR", "API", "HTTP ${resp.code} /users/@me (${ms}ms)", "Body: ${body.take(300)}")
             throw IOException("HTTP ${resp.code}")
         }
-        addLog("SUCCESS", "API", "HTTP 200 /users/@me (${ms}ms)", "Headers: Content-Type=${resp.header("Content-Type")} X-RateLimit-Remaining=${resp.header("X-RateLimit-Remaining")}\nBody size: ${body.length} bytes")
+        addLog("SUCCESS", "API", "HTTP 200 /users/@me (${ms}ms)", "size=${body.length} bytes")
         val j = JSONObject(body)
         fun str(k: String) = j.optString(k).takeIf { it.isNotEmpty() && it != "null" }
         val dec = j.optJSONObject("avatar_decoration_data")
@@ -1671,110 +1875,87 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private suspend fun connectGateway(token: String, onUpdate: (DiscordPresence) -> Unit): DiscordPresence? = withContext(Dispatchers.IO) {
-        addLog("INFO", "Gateway", "Connecting…", GATEWAY_URL)
-        heartbeatJob?.cancel()
-        gatewayWs?.close(1000, null)
-        onPresenceLive = onUpdate
-
-        var initialPresence: DiscordPresence? = null
-        var readyReceived = false
-
-        val listener = object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) = addLog("INFO", "Gateway", "WebSocket opened", "HTTP ${response.code} ${response.message}")
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                try {
-                    val json = JSONObject(text)
-                    val op   = json.optInt("op", -1)
-                    val seq  = json.optInt("s", -1)
-                    if (seq > 0) gatewaySequence = seq
-                    when (op) {
-                        10 -> {
-                            val interval = json.getJSONObject("d").getLong("heartbeat_interval")
-                            addLog("INFO", "Gateway", "Hello OP10 — heartbeat every ${interval}ms")
-                            heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
-                                delay((interval * 0.8).toLong())
-                                while (true) {
-                                    val s = if (gatewaySequence > 0) gatewaySequence.toString() else "null"
-                                    webSocket.send("""{"op":1,"d":$s}""")
-                                    addLog("INFO", "Gateway", "♥ Heartbeat sent", "seq=$s")
-                                    delay(interval)
-                                }
-                            }
-                            webSocket.send(JSONObject().apply {
-                                put("op", 2)
-                                put("d", JSONObject().apply {
-                                    put("token", token); put("capabilities", 16381)
-                                    put("properties", JSONObject().apply { put("os", "Android"); put("browser", "Discord Android"); put("device", "Android") })
-                                    put("compress", false)
-                                })
-                            }.toString())
-                            addLog("INFO", "Gateway", "Identify OP2 sent")
-                        }
-                        11 -> addLog("INFO", "Gateway", "♥ Heartbeat ACK received")
-                        9  -> addLog("WARN", "Gateway", "Invalid session OP9 — gateway rejected token or session")
-                        0  -> {
-                            val ev = json.optString("t")
-                            when (ev) {
-                                "READY" -> {
-                                    val data     = json.getJSONObject("d")
-                                    val selfUser = data.optJSONObject("user")
-                                    val selfId   = selfUser?.optString("id") ?: ownUserId
-                                    if (ownUserId.isEmpty()) ownUserId = selfId
-                                    val sessions = data.optJSONArray("sessions")
-                                    val (status, platforms, customStatus) = resolvePresenceFromSessions(sessions)
-                                    val activities = activitiesFromSessions(sessions)
-                                    val presence   = DiscordPresence(status, activities, platforms, customStatus)
-                                    initialPresence = presence; readyReceived = true
-                                    addLog("SUCCESS", "Gateway", "READY event received", "userId=$selfId status=$status platforms=${platforms.joinToString()} activities=${activities.size} customStatus=${customStatus?.text}")
-                                    onPresenceLive?.invoke(presence)
-                                }
-                                "PRESENCE_UPDATE" -> {
-                                    val data   = json.getJSONObject("d")
-                                    val userId = data.optJSONObject("user")?.optString("id") ?: ""
-                                    if (userId.isNotEmpty() && ownUserId.isNotEmpty() && userId != ownUserId) return
-                                    val status     = data.optString("status", "offline")
-                                    val acts       = data.optJSONArray("activities")
-                                    val activities = activitiesFromArray(acts)
-                                    var cs: CustomStatus? = null
-                                    if (acts != null) for (i in 0 until acts.length()) {
-                                        val a = acts.getJSONObject(i)
-                                        if (a.optInt("type", -1) == 4) {
-                                            val em = a.optJSONObject("emoji")
-                                            cs = CustomStatus(a.optString("state").takeIf { it.isNotEmpty() && it != "null" }, em?.optString("name")?.takeIf { it.isNotEmpty() }, em?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" }, em?.optBoolean("animated", false) ?: false)
-                                            break
-                                        }
-                                    }
-                                    addLog("INFO", "Gateway", "PRESENCE_UPDATE (uid=$userId)", "status=$status acts=${activities.size}")
-                                    onPresenceLive?.invoke(DiscordPresence(status, activities, initialPresence?.platforms ?: emptyList(), cs))
-                                }
-                                "SESSION_REPLACE" -> {
-                                    val sessions = json.optJSONArray("d") ?: return
-                                    val (status, platforms, cs) = resolvePresenceFromSessions(sessions)
-                                    val activities = activitiesFromSessions(sessions)
-                                    addLog("INFO", "Gateway", "SESSION_REPLACE", "sessions=${sessions.length()} status=$status acts=${activities.size}")
-                                    val updated = DiscordPresence(status, activities, platforms, cs)
-                                    initialPresence = updated
-                                    onPresenceLive?.invoke(updated)
-                                }
-                                else -> if (ev.isNotEmpty()) addLog("INFO", "Gateway", "Event: $ev")
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    addLog("ERROR", "Gateway", "Parse error: ${e.message}", e.stackTraceToString().take(400))
-                }
+    private suspend fun fetchUserBadges(token: String, userId: String): List<BadgeInfo> = withContext(Dispatchers.IO) {
+        val startMs = System.currentTimeMillis()
+        addLog("INFO", "API", "GET /users/$userId/profile")
+        try {
+            val resp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v10/users/$userId/profile?with_mutual_guilds=false&with_mutual_friends_count=false")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (!resp.isSuccessful) {
+                addLog("WARN", "API", "HTTP ${resp.code} /profile — badges unavailable")
+                return@withContext emptyList()
             }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = addLog("ERROR", "Gateway", "Failure: ${t.message}", "code=${response?.code}")
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String)      = addLog("INFO",  "Gateway", "Closed: $code", reason.ifBlank { "no reason" })
+            val body = resp.body?.string() ?: return@withContext emptyList()
+            val ms = System.currentTimeMillis() - startMs
+            val json = JSONObject(body)
+            val badgesArr = json.optJSONArray("badges")
+            if (badgesArr == null || badgesArr.length() == 0) {
+                addLog("INFO", "API", "HTTP 200 /profile (${ms}ms) — no badges")
+                return@withContext emptyList()
+            }
+            val result = mutableListOf<BadgeInfo>()
+            for (i in 0 until badgesArr.length()) {
+                val b = badgesArr.getJSONObject(i)
+                val id   = b.optString("id", "")
+                val icon = b.optString("icon", "").takeIf { it.isNotEmpty() } ?: continue
+                val desc = b.optString("description", id)
+                val link = b.optString("link").takeIf { it.isNotEmpty() && it != "null" }
+                val label = badgeLabelFromId(id, desc)
+                result.add(BadgeInfo(
+                    id          = id,
+                    label       = label,
+                    color       = badgeColorFromId(id),
+                    cdnUrl      = "https://cdn.discordapp.com/badge-icons/$icon.png",
+                    description = desc,
+                    link        = link
+                ))
+            }
+            addLog("SUCCESS", "API", "HTTP 200 /profile (${ms}ms) — ${result.size} badges", result.map { it.id }.joinToString())
+            result
+        } catch (e: Exception) {
+            addLog("ERROR", "API", "fetchUserBadges failed: ${e.message}")
+            emptyList()
         }
+    }
 
-        val ws = httpClient.newWebSocket(Request.Builder().url(GATEWAY_URL).build(), listener)
-        gatewayWs = ws
+    private fun badgeLabelFromId(id: String, fallback: String): String = when {
+        id == "staff"                      -> "Discord Staff"
+        id == "partner"                    -> "Partner"
+        id == "hypesquad"                  -> "HypeSquad Events"
+        id == "bug_hunter_level_1"         -> "Bug Hunter"
+        id == "bug_hunter_level_2"         -> "Bug Hunter Lv.2"
+        id == "hypesquad_house_1"          -> "HypeSquad Bravery"
+        id == "hypesquad_house_2"          -> "HypeSquad Brilliance"
+        id == "hypesquad_house_3"          -> "HypeSquad Balance"
+        id == "early_supporter"            -> "Early Supporter"
+        id == "verified_developer"         -> "Early Dev"
+        id == "moderator_programs_alumni"  -> "Mod Alumni"
+        id == "active_developer"           -> "Active Dev"
+        id == "legacy_username"            -> "Legacy Username"
+        id.startsWith("premium_tenure")    -> {
+            val months = id.filter { it.isDigit() }.take(4).toIntOrNull()
+            if (months != null) "Nitro ${months}mo" else "Nitro Tenure"
+        }
+        id.startsWith("guild_booster")     -> {
+            val lvl = id.lastOrNull { it.isDigit() }?.toString()
+            if (lvl != null) "Booster Lv.$lvl" else "Server Booster"
+        }
+        id == "premium"                    -> "Nitro"
+        id.contains("quest")               -> "Quest"
+        else                               -> fallback.take(18)
+    }
+
+    private suspend fun connectGateway(token: String, onUpdate: (DiscordPresence) -> Unit): DiscordPresence? = withContext(Dispatchers.IO) {
+        addLog("INFO", "Gateway", "Starting gateway connection…", GATEWAY_URL)
+        connectGatewayInternal(token, false, onUpdate)
         var waited = 0
-        while (!readyReceived && waited < 15000) { delay(100); waited += 100 }
-        if (!readyReceived) addLog("WARN", "Gateway", "Timed out waiting for READY (${waited}ms)")
-        initialPresence
+        while (currentPresence == null && waited < 15000) { delay(100); waited += 100 }
+        if (currentPresence == null) addLog("WARN", "Gateway", "Timed out waiting for READY (${waited}ms)")
+        currentPresence
     }
 
     private suspend fun fetchConnections(token: String): List<DiscordConnection> = withContext(Dispatchers.IO) {
@@ -1782,12 +1963,12 @@ class MainActivity : ComponentActivity() {
         addLog("INFO", "API", "GET /users/@me/connections")
         val resp = httpClient.newCall(Request.Builder().url("https://discord.com/api/v10/users/@me/connections").header("Authorization", token).build()).execute()
         if (!resp.isSuccessful) {
-            addLog("ERROR", "API", "HTTP ${resp.code} /connections (${System.currentTimeMillis()-start}ms)", resp.body?.string()?.take(200))
+            addLog("ERROR", "API", "HTTP ${resp.code} /connections (${System.currentTimeMillis()-start}ms)")
             return@withContext emptyList()
         }
         val body = resp.body?.string() ?: return@withContext emptyList()
         val arr = JSONArray(body)
-        addLog("SUCCESS", "API", "HTTP 200 /connections (${System.currentTimeMillis()-start}ms)", "count=${arr.length()} types=${(0 until arr.length()).map { arr.getJSONObject(it).optString("type") }.joinToString()}")
+        addLog("SUCCESS", "API", "HTTP 200 /connections (${System.currentTimeMillis()-start}ms)", "count=${arr.length()}")
         buildList { for (i in 0 until arr.length()) { val o = arr.getJSONObject(i); add(DiscordConnection(o.optString("type"), o.optString("name"), o.optBoolean("verified", false), o.optInt("visibility", 0))) } }
     }
 
