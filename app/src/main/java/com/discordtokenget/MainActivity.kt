@@ -42,6 +42,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -196,7 +197,10 @@ data class DiscordUser(
     val nameplateLabel: String?,
     val primaryGuildTag: String?,
     val primaryGuildBadge: String?,
-    val primaryGuildId: String?
+    val primaryGuildId: String?,
+    val hasLegacyUsername: Boolean,
+    val hasQuestBadge: Boolean,
+    val hasOrbsBadge: Boolean
 )
 
 data class CustomStatus(
@@ -215,6 +219,8 @@ data class RichAssets(
     val smallText: String?
 )
 
+data class ActivityButton(val label: String, val url: String)
+
 data class PresenceActivity(
     val type: Int,
     val name: String,
@@ -224,7 +230,8 @@ data class PresenceActivity(
     val timestamps: RichTimestamps?,
     val assets: RichAssets?,
     val syncId: String?,
-    val albumCoverUrl: String?
+    val albumCoverUrl: String?,
+    val buttons: List<ActivityButton>
 )
 
 data class DiscordPresence(
@@ -308,8 +315,9 @@ private const val PREF_CRASH        = "crash_prefs"
 private const val KEY_CRASH_TRACE   = "crash_trace"
 private const val PREF_SESSION      = "session_prefs"
 private const val KEY_TOKEN         = "saved_token"
+private const val KEY_RISK_ACCEPTED  = "risk_accepted"
 private const val DISCORD_EPOCH     = 1420070400000L
-private const val CURRENT_VERSION   = "1.0.25"
+private const val CURRENT_VERSION   = "1.0.26"
 private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/GetDiscordToken/releases/latest"
 private const val GATEWAY_URL       = "wss://gateway.discord.gg/?v=10&encoding=json"
 
@@ -413,7 +421,7 @@ private fun connectionProfileUrl(type: String, name: String): String? = when (ty
     else              -> null
 }
 
-private fun parseBadges(publicFlags: Long, premiumType: Int): List<BadgeInfo> {
+private fun parseBadges(publicFlags: Long, premiumType: Int, hasLegacyUsername: Boolean = false, hasQuestBadge: Boolean = false, hasOrbsBadge: Boolean = false): List<BadgeInfo> {
     val list = mutableListOf<BadgeInfo>()
     if (premiumType == 2) list.add(BadgeInfo("Nitro", Color(0xFF5865F2),
         "https://cdn.discordapp.com/badge-icons/2ba85e8026a8614b640c2837bcdfe21b.png",
@@ -472,6 +480,15 @@ private fun parseBadges(publicFlags: Long, premiumType: Int): List<BadgeInfo> {
     if (publicFlags and 16777216L != 0L) list.add(BadgeInfo("Uses Automod", Color(0xFF10B981),
         "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png",
         "This bot has 100+ active automod rules created."))
+    if (hasQuestBadge) list.add(BadgeInfo("Quest Completed", Color(0xFF5865F2),
+        "https://cdn.discordapp.com/badge-icons/7d3c0e6eb46c8d7d58b5e5fd54bfef84.png",
+        "Completed a Discord Quest — a sponsored in-app challenge like streaming a game for a set duration."))
+    if (hasOrbsBadge) list.add(BadgeInfo("Orbs Apprentice", Color(0xFF7B68EE),
+        "https://cdn.discordapp.com/badge-icons/e20739d5e58fc2d8be3b94fb9b11fd58.png",
+        "Purchased the Orbs Apprentice badge from the Discord Shop using Discord Orbs earned from Quests."))
+    if (hasLegacyUsername) list.add(BadgeInfo("Legacy Username", Color(0xFF8B949E),
+        "https://cdn.discordapp.com/badge-icons/6de6d34650760ba5551a79732e98ed60.png",
+        "This user had a username in the old user#1234 format and changed it during Discord's username migration."))
     return list
 }
 
@@ -542,6 +559,24 @@ private fun buildActivity(a: JSONObject): PresenceActivity {
             smallText  = as_.optString("small_text").takeIf  { it.isNotEmpty() && it != "null" }
         )
     } else null
+    if (as_ != null && albumUrl == null) {
+        val li = as_.optString("large_image").takeIf { it.isNotEmpty() && it != "null" }
+        if (li != null && li.startsWith("mp:external/")) {
+            albumUrl = "https://media.discordapp.net/" + li.removePrefix("mp:")
+        }
+    }
+    val btns = mutableListOf<ActivityButton>()
+    val btnsArr = a.optJSONArray("buttons")
+    if (btnsArr != null) {
+        for (bi in 0 until btnsArr.length()) {
+            val b = btnsArr.optJSONObject(bi)
+            if (b != null) {
+                val lbl = b.optString("label").takeIf { it.isNotEmpty() }
+                val url = b.optString("url").takeIf  { it.isNotEmpty() }
+                if (lbl != null && url != null) btns.add(ActivityButton(lbl, url))
+            }
+        }
+    }
     return PresenceActivity(
         type          = type,
         name          = name,
@@ -551,7 +586,8 @@ private fun buildActivity(a: JSONObject): PresenceActivity {
         timestamps    = richTs,
         assets        = richAs,
         syncId        = a.optString("sync_id").takeIf { it.isNotEmpty() && it != "null" },
-        albumCoverUrl = albumUrl
+        albumCoverUrl = albumUrl,
+        buttons       = btns
     )
 }
 
@@ -860,7 +896,7 @@ class MainActivity : ComponentActivity() {
             val fetched: DiscordUser? = try {
                 fetchUserInfo(t).also { u ->
                     ownUserId = u.id
-                    addLog("SUCCESS", "API", "User: ${u.username} (id=${u.id})", "flags=${u.publicFlags} nitro=${u.premiumType} badge_count=${parseBadges(u.publicFlags, u.premiumType).size}")
+                    addLog("SUCCESS", "API", "User: ${u.username} (id=${u.id})", "flags=${u.publicFlags} nitro=${u.premiumType} badge_count=${parseBadges(u.publicFlags, u.premiumType, u.hasLegacyUsername, u.hasQuestBadge, u.hasOrbsBadge).size}")
                 }
             } catch (e: Exception) {
                 addLog("ERROR", "API", "User fetch failed: ${e.message}", e.stackTraceToString().take(600))
@@ -1156,12 +1192,23 @@ class MainActivity : ComponentActivity() {
         footerClicks: Int, onFooterClick: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit
     ) {
         val ctx = LocalContext.current
+        val ctx2            = LocalContext.current
         var showToken       by remember { mutableStateOf(false) }
         var copied          by remember { mutableStateOf(false) }
         var expandConns     by remember { mutableStateOf(false) }
         var selectedBadge   by remember { mutableStateOf<BadgeInfo?>(null) }
         var showTokenWarning by remember { mutableStateOf(false) }
         var pendingAction   by remember { mutableStateOf<String?>(null) }
+        val riskPrefs       = remember { ctx2.getSharedPreferences(PREF_SESSION, Context.MODE_PRIVATE) }
+        val riskAccepted    = remember { mutableStateOf(riskPrefs.getBoolean(KEY_RISK_ACCEPTED, false)) }
+        fun triggerTokenAction(action: String) {
+            if (riskAccepted.value) {
+                when (action) {
+                    "copy" -> { (ctx2.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Token", token)); copied = true; CoroutineScope(Dispatchers.Main).launch { delay(2000); copied = false } }
+                    "show" -> { showToken = !showToken }
+                }
+            } else { pendingAction = action; showTokenWarning = true }
+        }
         val scale = remember { Animatable(0.95f) }
         LaunchedEffect(user?.id) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy)) }
 
@@ -1169,29 +1216,24 @@ class MainActivity : ComponentActivity() {
             AlertDialog(
                 onDismissRequest = { showTokenWarning = false; pendingAction = null },
                 icon = { Icon(Icons.Outlined.Warning, null, tint = AppColors.Warning, modifier = Modifier.size(32.dp)) },
-                title = { Text("⚠️ Safety Warning", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold) },
+                title = { Text("Security Warning", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Your access token is like a password. Never share it with anyone!", color = AppColors.Warning, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text("This app is not responsible for any consequences arising from the misuse or missharing of your token, including account loss, banning, or unauthorized access.", color = AppColors.TextSecondary, fontSize = 13.sp, lineHeight = 18.sp)
+                        Text("This app is not responsible for any consequences arising from the misuse or sharing of your token, including account loss, bans, or unauthorized access.", color = AppColors.TextSecondary, fontSize = 13.sp, lineHeight = 18.sp)
                         Text("By continuing, you confirm that you understand the risks.", color = AppColors.TextMuted, fontSize = 12.sp)
                     }
                 },
                 confirmButton = {
                     Button(onClick = {
+                        riskPrefs.edit().putBoolean(KEY_RISK_ACCEPTED, true).apply()
+                        riskAccepted.value = true
                         showTokenWarning = false
-                        when (pendingAction) {
-                            "copy" -> {
-                                (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Token", token))
-                                copied = true
-                                addLog("INFO", "Token", "Copied to clipboard", "len=${token.length}")
-                                CoroutineScope(Dispatchers.Main).launch { delay(2000); copied = false }
-                            }
-                            "show" -> { showToken = !showToken }
-                        }
+                        val act = pendingAction
                         pendingAction = null
+                        if (act != null) triggerTokenAction(act)
                     }, colors = ButtonDefaults.buttonColors(containerColor = AppColors.Warning), shape = RoundedCornerShape(Radius.Button)) {
-                        Text("I understand, continue.", fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text("I understand, continue", fontWeight = FontWeight.Bold, color = Color.Black)
                     }
                 },
                 dismissButton = { TextButton(onClick = { showTokenWarning = false; pendingAction = null }) { Text("Cancel", color = AppColors.TextMuted) } },
@@ -1253,8 +1295,7 @@ class MainActivity : ComponentActivity() {
 
                     ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
                         Button(onClick = {
-                            pendingAction = "copy"
-                            showTokenWarning = true
+                            triggerTokenAction("copy")
                         }, modifier = Modifier.fillMaxWidth().height(46.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = if (copied) AppColors.Success.copy(0.8f) else AppColors.Success),
                             shape = RoundedCornerShape(Radius.Token)) {
@@ -1264,12 +1305,11 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(8.dp))
                         Card(colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVar), shape = RoundedCornerShape(Radius.Token)) {
                             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(if (showToken) token else "•".repeat(token.length.coerceAtMost(40)),
+                                Text(if (showToken) token else "•".repeat(token.length),
                                     fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = AppColors.TextSecondary,
                                     maxLines = if (showToken) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                                 IconButton(onClick = {
-                                    pendingAction = "show"
-                                    showTokenWarning = true
+                                    triggerTokenAction("show")
                                 }, modifier = Modifier.size(36.dp)) {
                                     Icon(if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
                                 }
@@ -1326,11 +1366,8 @@ class MainActivity : ComponentActivity() {
                                 Text(cs.emojiName, fontSize = 18.sp)
                                 if (cs.text != null) Spacer(Modifier.width(6.dp))
                             }
-                            if (cs.text != null) {
+                            if (!cs.text.isNullOrBlank()) {
                                 Text(cs.text, fontSize = 13.sp, color = AppColors.TextSecondary, modifier = Modifier.weight(1f))
-                            } else if (cs.emojiName != null && cs.emojiId == null && cs.text == null) {
-                            } else if (cs.emojiId == null && cs.text == null) {
-                                Text("Status personalizado", fontSize = 13.sp, color = AppColors.TextMuted)
                             }
                         }
                     }
@@ -1346,7 +1383,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val badges = parseBadges(user.publicFlags, user.premiumType)
+                    val badges = parseBadges(user.publicFlags, user.premiumType, user.hasLegacyUsername, user.hasQuestBadge, user.hasOrbsBadge)
                     if (badges.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1526,6 +1563,24 @@ class MainActivity : ComponentActivity() {
                         }
                     } else if (ts.start != null) { Text("$elapsed elapsed", fontSize = 10.sp, color = AppColors.TextMuted) }
                 }
+                if (activity.buttons.isNotEmpty()) {
+                    val btnCtx = LocalContext.current
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        activity.buttons.forEach { btn ->
+                            OutlinedButton(
+                                onClick = { runCatching { btnCtx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(btn.url))) } },
+                                modifier = Modifier.weight(1f).height(32.dp),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(0.5f)),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
+                            ) {
+                                Text(btn.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1609,7 +1664,10 @@ class MainActivity : ComponentActivity() {
             nameplateLabel        = np?.optString("label")?.takeIf { it.isNotEmpty() },
             primaryGuildTag       = pg?.optString("tag")?.takeIf { it.isNotEmpty() },
             primaryGuildBadge     = pg?.optString("badge")?.takeIf { it.isNotEmpty() },
-            primaryGuildId        = pg?.optString("identity_guild_id")?.takeIf { it.isNotEmpty() }
+            primaryGuildId        = pg?.optString("identity_guild_id")?.takeIf { it.isNotEmpty() },
+            hasLegacyUsername     = j.has("legacy_username") || j.optJSONObject("legacy_username") != null,
+            hasQuestBadge         = (j.optLong("public_flags", 0L) and 549755813888L != 0L),
+            hasOrbsBadge          = false
         )
     }
 
@@ -1673,11 +1731,11 @@ class MainActivity : ComponentActivity() {
                                 }
                                 "PRESENCE_UPDATE" -> {
                                     val data   = json.getJSONObject("d")
-                                    val userId = data.optJSONObject("user")?.optString("id") ?: return
-                                    if (userId != ownUserId) return
+                                    val userId = data.optJSONObject("user")?.optString("id") ?: ""
+                                    if (userId.isNotEmpty() && ownUserId.isNotEmpty() && userId != ownUserId) return
                                     val status     = data.optString("status", "offline")
-                                    val activities = activitiesFromArray(data.optJSONArray("activities"))
                                     val acts       = data.optJSONArray("activities")
+                                    val activities = activitiesFromArray(acts)
                                     var cs: CustomStatus? = null
                                     if (acts != null) for (i in 0 until acts.length()) {
                                         val a = acts.getJSONObject(i)
@@ -1687,15 +1745,17 @@ class MainActivity : ComponentActivity() {
                                             break
                                         }
                                     }
-                                    addLog("INFO", "Gateway", "PRESENCE_UPDATE (own user)", "status=$status activities=${activities.size}")
-                                    onPresenceLive?.invoke(DiscordPresence(status, activities, emptyList(), cs))
+                                    addLog("INFO", "Gateway", "PRESENCE_UPDATE (uid=$userId)", "status=$status acts=${activities.size}")
+                                    onPresenceLive?.invoke(DiscordPresence(status, activities, initialPresence?.platforms ?: emptyList(), cs))
                                 }
                                 "SESSION_REPLACE" -> {
                                     val sessions = json.optJSONArray("d") ?: return
                                     val (status, platforms, cs) = resolvePresenceFromSessions(sessions)
                                     val activities = activitiesFromSessions(sessions)
-                                    addLog("INFO", "Gateway", "SESSION_REPLACE", "sessions=${sessions.length()} status=$status")
-                                    onPresenceLive?.invoke(DiscordPresence(status, activities, platforms, cs))
+                                    addLog("INFO", "Gateway", "SESSION_REPLACE", "sessions=${sessions.length()} status=$status acts=${activities.size}")
+                                    val updated = DiscordPresence(status, activities, platforms, cs)
+                                    initialPresence = updated
+                                    onPresenceLive?.invoke(updated)
                                 }
                                 else -> if (ev.isNotEmpty()) addLog("INFO", "Gateway", "Event: $ev")
                             }
