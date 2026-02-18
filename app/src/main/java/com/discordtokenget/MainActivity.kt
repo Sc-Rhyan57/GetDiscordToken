@@ -248,7 +248,7 @@ private const val KEY_CRASH_TRACE   = "crash_trace"
 private const val PREF_SESSION      = "session_prefs"
 private const val KEY_TOKEN         = "saved_token"
 private const val DISCORD_EPOCH     = 1420070400000L
-private const val CURRENT_VERSION   = "1.0.19"
+private const val CURRENT_VERSION   = "1.0.20"
 private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/GetDiscordToken/releases/latest"
 private const val GATEWAY_URL       = "wss://gateway.discord.gg/?v=10&encoding=json"
 
