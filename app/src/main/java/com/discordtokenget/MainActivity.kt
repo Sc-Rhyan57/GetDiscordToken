@@ -22,6 +22,7 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -31,12 +32,15 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,10 +53,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -63,9 +69,12 @@ import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Games
 import androidx.compose.material.icons.outlined.Groups
@@ -80,6 +89,7 @@ import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Tag
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -98,6 +108,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -105,6 +117,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -116,6 +130,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -132,9 +147,15 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
@@ -174,12 +195,25 @@ data class DiscordUser(
     val accentColor: Int?
 )
 
+data class RichTimestamps(val start: Long?, val end: Long?)
+
+data class RichAssets(
+    val largeImage: String?,
+    val largeText: String?,
+    val smallImage: String?,
+    val smallText: String?
+)
+
 data class PresenceActivity(
     val type: Int,
     val name: String,
     val details: String?,
     val state: String?,
-    val applicationId: String?
+    val applicationId: String?,
+    val timestamps: RichTimestamps?,
+    val assets: RichAssets?,
+    val syncId: String?,
+    val albumCoverUrl: String?
 )
 
 data class DiscordPresence(
@@ -193,6 +227,14 @@ data class DiscordConnection(
     val name: String,
     val verified: Boolean,
     val visibility: Int
+)
+
+data class AppLog(
+    val timestamp: String,
+    val level: String,
+    val tag: String,
+    val message: String,
+    val detail: String? = null
 )
 
 private object AppColors {
@@ -253,9 +295,19 @@ private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/G
 private const val GATEWAY_URL       = "wss://gateway.discord.gg/?v=10&encoding=json"
 
 private val httpClient = OkHttpClient.Builder()
-    .connectTimeout(12, TimeUnit.SECONDS)
-    .readTimeout(12, TimeUnit.SECONDS)
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(15, TimeUnit.SECONDS)
     .build()
+
+private val appLogs = mutableStateListOf<AppLog>()
+private var logsEnabled = mutableStateOf(true)
+
+private fun addLog(level: String, tag: String, message: String, detail: String? = null) {
+    if (!logsEnabled.value) return
+    val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+    appLogs.add(0, AppLog(ts, level, tag, message, detail))
+    if (appLogs.size > 200) appLogs.removeAt(appLogs.size - 1)
+}
 
 private fun snowflakeToDate(id: String): String = try {
     val ts = (id.toLong() ushr 22) + DISCORD_EPOCH
@@ -339,6 +391,24 @@ private fun connectionColor(type: String): Color = when (type) {
     else              -> AppColors.Primary
 }
 
+private fun badgeImageUrl(flag: String): String = when (flag) {
+    "Staff"           -> "https://cdn.discordapp.com/badge-icons/5e74e9b61934fc1f67c65515d1f7e60d.png"
+    "Partner"         -> "https://cdn.discordapp.com/badge-icons/3f9748e53446a137a052f3454e2de41e.png"
+    "HypeSquad"       -> "https://cdn.discordapp.com/badge-icons/bf01d1073931f921909045f3a39fd264.png"
+    "Bug Hunter"      -> "https://cdn.discordapp.com/badge-icons/2717692c7dca7289b35297368a940dd0.png"
+    "Bravery"         -> "https://cdn.discordapp.com/badge-icons/8a88d63823d8a71cd5e390baa45efa02.png"
+    "Brilliance"      -> "https://cdn.discordapp.com/badge-icons/011940fd013082d85d0ceb1ce53ffe02.png"
+    "Balance"         -> "https://cdn.discordapp.com/badge-icons/3aa41de486fa12454c3761e8e223442e.png"
+    "Early Supporter" -> "https://cdn.discordapp.com/badge-icons/7060786766c9c840eb3019e725d2b358.png"
+    "Bug Hunter Lv.2" -> "https://cdn.discordapp.com/badge-icons/848f79194d4be5ff5f81505cbd0ce1e6.png"
+    "Bot Developer"   -> "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png"
+    "Active Dev"      -> "https://cdn.discordapp.com/badge-icons/6f9e37f9029ff57aef81db857890005e.png"
+    "Nitro"           -> "https://cdn.discordapp.com/badge-icons/2ba85e8026a8614b640c2837bcdfe21b.png"
+    "Nitro Classic"   -> "https://cdn.discordapp.com/badge-icons/f1e96cb3268ee9f1e39c4c74fa7e9ae5.png"
+    "Nitro Basic"     -> "https://cdn.discordapp.com/badge-icons/2ba85e8026a8614b640c2837bcdfe21b.png"
+    else              -> ""
+}
+
 private fun resolvePresenceStatus(sessions: JSONArray?): Pair<String, List<String>> {
     if (sessions == null || sessions.length() == 0) return "offline" to emptyList()
     val priority = mapOf("dnd" to 3, "online" to 2, "idle" to 1, "invisible" to 0, "offline" to -1)
@@ -360,6 +430,57 @@ private fun resolvePresenceStatus(sessions: JSONArray?): Pair<String, List<Strin
     return bestStatus to platforms
 }
 
+private fun parseActivitiesFromEvent(data: JSONObject): List<PresenceActivity> {
+    val list = mutableListOf<PresenceActivity>()
+    val acts = data.optJSONArray("activities") ?: return list
+    for (j in 0 until acts.length()) {
+        val a = acts.getJSONObject(j)
+        val type = a.optInt("type", 0)
+        if (type == 4) continue
+        val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue
+
+        val ts = a.optJSONObject("timestamps")
+        val richTs = if (ts != null) RichTimestamps(
+            start = if (!ts.isNull("start")) ts.optLong("start") else null,
+            end   = if (!ts.isNull("end"))   ts.optLong("end")   else null
+        ) else null
+
+        val as_ = a.optJSONObject("assets")
+        val appId = a.optString("application_id").takeIf { it.isNotEmpty() && it != "null" }
+        var albumUrl: String? = null
+        val richAs = if (as_ != null) {
+            val li = as_.optString("large_image").takeIf { it.isNotEmpty() && it != "null" }
+            val lt = as_.optString("large_text").takeIf { it.isNotEmpty() && it != "null" }
+            val si = as_.optString("small_image").takeIf { it.isNotEmpty() && it != "null" }
+            val st = as_.optString("small_text").takeIf { it.isNotEmpty() && it != "null" }
+            if (type == 2 && li != null) {
+                albumUrl = if (li.startsWith("spotify:")) {
+                    val spotifyId = li.removePrefix("spotify:")
+                    "https://i.scdn.co/image/$spotifyId"
+                } else if (appId != null) {
+                    "https://cdn.discordapp.com/app-assets/$appId/${li}.png"
+                } else null
+            }
+            RichAssets(li, lt, si, st)
+        } else null
+
+        if (list.none { it.name == name && it.type == type }) {
+            list.add(PresenceActivity(
+                type          = type,
+                name          = name,
+                details       = a.optString("details").takeIf { it.isNotEmpty() && it != "null" },
+                state         = a.optString("state").takeIf { it.isNotEmpty() && it != "null" },
+                applicationId = appId,
+                timestamps    = richTs,
+                assets        = richAs,
+                syncId        = a.optString("sync_id").takeIf { it.isNotEmpty() && it != "null" },
+                albumCoverUrl = albumUrl
+            ))
+        }
+    }
+    return list
+}
+
 private fun parseActivitiesFromSessions(sessions: JSONArray?): List<PresenceActivity> {
     val list = mutableListOf<PresenceActivity>()
     if (sessions == null) return list
@@ -371,13 +492,43 @@ private fun parseActivitiesFromSessions(sessions: JSONArray?): List<PresenceActi
             val type = a.optInt("type", 0)
             if (type == 4) continue
             val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue
+
+            val ts = a.optJSONObject("timestamps")
+            val richTs = if (ts != null) RichTimestamps(
+                start = if (!ts.isNull("start")) ts.optLong("start") else null,
+                end   = if (!ts.isNull("end"))   ts.optLong("end")   else null
+            ) else null
+
+            val as_ = a.optJSONObject("assets")
+            val appId = a.optString("application_id").takeIf { it.isNotEmpty() && it != "null" }
+            var albumUrl: String? = null
+            val richAs = if (as_ != null) {
+                val li = as_.optString("large_image").takeIf { it.isNotEmpty() && it != "null" }
+                val lt = as_.optString("large_text").takeIf { it.isNotEmpty() && it != "null" }
+                val si = as_.optString("small_image").takeIf { it.isNotEmpty() && it != "null" }
+                val st = as_.optString("small_text").takeIf { it.isNotEmpty() && it != "null" }
+                if (type == 2 && li != null) {
+                    albumUrl = if (li.startsWith("spotify:")) {
+                        val spotifyId = li.removePrefix("spotify:")
+                        "https://i.scdn.co/image/$spotifyId"
+                    } else if (appId != null) {
+                        "https://cdn.discordapp.com/app-assets/$appId/${li}.png"
+                    } else null
+                }
+                RichAssets(li, lt, si, st)
+            } else null
+
             if (list.none { it.name == name && it.type == type }) {
                 list.add(PresenceActivity(
                     type          = type,
                     name          = name,
                     details       = a.optString("details").takeIf { it.isNotEmpty() && it != "null" },
                     state         = a.optString("state").takeIf { it.isNotEmpty() && it != "null" },
-                    applicationId = a.optString("application_id").takeIf { it.isNotEmpty() && it != "null" }
+                    applicationId = appId,
+                    timestamps    = richTs,
+                    assets        = richAs,
+                    syncId        = a.optString("sync_id").takeIf { it.isNotEmpty() && it != "null" },
+                    albumCoverUrl = albumUrl
                 ))
             }
         }
@@ -422,6 +573,23 @@ private fun parseBadges(flags: Long, premium: Int): List<Pair<String, Color>> {
     if (flags and 131072L != 0L) list.add("Bot Developer"   to Color(0xFF6366F1))
     if (flags and 4194304L!= 0L) list.add("Active Dev"      to Color(0xFF10B981))
     return list
+}
+
+private fun formatElapsed(startMs: Long): String {
+    val elapsed = (System.currentTimeMillis() - startMs) / 1000
+    val h = elapsed / 3600
+    val m = (elapsed % 3600) / 60
+    val s = elapsed % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+private fun formatRemaining(endMs: Long): String {
+    val remaining = (endMs - System.currentTimeMillis()) / 1000
+    if (remaining <= 0) return "0:00"
+    val h = remaining / 3600
+    val m = (remaining % 3600) / 60
+    val s = remaining % 60
+    return if (h > 0) "%d:%02d:%02d left".format(h, m, s) else "%d:%02d left".format(m, s)
 }
 
 private sealed class MdBlock {
@@ -560,40 +728,47 @@ private fun ParticleBackground(modifier: Modifier = Modifier) {
         val size: Float, val alpha: Float, val phase: Float, val wobble: Float)
     data class Glob(val x: Float, val y: Float, val r: Float, val color: Color, val phase: Float)
     val particles = remember {
-        List(65) {
+        List(80) {
             Particle(Random.nextFloat(), Random.nextFloat(),
-                Random.nextFloat() * 0.35f + 0.05f, Random.nextFloat() * 2.2f + 0.4f,
-                Random.nextFloat() * 0.35f + 0.04f, Random.nextFloat() * 6.28f,
-                Random.nextFloat() * 0.06f + 0.01f)
+                Random.nextFloat() * 0.5f + 0.1f, Random.nextFloat() * 2.5f + 0.5f,
+                Random.nextFloat() * 0.4f + 0.05f, Random.nextFloat() * 6.28f,
+                Random.nextFloat() * 0.08f + 0.02f)
         }
     }
     val globs = remember {
         listOf(
-            Glob(0.15f, 0.25f, 380f, Color(0xFF5865F2), 0.47f),
-            Glob(0.80f, 0.60f, 320f, Color(0xFF7B5EA7), 2.51f),
-            Glob(0.50f, 0.85f, 260f, Color(0xFF3B4EC8), 1.57f),
-            Glob(0.70f, 0.10f, 200f, Color(0xFF5865F2), 3.14f)
+            Glob(0.15f, 0.25f, 420f, Color(0xFF5865F2), 0.47f),
+            Glob(0.80f, 0.60f, 350f, Color(0xFF7B5EA7), 2.51f),
+            Glob(0.50f, 0.85f, 280f, Color(0xFF3B4EC8), 1.57f),
+            Glob(0.70f, 0.10f, 220f, Color(0xFF5865F2), 3.14f),
+            Glob(0.30f, 0.70f, 180f, Color(0xFF9B59B6), 0.92f)
         )
     }
     val transition = rememberInfiniteTransition(label = "bg")
     val time by transition.animateFloat(0f, 10000f,
-        infiniteRepeatable(tween(200000, easing = LinearEasing)), label = "t")
+        infiniteRepeatable(tween(80000, easing = LinearEasing)), label = "t")
     Canvas(modifier = modifier) {
         val w = size.width; val h = size.height
         globs.forEach { g ->
-            val gx = g.x * w + sin(time * 0.0001f + g.phase) * 60f
-            val gy = g.y * h + cos(time * 0.00013f + g.phase) * 50f
-            drawCircle(color = g.color.copy(alpha = 0.07f), radius = g.r, center = Offset(gx, gy))
+            val gx = g.x * w + sin(time * 0.00025f + g.phase) * 80f
+            val gy = g.y * h + cos(time * 0.0003f + g.phase) * 70f
+            drawCircle(color = g.color.copy(alpha = 0.09f), radius = g.r, center = Offset(gx, gy))
         }
         particles.forEach { p ->
-            val px = ((p.x + sin(time * 0.001f * p.speed + p.phase) * p.wobble).mod(1f) + 1f).mod(1f) * w
-            val py = ((p.y + time * p.speed * 0.00018f).mod(1f)) * h
+            val px = ((p.x + sin(time * 0.0015f * p.speed + p.phase) * p.wobble).mod(1f) + 1f).mod(1f) * w
+            val py = ((p.y + time * p.speed * 0.00032f).mod(1f)) * h
             drawCircle(color = Color.White.copy(alpha = p.alpha), radius = p.size, center = Offset(px, py))
         }
     }
 }
 
 class MainActivity : ComponentActivity() {
+
+    private var gatewayWs: WebSocket? = null
+    private var heartbeatJob: Job? = null
+    private var gatewaySequence = -1
+    private var gatewayToken: String? = null
+    private var onPresenceUpdate: ((DiscordPresence) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -610,6 +785,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        heartbeatJob?.cancel()
+        gatewayWs?.close(1000, null)
     }
 
     private fun saveToken(token: String) {
@@ -690,15 +871,23 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun DiscordTokenApp(initialToken: String?) {
         val ctx = LocalContext.current
-        var token       by remember { mutableStateOf(initialToken) }
-        var user        by remember { mutableStateOf<DiscordUser?>(null) }
-        var presence    by remember { mutableStateOf<DiscordPresence?>(null) }
-        var connections by remember { mutableStateOf<List<DiscordConnection>>(emptyList()) }
-        var guildCount  by remember { mutableStateOf<Int?>(null) }
-        var isLoading   by remember { mutableStateOf(false) }
-        var showWebView by remember { mutableStateOf(false) }
-        var updateTag   by remember { mutableStateOf<String?>(null) }
-        var noInternet  by remember { mutableStateOf(false) }
+        var token            by remember { mutableStateOf(initialToken) }
+        var user             by remember { mutableStateOf<DiscordUser?>(null) }
+        var presence         by remember { mutableStateOf<DiscordPresence?>(null) }
+        var connections      by remember { mutableStateOf<List<DiscordConnection>?>(null) }
+        var guildCount       by remember { mutableStateOf<Int?>(null) }
+        var loadingUser      by remember { mutableStateOf(false) }
+        var loadingPresence  by remember { mutableStateOf(false) }
+        var loadingConns     by remember { mutableStateOf(false) }
+        var loadingGuilds    by remember { mutableStateOf(false) }
+        var showWebView      by remember { mutableStateOf(false) }
+        var updateTag        by remember { mutableStateOf<String?>(null) }
+        var noInternet       by remember { mutableStateOf(false) }
+        var showLogs         by remember { mutableStateOf(false) }
+        var footerClickCount by remember { mutableIntStateOf(0) }
+        var logOnceEnabled   by remember { mutableStateOf(true) }
+
+        logsEnabled.value = logOnceEnabled
 
         LaunchedEffect(Unit) {
             if (!isNetworkAvailable(ctx)) { noInternet = true; return@LaunchedEffect }
@@ -710,16 +899,63 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(token) {
             val t = token ?: return@LaunchedEffect
-            isLoading = true
+            addLog("INFO", "Auth", "Starting data fetch for token", "Token: ${t.take(20)}...")
+
+            loadingUser = true
             try {
                 val u = fetchUserInfo(t)
-                user        = u
-                presence    = fetchPresenceViaGateway(t)
-                connections = fetchConnections(t)
-                guildCount  = fetchGuildCount(t)
-            } catch (_: Exception) {
+                user = u
+                loadingUser = false
+                addLog("SUCCESS", "API", "User info fetched: ${u.username}", "HTTP 200 GET /users/@me")
+            } catch (e: Exception) {
+                loadingUser = false
+                addLog("ERROR", "API", "Failed to fetch user: ${e.message}", e.toString())
                 if (initialToken != null && user == null) { clearToken(); token = null }
-            } finally { isLoading = false }
+                return@LaunchedEffect
+            }
+
+            loadingPresence = true
+            launch {
+                try {
+                    val p = fetchPresenceViaGateway(t) { updated ->
+                        presence = updated
+                        addLog("INFO", "Gateway", "Presence updated live", updated.status)
+                    }
+                    presence = p
+                    loadingPresence = false
+                    addLog("SUCCESS", "Gateway", "Presence loaded: ${p?.status}", "Activities: ${p?.activities?.size}")
+                } catch (e: Exception) {
+                    loadingPresence = false
+                    addLog("ERROR", "Gateway", "Presence fetch failed: ${e.message}", e.toString())
+                }
+            }
+
+            loadingConns = true
+            launch {
+                try {
+                    val c = fetchConnections(t)
+                    connections = c
+                    loadingConns = false
+                    addLog("SUCCESS", "API", "Connections fetched: ${c.size}", "HTTP 200 GET /users/@me/connections")
+                } catch (e: Exception) {
+                    loadingConns = false
+                    connections = emptyList()
+                    addLog("ERROR", "API", "Connections fetch failed: ${e.message}", e.toString())
+                }
+            }
+
+            loadingGuilds = true
+            launch {
+                try {
+                    val g = fetchGuildCount(t)
+                    guildCount = g
+                    loadingGuilds = false
+                    addLog("SUCCESS", "API", "Guild count: $g", "HTTP 200 GET /users/@me/guilds")
+                } catch (e: Exception) {
+                    loadingGuilds = false
+                    addLog("ERROR", "API", "Guild count failed: ${e.message}", e.toString())
+                }
+            }
         }
 
         if (noInternet) {
@@ -727,7 +963,7 @@ class MainActivity : ComponentActivity() {
                 onDismissRequest = { noInternet = false },
                 icon = { Icon(Icons.Outlined.WifiOff, null, tint = AppColors.Error, modifier = Modifier.size(32.dp)) },
                 title = { Text("No Internet Connection", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold) },
-                text = { Text("This app requires an internet connection to work. Some features may not be available.", color = AppColors.TextSecondary) },
+                text = { Text("This app requires an internet connection to work.", color = AppColors.TextSecondary) },
                 confirmButton = {
                     Button(onClick = { noInternet = false; if (!isNetworkAvailable(ctx)) noInternet = true },
                         colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
@@ -761,6 +997,14 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        if (showLogs) {
+            LogsScreen(
+                onClose = { showLogs = false },
+                logsEnabled = logOnceEnabled,
+                onToggleLogs = { logOnceEnabled = it; logsEnabled.value = it }
+            )
+        }
+
         val screen = when {
             showWebView && token == null -> "webview"
             token == null               -> "login"
@@ -771,16 +1015,47 @@ class MainActivity : ComponentActivity() {
             transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(300)) }, label = "nav") { s ->
             when (s) {
                 "webview" -> WebViewScreen(
-                    onTokenReceived = { t -> token = t; saveToken(t); showWebView = false },
+                    onTokenReceived = { t ->
+                        addLog("SUCCESS", "Token", "Token extracted successfully", "Token length: ${t.length}")
+                        token = t; saveToken(t); showWebView = false
+                    },
                     onBack = { showWebView = false }
                 )
-                "login"   -> LoginScreen(onLoginClick = { showWebView = true })
+                "login"   -> LoginScreen(
+                    onLoginClick = { showWebView = true },
+                    footerClickCount = footerClickCount,
+                    onFooterClick = {
+                        footerClickCount++
+                        if (footerClickCount >= 5) {
+                            showLogs = true
+                            footerClickCount = 0
+                        }
+                    }
+                )
                 else      -> UserProfileScreen(
-                    user = user, token = token ?: "", isLoading = isLoading,
-                    presence = presence, connections = connections, guildCount = guildCount,
+                    user = user,
+                    token = token ?: "",
+                    loadingUser = loadingUser,
+                    loadingPresence = loadingPresence,
+                    loadingConns = loadingConns,
+                    loadingGuilds = loadingGuilds,
+                    presence = presence,
+                    connections = connections,
+                    guildCount = guildCount,
+                    footerClickCount = footerClickCount,
+                    onFooterClick = {
+                        footerClickCount++
+                        if (footerClickCount >= 5) {
+                            showLogs = true
+                            footerClickCount = 0
+                        }
+                    },
                     onLogout = {
+                        addLog("INFO", "Auth", "User logged out")
+                        heartbeatJob?.cancel()
+                        gatewayWs?.close(1000, null)
                         clearToken(); token = null; user = null
-                        presence = null; connections = emptyList(); guildCount = null
+                        presence = null; connections = null; guildCount = null
                     }
                 )
             }
@@ -788,9 +1063,116 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun LoginScreen(onLoginClick: () -> Unit) {
+    fun LogsScreen(onClose: () -> Unit, logsEnabled: Boolean, onToggleLogs: (Boolean) -> Unit) {
+        Dialog(
+            onDismissRequest = onClose,
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(AppColors.Background)) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(modifier = Modifier.fillMaxWidth()
+                        .background(AppColors.Surface)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Terminal, null, tint = AppColors.Primary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("App Console", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = AppColors.TextPrimary)
+                            Spacer(Modifier.width(8.dp))
+                            Box(modifier = Modifier
+                                .background(AppColors.Primary.copy(0.15f), RoundedCornerShape(Radius.Badge))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                Text("${appLogs.size}", fontSize = 10.sp, color = AppColors.Primary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Logging", fontSize = 11.sp, color = AppColors.TextMuted)
+                            Spacer(Modifier.width(6.dp))
+                            Switch(
+                                checked = logsEnabled,
+                                onCheckedChange = onToggleLogs,
+                                modifier = Modifier.height(24.dp),
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = AppColors.Primary,
+                                    checkedTrackColor = AppColors.Primary.copy(0.3f)
+                                )
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
+                                Icon(Icons.Outlined.Close, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                    if (appLogs.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Outlined.Terminal, null, tint = AppColors.TextMuted, modifier = Modifier.size(40.dp))
+                                Spacer(Modifier.height(8.dp))
+                                Text("No logs yet", color = AppColors.TextMuted, fontSize = 14.sp)
+                            }
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+                            items(appLogs) { log ->
+                                var expanded by remember { mutableStateOf(false) }
+                                Column(modifier = Modifier.fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .background(AppColors.Surface.copy(0.5f), RoundedCornerShape(Radius.Small))
+                                    .clickable(enabled = log.detail != null) { expanded = !expanded }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val levelColor = when (log.level) {
+                                            "SUCCESS" -> AppColors.Success
+                                            "ERROR"   -> AppColors.Error
+                                            "WARN"    -> AppColors.Warning
+                                            else      -> AppColors.Primary
+                                        }
+                                        Text(log.timestamp, fontSize = 10.sp, color = AppColors.TextMuted,
+                                            fontFamily = FontFamily.Monospace)
+                                        Spacer(Modifier.width(6.dp))
+                                        Box(modifier = Modifier
+                                            .background(levelColor.copy(0.15f), RoundedCornerShape(3.dp))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)) {
+                                            Text(log.level, fontSize = 9.sp, color = levelColor,
+                                                fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                        }
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("[${log.tag}]", fontSize = 10.sp, color = AppColors.Primary,
+                                            fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(log.message, fontSize = 11.sp, color = AppColors.TextSecondary,
+                                            fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f),
+                                            maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
+                                        if (log.detail != null) {
+                                            Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                                null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                    if (expanded && log.detail != null) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(log.detail, fontSize = 10.sp, color = AppColors.TextMuted,
+                                            fontFamily = FontFamily.Monospace, lineHeight = 14.sp,
+                                            modifier = Modifier.padding(start = 4.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun LoginScreen(onLoginClick: () -> Unit, footerClickCount: Int, onFooterClick: () -> Unit) {
         val scale = remember { Animatable(0f) }
         LaunchedEffect(Unit) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow)) }
+        val shimmerTransition = rememberInfiniteTransition(label = "shimmer")
+        val shimmerOffset by shimmerTransition.animateFloat(
+            initialValue = -1.5f, targetValue = 1.5f,
+            animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing)), label = "sho"
+        )
         Box(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.fillMaxSize().background(
                 Brush.verticalGradient(listOf(AppColors.LoginBg1, AppColors.LoginBg2, AppColors.LoginBg3))))
@@ -799,41 +1181,45 @@ class MainActivity : ComponentActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center) {
                 Spacer(Modifier.weight(1f))
-                Box(modifier = Modifier.size(88.dp)
+                Box(modifier = Modifier.size(96.dp)
                     .background(AppColors.Primary.copy(0.18f), CircleShape)
-                    .border(1.dp, AppColors.Primary.copy(0.3f), CircleShape),
+                    .border(1.5.dp, AppColors.Primary.copy(0.4f), CircleShape),
                     contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.Key, null, tint = AppColors.Primary, modifier = Modifier.size(44.dp))
+                    Icon(Icons.Outlined.Key, null, tint = AppColors.Primary, modifier = Modifier.size(48.dp))
                 }
-                Spacer(Modifier.height(24.dp))
-                Text("Discord", fontSize = 52.sp, fontWeight = FontWeight.Black,
-                    color = AppColors.Primary, modifier = Modifier.scale(scale.value))
-                Text("TOKEN EXTRACTOR", fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    color = AppColors.TextMuted.copy(0.8f), letterSpacing = 5.sp,
-                    modifier = Modifier.scale(scale.value))
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(16.dp))
                 Text("v$CURRENT_VERSION", fontSize = 10.sp, color = AppColors.TextMuted.copy(0.5f),
                     fontFamily = FontFamily.Monospace)
-                Spacer(Modifier.height(48.dp))
+                Spacer(Modifier.height(40.dp))
                 Card(modifier = Modifier.fillMaxWidth().scale(scale.value),
-                    colors = CardDefaults.cardColors(containerColor = AppColors.Surface.copy(0.85f)),
+                    colors = CardDefaults.cardColors(containerColor = AppColors.Surface.copy(0.9f)),
                     shape = RoundedCornerShape(Radius.XLarge),
-                    elevation = CardDefaults.cardElevation(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Primary.copy(0.15f))) {
+                    elevation = CardDefaults.cardElevation(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Primary.copy(0.2f))) {
                     Column(modifier = Modifier.fillMaxWidth().padding(28.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Welcome Back", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = AppColors.TextPrimary)
-                        Spacer(Modifier.height(6.dp))
-                        Text("Sign in with your Discord account to extract your access token.",
-                            fontSize = 14.sp, color = AppColors.TextMuted, textAlign = TextAlign.Center)
-                        Spacer(Modifier.height(28.dp))
-                        Button(onClick = onLoginClick, modifier = Modifier.fillMaxWidth().height(54.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
-                            shape = RoundedCornerShape(Radius.Button),
-                            elevation = ButtonDefaults.buttonElevation(6.dp)) {
-                            Icon(Icons.Outlined.Login, null, modifier = Modifier.size(19.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Sign in with Discord", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
+                        Box(modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .clip(RoundedCornerShape(Radius.Button))
+                            .background(AppColors.Primary)
+                            .clickable { onLoginClick() },
+                            contentAlignment = Alignment.Center) {
+                            val shimmerBrush = Brush.linearGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.White.copy(alpha = 0.25f),
+                                    Color.Transparent
+                                ),
+                                start = Offset(shimmerOffset * 400f + 200f, 0f),
+                                end = Offset(shimmerOffset * 400f + 350f, 80f)
+                            )
+                            Box(modifier = Modifier.fillMaxSize().background(shimmerBrush))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Outlined.Login, null, modifier = Modifier.size(19.dp), tint = Color.White)
+                                Spacer(Modifier.width(10.dp))
+                                Text("Sign in with Discord", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
                         }
                         Spacer(Modifier.height(22.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -844,7 +1230,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                Footer()
+                Footer(clickCount = footerClickCount, onClick = onFooterClick)
                 Spacer(Modifier.height(12.dp))
                 GitHubButton()
                 Spacer(Modifier.height(8.dp))
@@ -888,6 +1274,7 @@ class MainActivity : ComponentActivity() {
                         }
                         override fun onPageFinished(view: WebView, url: String) {
                             super.onPageFinished(view, url)
+                            addLog("INFO", "WebView", "Page loaded", url)
                             if (url.contains("/app") || url.endsWith("/channels/@me"))
                                 Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 800)
                         }
@@ -930,19 +1317,29 @@ class MainActivity : ComponentActivity() {
     fun UserProfileScreen(
         user: DiscordUser?,
         token: String,
-        isLoading: Boolean,
+        loadingUser: Boolean,
+        loadingPresence: Boolean,
+        loadingConns: Boolean,
+        loadingGuilds: Boolean,
         presence: DiscordPresence?,
-        connections: List<DiscordConnection>,
+        connections: List<DiscordConnection>?,
         guildCount: Int?,
+        footerClickCount: Int,
+        onFooterClick: () -> Unit,
         onLogout: () -> Unit
     ) {
         val ctx = LocalContext.current
-        var showToken by remember { mutableStateOf(false) }
-        val scale = remember { Animatable(0.94f) }
+        var showToken    by remember { mutableStateOf(false) }
+        var copied       by remember { mutableStateOf(false) }
+        var expandConns  by remember { mutableStateOf(false) }
+        val scale = remember { Animatable(0.95f) }
         LaunchedEffect(Unit) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy)) }
 
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Box(modifier = Modifier.fillMaxWidth().height(150.dp)) {
+        Column(modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())) {
+
+            Box(modifier = Modifier.fillMaxWidth().height(160.dp)) {
                 if (user?.banner != null) {
                     AsyncImage(
                         model = "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.png?size=600",
@@ -959,7 +1356,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).scale(scale.value)) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween) {
@@ -991,11 +1388,54 @@ class MainActivity : ComponentActivity() {
 
                 Spacer(Modifier.height(14.dp))
 
-                if (isLoading) {
+                if (loadingUser) {
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = AppColors.Primary, strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
                     }
                 } else if (user != null) {
+
+                    ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
+                        Button(
+                            onClick = {
+                                (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
+                                    .setPrimaryClip(ClipData.newPlainText("Discord Token", token))
+                                copied = true
+                                addLog("INFO", "Token", "Token copied to clipboard")
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    delay(2000)
+                                    copied = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(46.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (copied) AppColors.Success.copy(0.8f) else AppColors.Success),
+                            shape = RoundedCornerShape(Radius.Token)
+                        ) {
+                            Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp), tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (copied) "Copied!" else "Copy Token", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Card(colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVar),
+                            shape = RoundedCornerShape(Radius.Token)) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = if (showToken) token else "•".repeat(40),
+                                    fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                                    color = AppColors.TextSecondary,
+                                    maxLines = if (showToken) Int.MAX_VALUE else 1,
+                                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                IconButton(onClick = { showToken = !showToken }, modifier = Modifier.size(36.dp)) {
+                                    Icon(imageVector = if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                        contentDescription = null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = AppColors.Divider)
+                    Spacer(Modifier.height(16.dp))
+
                     Row(verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(user.globalName ?: user.username, fontSize = 26.sp,
@@ -1011,6 +1451,12 @@ class MainActivity : ComponentActivity() {
                                 Spacer(Modifier.width(5.dp))
                                 Text(statusLabel(presence.status), fontSize = 11.sp,
                                     color = sc, fontWeight = FontWeight.SemiBold)
+                            }
+                        } else if (loadingPresence) {
+                            Box(modifier = Modifier
+                                .background(AppColors.TextMuted.copy(0.12f), RoundedCornerShape(Radius.Badge))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                Text("Loading...", fontSize = 11.sp, color = AppColors.TextMuted)
                             }
                         }
                     }
@@ -1049,10 +1495,17 @@ class MainActivity : ComponentActivity() {
                         Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             badges.forEach { (label, color) ->
-                                Box(modifier = Modifier
-                                    .background(color.copy(0.15f), RoundedCornerShape(Radius.Badge))
-                                    .border(1.dp, color.copy(0.4f), RoundedCornerShape(Radius.Badge))
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)) {
+                                val imgUrl = badgeImageUrl(label)
+                                Row(modifier = Modifier
+                                    .background(color.copy(0.12f), RoundedCornerShape(Radius.Badge))
+                                    .border(1.dp, color.copy(0.35f), RoundedCornerShape(Radius.Badge))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    if (imgUrl.isNotEmpty()) {
+                                        AsyncImage(model = imgUrl, contentDescription = label,
+                                            modifier = Modifier.size(16.dp).clip(CircleShape))
+                                        Spacer(Modifier.width(4.dp))
+                                    }
                                     Text(label, fontSize = 11.sp, color = color, fontWeight = FontWeight.SemiBold)
                                 }
                             }
@@ -1068,42 +1521,25 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    if (presence != null && presence.activities.isNotEmpty()) {
+                    if (loadingPresence) {
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider(color = AppColors.Divider)
+                        Spacer(Modifier.height(16.dp))
+                        ProfileSection("Current Activity", Icons.Outlined.Games) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AppColors.Primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Loading activity...", fontSize = 13.sp, color = AppColors.TextMuted)
+                            }
+                        }
+                    } else if (presence != null && presence.activities.isNotEmpty()) {
                         Spacer(Modifier.height(16.dp))
                         HorizontalDivider(color = AppColors.Divider)
                         Spacer(Modifier.height(16.dp))
                         ProfileSection("Current Activity", Icons.Outlined.Games) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 presence.activities.forEach { activity ->
-                                    val isSpotify = activity.type == 2
-                                    val accentColor = if (isSpotify) AppColors.Spotify else AppColors.Primary
-                                    Card(colors = CardDefaults.cardColors(containerColor = accentColor.copy(0.07f)),
-                                        shape = RoundedCornerShape(Radius.Card),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, accentColor.copy(0.22f))) {
-                                        Row(modifier = Modifier.fillMaxWidth().padding(14.dp),
-                                            verticalAlignment = Alignment.CenterVertically) {
-                                            Box(modifier = Modifier.size(40.dp)
-                                                .background(accentColor.copy(0.15f), RoundedCornerShape(Radius.Small)),
-                                                contentAlignment = Alignment.Center) {
-                                                Icon(if (isSpotify) Icons.Outlined.MusicNote else Icons.Outlined.Games,
-                                                    null, tint = accentColor, modifier = Modifier.size(22.dp))
-                                            }
-                                            Spacer(Modifier.width(12.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(activityTypeLabel(activity.type), fontSize = 10.sp,
-                                                    color = accentColor, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-                                                Text(activity.name, fontSize = 13.sp,
-                                                    color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold,
-                                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                if (!activity.details.isNullOrBlank())
-                                                    Text(activity.details, fontSize = 12.sp, color = AppColors.TextMuted,
-                                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                                if (!activity.state.isNullOrBlank())
-                                                    Text(activity.state, fontSize = 12.sp, color = AppColors.TextMuted,
-                                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            }
-                                        }
-                                    }
+                                    ActivityCard(activity)
                                 }
                             }
                         }
@@ -1127,8 +1563,14 @@ class MainActivity : ComponentActivity() {
                             if (user.verified) AppColors.Success else AppColors.TextMuted)
                         if (user.premiumType > 0) InfoRow(Icons.Outlined.WorkspacePremium, "Nitro",
                             nitroLabel(user.premiumType), Color(0xFF5865F2))
-                        if (guildCount != null) InfoRow(Icons.Outlined.Groups, "Servers",
-                            guildCount.toString() + if (guildCount >= 100) "+" else "")
+
+                        if (loadingGuilds) {
+                            InfoRow(Icons.Outlined.Groups, "Servers", "Loading...")
+                        } else if (guildCount != null) {
+                            InfoRow(Icons.Outlined.Groups, "Servers",
+                                guildCount.toString() + if (guildCount >= 100) "+" else "")
+                        }
+
                         if (!user.bannerColor.isNullOrBlank()) {
                             val parsedAccentColor = runCatching {
                                 Color(android.graphics.Color.parseColor(user.bannerColor))
@@ -1153,13 +1595,23 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    if (connections.isNotEmpty()) {
-                        Spacer(Modifier.height(16.dp))
-                        HorizontalDivider(color = AppColors.Divider)
-                        Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(color = AppColors.Divider)
+                    Spacer(Modifier.height(16.dp))
+
+                    if (loadingConns) {
                         ProfileSection("Connected Accounts", Icons.Outlined.Link) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AppColors.Primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Loading connections...", fontSize = 13.sp, color = AppColors.TextMuted)
+                            }
+                        }
+                    } else if (connections != null && connections.isNotEmpty()) {
+                        val visibleConns = if (expandConns) connections else connections.take(3)
+                        ProfileSection("Connected Accounts (${connections.size})", Icons.Outlined.Link) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                connections.forEach { conn ->
+                                visibleConns.forEach { conn ->
                                     val cc = connectionColor(conn.type)
                                     Row(modifier = Modifier.fillMaxWidth()
                                         .background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium))
@@ -1189,50 +1641,121 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                    HorizontalDivider(color = AppColors.Divider)
-                    Spacer(Modifier.height(16.dp))
-
-                    ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
-                        Card(colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVar),
-                            shape = RoundedCornerShape(Radius.Token)) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = if (showToken) token else "•".repeat(40),
-                                    fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-                                    color = AppColors.TextSecondary,
-                                    maxLines = if (showToken) Int.MAX_VALUE else 1,
-                                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { showToken = !showToken }, modifier = Modifier.size(36.dp)) {
-                                    Icon(imageVector = if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                        contentDescription = null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
+                                if (connections.size > 3) {
+                                    TextButton(onClick = { expandConns = !expandConns },
+                                        modifier = Modifier.fillMaxWidth()) {
+                                        Icon(if (expandConns) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                            null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(if (expandConns) "Show less" else "Show ${connections.size - 3} more",
+                                            fontSize = 12.sp, color = AppColors.Primary)
+                                    }
                                 }
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Button(onClick = {
-                            (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager)
-                                .setPrimaryClip(ClipData.newPlainText("Discord Token", token))
-                        }, modifier = Modifier.fillMaxWidth().height(46.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = AppColors.Success),
-                            shape = RoundedCornerShape(Radius.Token)) {
-                            Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp), tint = Color.White)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Copy Token", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                        }
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider(color = AppColors.Divider)
+                        Spacer(Modifier.height(16.dp))
                     }
 
                     Spacer(Modifier.height(28.dp))
-                    Footer()
+                    Footer(clickCount = footerClickCount, onClick = onFooterClick)
                     Spacer(Modifier.height(10.dp))
                     GitHubButton()
                 }
 
                 Spacer(Modifier.height(32.dp))
+            }
+        }
+    }
+
+    @Composable
+    fun ActivityCard(activity: PresenceActivity) {
+        val isSpotify = activity.type == 2
+        val accentColor = if (isSpotify) AppColors.Spotify else AppColors.Primary
+
+        var elapsed by remember { mutableStateOf("") }
+        var remaining by remember { mutableStateOf("") }
+        LaunchedEffect(activity.timestamps) {
+            while (true) {
+                val ts = activity.timestamps
+                if (ts?.start != null) elapsed = formatElapsed(ts.start)
+                if (ts?.end != null) remaining = formatRemaining(ts.end)
+                delay(1000)
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = accentColor.copy(0.07f)),
+            shape = RoundedCornerShape(Radius.Card),
+            border = androidx.compose.foundation.BorderStroke(1.dp, accentColor.copy(0.22f))) {
+            Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                Row(verticalAlignment = Alignment.Top) {
+                    if (activity.albumCoverUrl != null) {
+                        Box(modifier = Modifier.size(56.dp).clip(RoundedCornerShape(Radius.Small))) {
+                            AsyncImage(model = activity.albumCoverUrl, contentDescription = null,
+                                modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                            if (activity.assets?.smallImage != null && activity.applicationId != null) {
+                                AsyncImage(
+                                    model = "https://cdn.discordapp.com/app-assets/${activity.applicationId}/${activity.assets.smallImage}.png",
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp).align(Alignment.BottomEnd)
+                                        .clip(CircleShape).border(1.dp, AppColors.Background, CircleShape))
+                            }
+                        }
+                    } else {
+                        Box(modifier = Modifier.size(56.dp)
+                            .background(accentColor.copy(0.15f), RoundedCornerShape(Radius.Small)),
+                            contentAlignment = Alignment.Center) {
+                            if (activity.applicationId != null && activity.assets?.largeImage != null) {
+                                AsyncImage(
+                                    model = "https://cdn.discordapp.com/app-assets/${activity.applicationId}/${activity.assets.largeImage}.png",
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(Radius.Small)),
+                                    contentScale = ContentScale.Crop)
+                            } else {
+                                Icon(if (isSpotify) Icons.Outlined.MusicNote else Icons.Outlined.Games,
+                                    null, tint = accentColor, modifier = Modifier.size(28.dp))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(activityTypeLabel(activity.type), fontSize = 10.sp,
+                            color = accentColor, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                        Text(activity.name, fontSize = 14.sp,
+                            color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!activity.details.isNullOrBlank())
+                            Text(activity.details, fontSize = 12.sp, color = AppColors.TextSecondary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!activity.state.isNullOrBlank())
+                            Text(activity.state, fontSize = 12.sp, color = AppColors.TextMuted,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!activity.assets?.largeText.isNullOrBlank())
+                            Text(activity.assets!!.largeText!!, fontSize = 11.sp, color = AppColors.TextMuted,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (activity.timestamps != null) {
+                    Spacer(Modifier.height(8.dp))
+                    if (activity.timestamps.start != null && activity.timestamps.end != null) {
+                        val startMs = activity.timestamps.start
+                        val endMs   = activity.timestamps.end
+                        val total   = (endMs - startMs).coerceAtLeast(1L)
+                        val progress = ((System.currentTimeMillis() - startMs).toFloat() / total).coerceIn(0f, 1f)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(elapsed, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
+                            Spacer(Modifier.width(6.dp))
+                            Box(modifier = Modifier.weight(1f).height(3.dp).background(accentColor.copy(0.2f), CircleShape)) {
+                                Box(modifier = Modifier.fillMaxHeight().fillMaxWidth(progress).background(accentColor, CircleShape))
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text(remaining, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
+                        }
+                    } else if (activity.timestamps.start != null) {
+                        Text("$elapsed elapsed", fontSize = 10.sp, color = AppColors.TextMuted)
+                    }
+                }
             }
         }
     }
@@ -1263,18 +1786,25 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun Footer() {
+    fun Footer(clickCount: Int, onClick: () -> Unit) {
         val transition = rememberInfiniteTransition(label = "rgb")
         val hue by transition.animateFloat(0f, 360f,
             infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Restart), label = "hue")
         val c = Color.hsv(hue, 0.75f, 1f)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center,
+        val remaining = 5 - (clickCount % 5)
+        Row(modifier = Modifier.fillMaxWidth().clickable { onClick() },
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.AutoAwesome, null, tint = c, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(6.dp))
             Text("By Rhyan57", fontSize = 12.sp, color = c, fontWeight = FontWeight.Bold)
             Spacer(Modifier.width(6.dp))
             Icon(Icons.Outlined.AutoAwesome, null, tint = c, modifier = Modifier.size(13.dp))
+        }
+        if (clickCount > 0 && clickCount < 5) {
+            Text("Tap ${remaining}x more to open console", fontSize = 10.sp,
+                color = AppColors.TextMuted.copy(0.6f), textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth())
         }
     }
 
@@ -1295,11 +1825,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun fetchUserInfo(token: String): DiscordUser = withContext(Dispatchers.IO) {
-        val response = httpClient.newCall(
-            Request.Builder().url("https://discord.com/api/v10/users/@me").header("Authorization", token).build()
-        ).execute()
+        addLog("INFO", "API", "GET /users/@me", "Authorization: ${token.take(20)}...")
+        val request = Request.Builder()
+            .url("https://discord.com/api/v10/users/@me")
+            .header("Authorization", token)
+            .build()
+        val response = httpClient.newCall(request).execute()
         val body = response.body?.string() ?: throw IOException("Empty response")
-        if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+        if (!response.isSuccessful) {
+            addLog("ERROR", "API", "HTTP ${response.code}", body.take(200))
+            throw IOException("HTTP ${response.code}")
+        }
+        addLog("SUCCESS", "API", "HTTP 200 /users/@me", "Content-Length: ${body.length}")
         val j = JSONObject(body)
         fun str(k: String) = j.optString(k).takeIf { it.isNotEmpty() && it != "null" }
         DiscordUser(
@@ -1322,16 +1859,40 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private suspend fun fetchPresenceViaGateway(token: String): DiscordPresence? = withContext(Dispatchers.IO) {
+    private suspend fun fetchPresenceViaGateway(
+        token: String,
+        onLiveUpdate: (DiscordPresence) -> Unit
+    ): DiscordPresence? = withContext(Dispatchers.IO) {
+        addLog("INFO", "Gateway", "Connecting to Discord Gateway", GATEWAY_URL)
+        heartbeatJob?.cancel()
+        gatewayWs?.close(1000, null)
         val deferred = CompletableDeferred<DiscordPresence?>()
+        gatewayToken = token
+
         val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                addLog("INFO", "Gateway", "WebSocket connected", "HTTP ${response.code}")
+            }
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (deferred.isCompleted) return
                 try {
                     val json = JSONObject(text)
-                    when (json.optInt("op", -1)) {
+                    val op = json.optInt("op", -1)
+                    val seq = json.optInt("s", -1)
+                    if (seq > 0) gatewaySequence = seq
+
+                    when (op) {
                         10 -> {
-                            webSocket.send("""{"op":1,"d":null}""")
+                            val interval = json.getJSONObject("d").getLong("heartbeat_interval")
+                            addLog("INFO", "Gateway", "Hello received, heartbeat: ${interval}ms")
+                            heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
+                                delay((interval * 0.8).toLong())
+                                while (true) {
+                                    val seq = if (gatewaySequence > 0) gatewaySequence.toString() else "null"
+                                    webSocket.send("""{"op":1,"d":$seq}""")
+                                    addLog("INFO", "Gateway", "Heartbeat sent", "seq=$seq")
+                                    delay(interval)
+                                }
+                            }
                             webSocket.send(JSONObject().apply {
                                 put("op", 2)
                                 put("d", JSONObject().apply {
@@ -1347,41 +1908,81 @@ class MainActivity : ComponentActivity() {
                             }.toString())
                         }
                         0 -> {
-                            if (json.optString("t") == "READY") {
-                                val data = json.getJSONObject("d")
-                                val sessions = data.optJSONArray("sessions")
-                                val (status, platforms) = resolvePresenceStatus(sessions)
-                                val activities = parseActivitiesFromSessions(sessions)
-                                deferred.complete(DiscordPresence(status, activities, platforms))
-                                webSocket.close(1000, null)
+                            val t = json.optString("t")
+                            addLog("INFO", "Gateway", "Event: $t")
+                            when (t) {
+                                "READY" -> {
+                                    val data = json.getJSONObject("d")
+                                    val sessions = data.optJSONArray("sessions")
+                                    val (status, platforms) = resolvePresenceStatus(sessions)
+                                    val activities = parseActivitiesFromSessions(sessions)
+                                    val presence = DiscordPresence(status, activities, platforms)
+                                    addLog("SUCCESS", "Gateway", "READY received", "status=$status activities=${activities.size}")
+                                    if (!deferred.isCompleted) deferred.complete(presence)
+                                    onLiveUpdate(presence)
+                                }
+                                "PRESENCE_UPDATE" -> {
+                                    val data = json.getJSONObject("d")
+                                    val status = data.optString("status", "offline")
+                                    val activities = parseActivitiesFromEvent(data)
+                                    val presence = DiscordPresence(status, activities, emptyList())
+                                    addLog("INFO", "Gateway", "Presence update", "status=$status")
+                                    onLiveUpdate(presence)
+                                }
+                                "SESSION_REPLACE" -> {
+                                    val sessions = json.optJSONArray("d")
+                                    if (sessions != null) {
+                                        val (status, platforms) = resolvePresenceStatus(sessions)
+                                        val activities = parseActivitiesFromSessions(sessions)
+                                        onLiveUpdate(DiscordPresence(status, activities, platforms))
+                                    }
+                                }
                             }
                         }
-                        9 -> { deferred.complete(null); webSocket.close(1000, null) }
+                        11 -> addLog("INFO", "Gateway", "Heartbeat ACK")
+                        9  -> {
+                            addLog("WARN", "Gateway", "Invalid session")
+                            if (!deferred.isCompleted) deferred.complete(null)
+                        }
                     }
-                } catch (_: Exception) { if (!deferred.isCompleted) deferred.complete(null) }
+                } catch (e: Exception) {
+                    addLog("ERROR", "Gateway", "Parse error: ${e.message}", e.toString())
+                    if (!deferred.isCompleted) deferred.complete(null)
+                }
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                addLog("ERROR", "Gateway", "WebSocket failure: ${t.message}", response?.code?.toString())
                 if (!deferred.isCompleted) deferred.complete(null)
             }
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (!deferred.isCompleted) deferred.complete(null)
+                addLog("INFO", "Gateway", "WebSocket closed: $code $reason")
             }
         }
+
         val ws = httpClient.newWebSocket(Request.Builder().url(GATEWAY_URL).build(), listener)
+        gatewayWs = ws
         val result = withTimeoutOrNull(15000L) { deferred.await() }
-        if (!deferred.isCompleted) { deferred.complete(null); ws.cancel() }
+        if (!deferred.isCompleted) {
+            deferred.complete(null)
+            addLog("WARN", "Gateway", "Timeout waiting for READY")
+        }
         result
     }
 
     private suspend fun fetchConnections(token: String): List<DiscordConnection> = withContext(Dispatchers.IO) {
+        addLog("INFO", "API", "GET /users/@me/connections")
         try {
             val response = httpClient.newCall(
                 Request.Builder().url("https://discord.com/api/v10/users/@me/connections")
                     .header("Authorization", token).build()
             ).execute()
-            if (!response.isSuccessful) return@withContext emptyList()
+            if (!response.isSuccessful) {
+                addLog("ERROR", "API", "HTTP ${response.code} /connections")
+                return@withContext emptyList()
+            }
             val body = response.body?.string() ?: return@withContext emptyList()
             val arr = JSONArray(body)
+            addLog("SUCCESS", "API", "HTTP 200 /connections", "count=${arr.length()}")
             buildList {
                 for (i in 0 until arr.length()) {
                     val obj = arr.getJSONObject(i)
@@ -1393,19 +1994,31 @@ class MainActivity : ComponentActivity() {
                     ))
                 }
             }
-        } catch (_: Exception) { emptyList() }
+        } catch (e: Exception) {
+            addLog("ERROR", "API", "Connections exception: ${e.message}")
+            emptyList()
+        }
     }
 
     private suspend fun fetchGuildCount(token: String): Int? = withContext(Dispatchers.IO) {
+        addLog("INFO", "API", "GET /users/@me/guilds")
         try {
             val response = httpClient.newCall(
                 Request.Builder().url("https://discord.com/api/v10/users/@me/guilds")
                     .header("Authorization", token).build()
             ).execute()
-            if (!response.isSuccessful) return@withContext null
+            if (!response.isSuccessful) {
+                addLog("ERROR", "API", "HTTP ${response.code} /guilds")
+                return@withContext null
+            }
             val body = response.body?.string() ?: return@withContext null
-            JSONArray(body).length()
-        } catch (_: Exception) { null }
+            val count = JSONArray(body).length()
+            addLog("SUCCESS", "API", "HTTP 200 /guilds", "count=$count")
+            count
+        } catch (e: Exception) {
+            addLog("ERROR", "API", "Guilds exception: ${e.message}")
+            null
+        }
     }
 
     private suspend fun checkLatestVersion(): String? = withContext(Dispatchers.IO) {
