@@ -1130,23 +1130,25 @@ class MainActivity : ComponentActivity() {
                         if (guildCount != null) InfoRow(Icons.Outlined.Groups, "Servers",
                             guildCount.toString() + if (guildCount >= 100) "+" else "")
                         if (!user.bannerColor.isNullOrBlank()) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.AutoAwesome, null,
-                                    tint = AppColors.TextMuted, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.width(12.dp))
-                                Text("Accent", fontSize = 13.sp, color = AppColors.TextMuted,
-                                    modifier = Modifier.width(80.dp))
-                                try {
-                                    val c = Color(android.graphics.Color.parseColor(user.bannerColor))
+                            val parsedAccentColor = runCatching {
+                                Color(android.graphics.Color.parseColor(user.bannerColor))
+                            }.getOrNull()
+                            if (parsedAccentColor != null) {
+                                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.AutoAwesome, null,
+                                        tint = AppColors.TextMuted, modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(12.dp))
+                                    Text("Accent", fontSize = 13.sp, color = AppColors.TextMuted,
+                                        modifier = Modifier.width(80.dp))
                                     Box(modifier = Modifier.size(20.dp)
-                                        .background(c, RoundedCornerShape(4.dp))
+                                        .background(parsedAccentColor, RoundedCornerShape(4.dp))
                                         .border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
                                     Spacer(Modifier.width(8.dp))
                                     Text(user.bannerColor.uppercase(), fontSize = 13.sp,
                                         color = AppColors.TextPrimary, fontWeight = FontWeight.Medium,
                                         fontFamily = FontFamily.Monospace)
-                                } catch (_: Exception) {}
+                                }
                             }
                         }
                     }
