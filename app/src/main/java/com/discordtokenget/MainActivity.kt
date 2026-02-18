@@ -309,7 +309,7 @@ private const val KEY_CRASH_TRACE   = "crash_trace"
 private const val PREF_SESSION      = "session_prefs"
 private const val KEY_TOKEN         = "saved_token"
 private const val DISCORD_EPOCH     = 1420070400000L
-private const val CURRENT_VERSION   = "1.0.24"
+private const val CURRENT_VERSION   = "1.0.25"
 private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/GetDiscordToken/releases/latest"
 private const val GATEWAY_URL       = "wss://gateway.discord.gg/?v=10&encoding=json"
 
@@ -1432,17 +1432,8 @@ class MainActivity : ComponentActivity() {
                                             .padding(horizontal = 12.dp, vertical = 9.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        AsyncImage(
-                                            model = "https://cdn.discordapp.com/assets/profile/profile_connections/icon_${conn.type}.svg",
-                                            contentDescription = conn.type,
-                                            modifier = Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)),
-                                            error = androidx.compose.ui.graphics.painter.BitmapPainter(
-                                                android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
-                                            )
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Box(Modifier.size(28.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) {
-                                            Text(connectionLabel(conn.type).first().toString(), fontSize = 13.sp, color = cc, fontWeight = FontWeight.Black)
+                                        Box(Modifier.size(32.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) {
+                                            Text(connectionLabel(conn.type).first().toString(), fontSize = 14.sp, color = cc, fontWeight = FontWeight.Black)
                                         }
                                         Spacer(Modifier.width(10.dp))
                                         Column(Modifier.weight(1f)) {
