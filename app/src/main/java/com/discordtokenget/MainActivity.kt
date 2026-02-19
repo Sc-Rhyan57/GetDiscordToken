@@ -89,8 +89,12 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Star
@@ -702,19 +706,23 @@ private fun ProfileEffectOverlay(effectId: String, modifier: Modifier = Modifier
             }
             .build()
     }
-    val effectGifUrl = "https://cdn.discordapp.com/profile-effects/$effectId/effect.gif"
-    val effectApngUrl = "https://cdn.discordapp.com/profile-effects/$effectId/effect_component.png"
     Box(modifier = modifier) {
         AsyncImage(
-            model = ImageRequest.Builder(ctx).data(effectGifUrl).crossfade(false).build(),
-            contentDescription = "Profile Effect",
+            model = ImageRequest.Builder(ctx)
+                .data("https://cdn.discordapp.com/profile-effects/$effectId/thumbnail.png")
+                .crossfade(false)
+                .build(),
+            contentDescription = null,
             imageLoader = gifLoader,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
         AsyncImage(
-            model = ImageRequest.Builder(ctx).data(effectApngUrl).crossfade(false).build(),
-            contentDescription = null,
+            model = ImageRequest.Builder(ctx)
+                .data("https://cdn.discordapp.com/profile-effects/$effectId/effect.gif")
+                .crossfade(false)
+                .build(),
+            contentDescription = "Profile Effect",
             imageLoader = gifLoader,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -763,16 +771,16 @@ private fun AnimatedDecorationBorder(
             }
             .build()
     }
-    Box(modifier = modifier.size(size + 8.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.size(size + 16.dp), contentAlignment = Alignment.Center) {
         content()
         AsyncImage(
             model = ImageRequest.Builder(ctx)
-                .data("https://cdn.discordapp.com/avatar-decoration-presets/$decorationAsset.png?size=160&passthrough=true")
+                .data("https://cdn.discordapp.com/avatar-decoration-presets/$decorationAsset.png?size=240&passthrough=true")
                 .crossfade(false)
                 .build(),
-            contentDescription = "decoration",
+            contentDescription = null,
             imageLoader = gifLoader,
-            modifier = Modifier.size(size + 8.dp),
+            modifier = Modifier.size(size + 16.dp),
             contentScale = ContentScale.FillBounds
         )
     }
@@ -1572,12 +1580,35 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onRefresh, modifier = Modifier.size(40.dp).background(AppColors.Surface, RoundedCornerShape(Radius.Small))) {
-                            Icon(Icons.Outlined.Refresh, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
+                    var showMenu by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(40.dp).background(AppColors.Surface, RoundedCornerShape(Radius.Small))
+                        ) {
+                            Icon(Icons.Outlined.MoreVert, null, tint = AppColors.TextSecondary, modifier = Modifier.size(20.dp))
                         }
-                        Button(onClick = onLogout, colors = ButtonDefaults.buttonColors(containerColor = AppColors.ErrorContainer, contentColor = AppColors.Error), shape = RoundedCornerShape(Radius.Medium)) {
-                            Icon(Icons.AutoMirrored.Outlined.Logout, null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(6.dp)); Text("Log Out", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            modifier = Modifier.background(AppColors.Surface)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Quest Completer", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.EmojiEvents, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
+                                onClick = { showMenu = false; onQuestClick() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Refresh", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.Refresh, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp)) },
+                                onClick = { showMenu = false; onRefresh() }
+                            )
+                            HorizontalDivider(color = AppColors.Divider)
+                            DropdownMenuItem(
+                                text = { Text("Log Out", color = AppColors.Error, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null, tint = AppColors.Error, modifier = Modifier.size(18.dp)) },
+                                onClick = { showMenu = false; onLogout() }
+                            )
                         }
                     }
                 }
@@ -1608,55 +1639,48 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Button(
-                            onClick = onQuestClick,
-                            modifier = Modifier.fillMaxWidth().height(46.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = AppColors.QuestGold.copy(0.85f)),
-                            shape = RoundedCornerShape(Radius.Token)
-                        ) {
-                            Icon(Icons.Outlined.PlayArrow, null, modifier = Modifier.size(16.dp), tint = Color.Black)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Auto Quest Completer", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Black)
-                        }
                     }
 
-                    Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(12.dp))
 
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatusBadge(presence = presence, loadingPresence = loadingPresence)
-                        if (user.primaryGuildTag != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge)).border(1.dp, AppColors.Primary.copy(0.25f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                                if (user.primaryGuildBadge != null && user.primaryGuildId != null) {
-                                    AsyncImage("https://cdn.discordapp.com/clan-badges/${user.primaryGuildId}/${user.primaryGuildBadge}.png?size=16", null, Modifier.size(14.dp).clip(CircleShape)); Spacer(Modifier.width(4.dp))
-                                }
-                                Text(user.primaryGuildTag, fontSize = 10.sp, color = AppColors.Primary, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                    val displayName = user.globalName ?: user.username
+                    val nameStyle = user.displayNameStyle?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+                    val nameColorPrimary = nameStyle?.optString("color_primary")?.takeIf { it.isNotBlank() && it != "null" }
+                    val nameColorAccent  = nameStyle?.optString("color_secondary")?.takeIf { it.isNotBlank() && it != "null" }
 
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        val displayName = user.globalName ?: user.username
-                        val nameStyle = user.displayNameStyle?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
-                        val nameColorPrimary = nameStyle?.optString("color_primary")?.takeIf { it.isNotBlank() && it != "null" }
-                        val nameColorAccent  = nameStyle?.optString("color_secondary")?.takeIf { it.isNotBlank() && it != "null" }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         if (nameColorPrimary != null && nameColorAccent != null) {
                             val c1 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorPrimary.startsWith("#")) nameColorPrimary else "#$nameColorPrimary")) }.getOrElse { AppColors.TextPrimary }
                             val c2 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorAccent.startsWith("#")) nameColorAccent else "#$nameColorAccent")) }.getOrElse { AppColors.TextPrimary }
-                            Text(
-                                text = displayName,
-                                fontSize = 26.sp, fontWeight = FontWeight.Black,
-                                style = TextStyle(brush = Brush.horizontalGradient(listOf(c1, c2)))
-                            )
+                            Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.horizontalGradient(listOf(c1, c2))))
                         } else if (nameColorPrimary != null) {
                             val c1 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorPrimary.startsWith("#")) nameColorPrimary else "#$nameColorPrimary")) }.getOrElse { AppColors.TextPrimary }
                             Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = c1)
                         } else {
                             Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
                         }
+
+                        if (user.primaryGuildTag != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge))
+                                    .border(1.dp, AppColors.Primary.copy(0.25f), RoundedCornerShape(Radius.Badge))
+                                    .padding(horizontal = 7.dp, vertical = 3.dp)
+                            ) {
+                                if (user.primaryGuildBadge != null && user.primaryGuildId != null) {
+                                    AsyncImage("https://cdn.discordapp.com/clan-badges/${user.primaryGuildId}/${user.primaryGuildBadge}.png?size=16", null, Modifier.size(12.dp).clip(CircleShape))
+                                    Spacer(Modifier.width(3.dp))
+                                }
+                                Text(user.primaryGuildTag, fontSize = 10.sp, color = AppColors.Primary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        StatusBadge(presence = presence, loadingPresence = loadingPresence)
                     }
 
                     Text("@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "", fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium)
@@ -1881,18 +1905,12 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .background(sc.copy(0.12f), RoundedCornerShape(Radius.Badge))
                         .border(1.dp, sc.copy(0.3f), RoundedCornerShape(Radius.Badge))
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(Modifier.size(8.dp).background(sc, CircleShape))
-                    Spacer(Modifier.width(6.dp))
-                    Text(statusLabel(presence.status), fontSize = 12.sp, color = sc, fontWeight = FontWeight.Bold)
-                    if (presence.platforms.isNotEmpty()) {
-                        Spacer(Modifier.width(6.dp))
-                        Text("·", fontSize = 12.sp, color = sc.copy(0.6f))
-                        Spacer(Modifier.width(6.dp))
-                        Text(presence.platforms.joinToString(" & "), fontSize = 11.sp, color = sc.copy(0.8f))
-                    }
+                    Box(Modifier.size(7.dp).background(sc, CircleShape))
+                    Spacer(Modifier.width(5.dp))
+                    Text(statusLabel(presence.status), fontSize = 11.sp, color = sc, fontWeight = FontWeight.Bold)
                 }
             }
             loadingPresence -> {
@@ -1900,12 +1918,12 @@ class MainActivity : ComponentActivity() {
                     Modifier
                         .background(AppColors.TextMuted.copy(0.10f), RoundedCornerShape(Radius.Badge))
                         .border(1.dp, AppColors.TextMuted.copy(0.15f), RoundedCornerShape(Radius.Badge))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(9.dp), color = AppColors.TextMuted, strokeWidth = 1.5.dp)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Loading…", fontSize = 11.sp, color = AppColors.TextMuted)
+                        CircularProgressIndicator(Modifier.size(8.dp), color = AppColors.TextMuted, strokeWidth = 1.5.dp)
+                        Spacer(Modifier.width(5.dp))
+                        Text("...", fontSize = 11.sp, color = AppColors.TextMuted)
                     }
                 }
             }
@@ -1914,12 +1932,12 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .background(AppColors.TextMuted.copy(0.08f), RoundedCornerShape(Radius.Badge))
                         .border(1.dp, AppColors.TextMuted.copy(0.15f), RoundedCornerShape(Radius.Badge))
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(Modifier.size(8.dp).background(AppColors.TextMuted, CircleShape))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Offline", fontSize = 12.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Bold)
+                    Box(Modifier.size(7.dp).background(AppColors.TextMuted, CircleShape))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Offline", fontSize = 11.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Bold)
                 }
             }
         }
