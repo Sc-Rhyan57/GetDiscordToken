@@ -4,23 +4,24 @@ plugins {
 }
 
 android {
-    namespace = "com.discordtokenget"
-    compileSdk = 34
+    namespace   = "com.discordtokenget"
+    compileSdk  = 34
 
     defaultConfig {
         applicationId = "com.discordtokenget"
-        minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        minSdk        = 24
+        targetSdk     = 34
+        versionCode   = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
+        versionName   = "1.0.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+        buildConfigField("String", "VERSION_NAME", "\"$versionName\"")
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file("../keystore.jks")
+            storeFile    = file("../keystore.jks")
             storePassword = "discord123"
-            keyAlias = "discordtoken"
-            keyPassword = "discord123"
+            keyAlias     = "discordtoken"
+            keyPassword  = "discord123"
         }
     }
 
@@ -30,7 +31,7 @@ android {
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig   = signingConfigs.getByName("release")
         }
     }
 
@@ -44,7 +45,8 @@ android {
     }
 
     buildFeatures {
-        compose = true
+        compose     = true
+        buildConfig = true
     }
 
     composeOptions {
