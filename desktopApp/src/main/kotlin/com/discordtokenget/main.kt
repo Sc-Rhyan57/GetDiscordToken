@@ -111,7 +111,7 @@ private val DiscordDarkColorScheme = darkColorScheme(
 )
 
 private const val DISCORD_EPOCH           = 1420070400000L
-private const val CURRENT_VERSION         = "1.0.29"
+private const val CURRENT_VERSION         = "1.0.33"
 private const val GITHUB_API_LATEST       = "https://api.github.com/repos/Sc-Rhyan57/GetDiscordToken/releases/latest"
 private const val GATEWAY_URL             = "wss://gateway.discord.gg/?v=10&encoding=json"
 private const val GATEWAY_RECONNECT_DELAY = 3000L
