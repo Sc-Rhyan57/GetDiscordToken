@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Discord Token Get"
 include(":app")
+include(":desktopApp")
