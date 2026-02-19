@@ -25,150 +25,132 @@ permissions:
   contents: write
 
 jobs:
-  # ─── Android Build ─────────────────────────────────────────────────────────
+  # ─── Android ───────────────────────────────────────────────────────────────
   build-android:
     if: inputs.target == 'android' || inputs.target == 'both'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle 8.4
-        uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.4'
 
-      - name: Build Android APK
+      - name: Build APK
         run: gradle :app:assemble${{ inputs.buildType == 'release' && 'Release' || 'Debug' }}
 
-      - name: Upload Android APK
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: discord-token-android-${{ inputs.buildType }}
+          name: android
           path: app/build/outputs/apk/${{ inputs.buildType }}/*.apk
 
-      - name: Get APK path
-        if: inputs.buildType == 'release'
-        id: apk
-        run: echo "path=$(find app/build/outputs/apk/${{ inputs.buildType }} -name '*.apk')" >> $GITHUB_OUTPUT
-
-      - name: Create Android Release
-        if: inputs.buildType == 'release'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v1.0.${{ github.run_number }}-android
-          name: Discord Token Android v1.0.${{ github.run_number }}
-          files: ${{ steps.apk.outputs.path }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ─── Desktop Windows ───────────────────────────────────────────────────────
+  # ─── Windows ───────────────────────────────────────────────────────────────
   build-desktop-windows:
     if: inputs.target == 'desktop' || inputs.target == 'both'
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle 8.4
-        uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.4'
 
-      - name: Build Windows EXE + MSI
+      - name: Build EXE + MSI
         run: gradle :desktopApp:packageExe :desktopApp:packageMsi
 
-      - name: Upload Windows Installers
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: discord-token-windows
+          name: windows
           path: |
             desktopApp/build/compose/binaries/main/exe/*.exe
             desktopApp/build/compose/binaries/main/msi/*.msi
 
-      - name: Create Windows Release
-        if: inputs.buildType == 'release'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v1.0.${{ github.run_number }}-desktop
-          name: Discord Token Desktop v1.0.${{ github.run_number }}
-          files: |
-            desktopApp/build/compose/binaries/main/exe/*.exe
-            desktopApp/build/compose/binaries/main/msi/*.msi
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ─── Desktop Linux ─────────────────────────────────────────────────────────
+  # ─── Linux ─────────────────────────────────────────────────────────────────
   build-desktop-linux:
     if: inputs.target == 'desktop' || inputs.target == 'both'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle 8.4
-        uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.4'
 
-      - name: Install DEB tools
-        run: sudo apt-get install -y fakeroot
+      - run: sudo apt-get install -y fakeroot
 
-      - name: Build Linux DEB
+      - name: Build DEB
         run: gradle :desktopApp:packageDeb
 
-      - name: Upload Linux DEB
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: discord-token-linux
+          name: linux
           path: desktopApp/build/compose/binaries/main/deb/*.deb
 
-  # ─── Desktop macOS ─────────────────────────────────────────────────────────
+  # ─── macOS ─────────────────────────────────────────────────────────────────
   build-desktop-macos:
     if: inputs.target == 'desktop' || inputs.target == 'both'
     runs-on: macos-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle 8.4
-        uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.4'
 
-      - name: Build macOS DMG
+      - name: Build DMG
         run: gradle :desktopApp:packageDmg
 
-      - name: Upload macOS DMG
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: discord-token-macos
+          name: macos
           path: desktopApp/build/compose/binaries/main/dmg/*.dmg
+
+  # ─── Release única ─────────────────────────────────────────────────────────
+  release:
+    if: inputs.buildType == 'release'
+    runs-on: ubuntu-latest
+    needs:
+      - build-android
+      - build-desktop-windows
+      - build-desktop-linux
+      - build-desktop-macos
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Discord Token v1.0.${{ github.run_number }}
+          files: dist/**/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
