@@ -42,11 +42,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -64,6 +64,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -82,12 +83,13 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Update
@@ -174,6 +176,11 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
+// ─── Version auto-set from BuildConfig ────────────────────────────────────────
+private val CURRENT_VERSION: String get() = BuildConfig.VERSION_NAME
+
+// ─── Data Classes ─────────────────────────────────────────────────────────────
+
 data class DiscordUser(
     val id: String,
     val username: String,
@@ -195,12 +202,18 @@ data class DiscordUser(
     val avatarDecorationAsset: String?,
     val nameplateAsset: String?,
     val nameplateLabel: String?,
+    val nameplatePalette: String?,
     val primaryGuildTag: String?,
     val primaryGuildBadge: String?,
     val primaryGuildId: String?,
     val hasLegacyUsername: Boolean,
     val hasQuestBadge: Boolean,
-    val hasOrbsBadge: Boolean
+    val hasOrbsBadge: Boolean,
+    // ── New fields ──
+    val themeColorPrimary: Int?,
+    val themeColorAccent: Int?,
+    val profileEffectId: String?,
+    val displayNameStyle: String?       // font/style from Display Name Styles
 )
 
 data class CustomStatus(
@@ -266,6 +279,8 @@ data class AppLog(
     val detail: String? = null
 )
 
+// ─── Colors & Constants ───────────────────────────────────────────────────────
+
 private object AppColors {
     val Background     = Color(0xFF1E1F22)
     val Surface        = Color(0xFF2B2D31)
@@ -289,14 +304,9 @@ private object AppColors {
 }
 
 private object Radius {
-    val Small  = 8.dp
-    val Medium = 12.dp
-    val Large  = 16.dp
-    val XLarge = 20.dp
-    val Card   = 18.dp
-    val Button = 14.dp
-    val Badge  = 20.dp
-    val Token  = 10.dp
+    val Small  = 8.dp;  val Medium = 12.dp; val Large  = 16.dp
+    val XLarge = 20.dp; val Card   = 18.dp; val Button = 14.dp
+    val Badge  = 20.dp; val Token  = 10.dp
 }
 
 private val DiscordDarkColorScheme = darkColorScheme(
@@ -314,25 +324,29 @@ private val DiscordDarkColorScheme = darkColorScheme(
 
 private const val JS_TOKEN =
     "javascript:(function()%7Bvar%20i%3Ddocument.createElement('iframe')%3Bdocument.body.appendChild(i)%3Balert(i.contentWindow.localStorage.token.slice(1,-1))%7D)()"
-private const val PREF_CRASH        = "crash_prefs"
-private const val KEY_CRASH_TRACE   = "crash_trace"
-private const val PREF_SESSION      = "session_prefs"
-private const val KEY_TOKEN         = "saved_token"
-private const val KEY_RISK_ACCEPTED  = "risk_accepted"
-private const val DISCORD_EPOCH     = 1420070400000L
-private const val CURRENT_VERSION   = "1.0.33"
+private const val PREF_CRASH       = "crash_prefs"
+private const val KEY_CRASH_TRACE  = "crash_trace"
+private const val PREF_SESSION     = "session_prefs"
+private const val KEY_TOKEN        = "saved_token"
+private const val KEY_RISK_ACCEPTED = "risk_accepted"
+private const val DISCORD_EPOCH    = 1420070400000L
 private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/GetDiscordToken/releases/latest"
-private const val GATEWAY_URL       = "wss://gateway.discord.gg/?v=10&encoding=json"
+private const val GATEWAY_URL      = "wss://gateway.discord.gg/?v=10&encoding=json"
 private const val GATEWAY_RECONNECT_DELAY_MS = 3000L
 private const val GATEWAY_MAX_RECONNECT_ATTEMPTS = 5
+
+// CDN base for profile effects (Lottie JSON files served by Discord)
+private const val PROFILE_EFFECT_CDN = "https://cdn.discordapp.com/profile-effects"
 
 private val httpClient = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
     .readTimeout(15, TimeUnit.SECONDS)
     .build()
 
-private val appLogs = mutableStateListOf<AppLog>()
+private val appLogs     = mutableStateListOf<AppLog>()
 private val logsEnabled = mutableStateOf(true)
+
+// ─── Logging ──────────────────────────────────────────────────────────────────
 
 private fun addLog(level: String, tag: String, message: String, detail: String? = null) {
     if (!logsEnabled.value) return
@@ -340,6 +354,8 @@ private fun addLog(level: String, tag: String, message: String, detail: String? 
     appLogs.add(0, AppLog(ts, level, tag, message, detail))
     if (appLogs.size > 300) appLogs.removeAt(appLogs.size - 1)
 }
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 private fun snowflakeToDate(id: String): String = try {
     val ts = (id.toLong() ushr 22) + DISCORD_EPOCH
@@ -379,48 +395,46 @@ private fun activityTypeLabel(type: Int): String = when (type) {
     3 -> "Watching"; 5 -> "Competing in"; else -> "Activity"
 }
 
+/** Convert Discord decimal color int to Compose Color safely */
+private fun discordColorToCompose(intColor: Int): Color =
+    Color(0xFF000000L or (intColor.toLong() and 0xFFFFFFL))
+
 private fun connectionLabel(type: String): String = when (type) {
-    "spotify"         -> "Spotify";      "steam"           -> "Steam"
-    "github"          -> "GitHub";       "twitch"          -> "Twitch"
-    "youtube"         -> "YouTube";      "twitter"         -> "X (Twitter)"
-    "reddit"          -> "Reddit";       "playstation"     -> "PlayStation"
-    "xbox"            -> "Xbox";         "battlenet"       -> "Battle.net"
-    "instagram"       -> "Instagram";    "tiktok"          -> "TikTok"
-    "facebook"        -> "Facebook";     "epicgames"       -> "Epic Games"
-    "leagueoflegends" -> "League of Legends"; "riotgames"  -> "Riot Games"
-    "crunchyroll"     -> "Crunchyroll";  "domain"          -> "Domain"
-    "paypal"          -> "PayPal";       "skype"           -> "Skype"
-    "ebay"            -> "eBay";         "soundcloud"      -> "SoundCloud"
-    else              -> type.replaceFirstChar { it.uppercase() }
+    "spotify" -> "Spotify"; "steam" -> "Steam"; "github" -> "GitHub"
+    "twitch" -> "Twitch"; "youtube" -> "YouTube"; "twitter" -> "X (Twitter)"
+    "reddit" -> "Reddit"; "playstation" -> "PlayStation"; "xbox" -> "Xbox"
+    "battlenet" -> "Battle.net"; "instagram" -> "Instagram"; "tiktok" -> "TikTok"
+    "facebook" -> "Facebook"; "epicgames" -> "Epic Games"
+    "leagueoflegends" -> "League of Legends"; "riotgames" -> "Riot Games"
+    "crunchyroll" -> "Crunchyroll"; "domain" -> "Domain"; "paypal" -> "PayPal"
+    "skype" -> "Skype"; "ebay" -> "eBay"; "soundcloud" -> "SoundCloud"
+    else -> type.replaceFirstChar { it.uppercase() }
 }
 
 private fun connectionColor(type: String): Color = when (type) {
-    "spotify"         -> Color(0xFF1DB954); "steam"      -> Color(0xFF66C0F4)
-    "github"          -> Color(0xFF8B949E); "twitch"     -> Color(0xFF9147FF)
-    "youtube"         -> Color(0xFFFF0000); "twitter"    -> Color(0xFF1D9BF0)
-    "reddit"          -> Color(0xFFFF4500); "playstation" -> Color(0xFF0070D1)
-    "xbox"            -> Color(0xFF107C10); "battlenet"  -> Color(0xFF009AE4)
-    "instagram"       -> Color(0xFFE1306C); "tiktok"     -> Color(0xFFEE1D52)
-    "epicgames"       -> Color(0xFF2ECC40); "leagueoflegends" -> Color(0xFFC89B3C)
-    "riotgames"       -> Color(0xFFFF4655); "soundcloud" -> Color(0xFFFF5500)
-    else              -> AppColors.Primary
+    "spotify" -> Color(0xFF1DB954); "steam" -> Color(0xFF66C0F4)
+    "github" -> Color(0xFF8B949E); "twitch" -> Color(0xFF9147FF)
+    "youtube" -> Color(0xFFFF0000); "twitter" -> Color(0xFF1D9BF0)
+    "reddit" -> Color(0xFFFF4500); "playstation" -> Color(0xFF0070D1)
+    "xbox" -> Color(0xFF107C10); "battlenet" -> Color(0xFF009AE4)
+    "instagram" -> Color(0xFFE1306C); "tiktok" -> Color(0xFFEE1D52)
+    "epicgames" -> Color(0xFF2ECC40); "leagueoflegends" -> Color(0xFFC89B3C)
+    "riotgames" -> Color(0xFFFF4655); "soundcloud" -> Color(0xFFFF5500)
+    else -> AppColors.Primary
 }
 
 private fun connectionProfileUrl(type: String, name: String): String? = when (type) {
-    "spotify"         -> "https://open.spotify.com/user/$name"
-    "steam"           -> "https://steamcommunity.com/id/$name"
-    "github"          -> "https://github.com/$name"
-    "twitch"          -> "https://twitch.tv/$name"
-    "youtube"         -> "https://youtube.com/@$name"
-    "twitter"         -> "https://x.com/$name"
-    "reddit"          -> "https://reddit.com/u/$name"
-    "instagram"       -> "https://instagram.com/$name"
-    "tiktok"          -> "https://tiktok.com/@$name"
-    "facebook"        -> "https://facebook.com/$name"
-    "soundcloud"      -> "https://soundcloud.com/$name"
-    "leagueoflegends" -> "https://www.op.gg/summoners/br/$name"
-    "riotgames"       -> "https://tracker.gg/valorant/profile/riot/$name"
-    else              -> null
+    "spotify" -> "https://open.spotify.com/user/$name"
+    "steam" -> "https://steamcommunity.com/id/$name"
+    "github" -> "https://github.com/$name"
+    "twitch" -> "https://twitch.tv/$name"
+    "youtube" -> "https://youtube.com/@$name"
+    "twitter" -> "https://x.com/$name"
+    "reddit" -> "https://reddit.com/u/$name"
+    "instagram" -> "https://instagram.com/$name"
+    "tiktok" -> "https://tiktok.com/@$name"
+    "soundcloud" -> "https://soundcloud.com/$name"
+    else -> null
 }
 
 private fun badgeColorFromId(id: String): Color = when {
@@ -443,160 +457,6 @@ private fun badgeColorFromId(id: String): Color = when {
     else                              -> AppColors.Primary
 }
 
-private fun resolvePresenceFromSessions(sessions: JSONArray?): Triple<String, List<String>, CustomStatus?> {
-    if (sessions == null || sessions.length() == 0) return Triple("offline", emptyList(), null)
-    val priority = mapOf("dnd" to 3, "online" to 2, "idle" to 1, "invisible" to 0, "offline" to -1)
-    var bestStatus = "offline"
-    val platforms = mutableListOf<String>()
-    var customStatus: CustomStatus? = null
-    for (i in 0 until sessions.length()) {
-        val s = sessions.getJSONObject(i)
-        val st = s.optString("status", "offline")
-        if ((priority[st] ?: -1) > (priority[bestStatus] ?: -1)) bestStatus = st
-        val ci = s.optJSONObject("client_info")
-        if (ci != null) {
-            when (ci.optString("client")) {
-                "mobile"  -> if (!platforms.contains("Mobile"))  platforms.add("Mobile")
-                "desktop" -> if (!platforms.contains("Desktop")) platforms.add("Desktop")
-                "web"     -> if (!platforms.contains("Web"))     platforms.add("Web")
-            }
-        }
-        if (customStatus == null) {
-            val acts = s.optJSONArray("activities") ?: continue
-            for (j in 0 until acts.length()) {
-                val a = acts.getJSONObject(j)
-                if (a.optInt("type", -1) == 4) {
-                    val emoji = a.optJSONObject("emoji")
-                    customStatus = CustomStatus(
-                        text          = a.optString("state").takeIf { it.isNotEmpty() && it != "null" },
-                        emojiName     = emoji?.optString("name")?.takeIf { it.isNotEmpty() },
-                        emojiId       = emoji?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" },
-                        emojiAnimated = emoji?.optBoolean("animated", false) ?: false
-                    )
-                    break
-                }
-            }
-        }
-    }
-    return Triple(bestStatus, platforms, customStatus)
-}
-
-private fun resolveActivityImageUrl(image: String, appId: String?): String? = when {
-    image.startsWith("spotify:") ->
-        "https://i.scdn.co/image/${image.removePrefix("spotify:")}"
-    image.startsWith("mp:external/") ->
-        "https://media.discordapp.net/external/${image.removePrefix("mp:external/")}"
-    image.startsWith("mp:") ->
-        "https://media.discordapp.net/${image.removePrefix("mp:")}"
-    image.isEmpty() || image == "null" -> null
-    appId != null -> "https://cdn.discordapp.com/app-assets/$appId/$image.png"
-    else -> null
-}
-
-private fun resolveSmallImageUrl(image: String, appId: String?): String? = when {
-    image.startsWith("mp:external/") ->
-        "https://media.discordapp.net/external/${image.removePrefix("mp:external/")}"
-    image.startsWith("mp:") ->
-        "https://media.discordapp.net/${image.removePrefix("mp:")}"
-    image.startsWith("spotify:") ->
-        "https://i.scdn.co/image/${image.removePrefix("spotify:")}"
-    image.isEmpty() || image == "null" -> null
-    appId != null -> "https://cdn.discordapp.com/app-assets/$appId/$image.png"
-    else -> null
-}
-
-private fun buildActivity(a: JSONObject): PresenceActivity {
-    val type  = a.optInt("type", 0)
-    val name  = a.optString("name")
-    val appId = a.optString("application_id").takeIf { it.isNotEmpty() && it != "null" }
-    val ts    = a.optJSONObject("timestamps")
-    val richTs = if (ts != null) RichTimestamps(
-        start = if (!ts.isNull("start")) ts.optLong("start") else null,
-        end   = if (!ts.isNull("end"))   ts.optLong("end")   else null
-    ) else null
-    val as_ = a.optJSONObject("assets")
-    val richAs = if (as_ != null) RichAssets(
-        largeImage = as_.optString("large_image").takeIf { it.isNotEmpty() && it != "null" },
-        largeText  = as_.optString("large_text").takeIf { it.isNotEmpty() && it != "null" },
-        smallImage = as_.optString("small_image").takeIf { it.isNotEmpty() && it != "null" },
-        smallText  = as_.optString("small_text").takeIf  { it.isNotEmpty() && it != "null" }
-    ) else null
-    val largeImageUrl = richAs?.largeImage?.let { resolveActivityImageUrl(it, appId) }
-    val smallImageUrl = richAs?.smallImage?.let { resolveSmallImageUrl(it, appId) }
-    val btns = mutableListOf<ActivityButton>()
-    val btnsArr = a.optJSONArray("buttons")
-    if (btnsArr != null) {
-        for (bi in 0 until btnsArr.length()) {
-            val b = btnsArr.optJSONObject(bi)
-            if (b != null) {
-                val lbl = b.optString("label").takeIf { it.isNotEmpty() }
-                val url = b.optString("url").takeIf  { it.isNotEmpty() }
-                if (lbl != null && url != null) btns.add(ActivityButton(lbl, url))
-            }
-        }
-    }
-    return PresenceActivity(
-        type          = type,
-        name          = name,
-        details       = a.optString("details").takeIf { it.isNotEmpty() && it != "null" },
-        state         = a.optString("state").takeIf   { it.isNotEmpty() && it != "null" },
-        applicationId = appId,
-        timestamps    = richTs,
-        assets        = richAs,
-        syncId        = a.optString("sync_id").takeIf { it.isNotEmpty() && it != "null" },
-        largeImageUrl = largeImageUrl,
-        smallImageUrl = smallImageUrl,
-        buttons       = btns
-    )
-}
-
-private fun activitiesFromArray(acts: JSONArray?): List<PresenceActivity> {
-    if (acts == null) return emptyList()
-    val list = mutableListOf<PresenceActivity>()
-    for (j in 0 until acts.length()) {
-        val a = acts.getJSONObject(j)
-        if (a.optInt("type", -1) == 4) continue
-        val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue
-        val type = a.optInt("type", 0)
-        if (list.none { it.name == name && it.type == type }) list.add(buildActivity(a))
-    }
-    return list
-}
-
-private fun activitiesFromSessions(sessions: JSONArray?): List<PresenceActivity> {
-    if (sessions == null) return emptyList()
-    val list = mutableListOf<PresenceActivity>()
-    for (i in 0 until sessions.length()) {
-        val s = sessions.getJSONObject(i)
-        val acts = s.optJSONArray("activities") ?: continue
-        for (j in 0 until acts.length()) {
-            val a = acts.getJSONObject(j)
-            if (a.optInt("type", -1) == 4) continue
-            val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue
-            val type = a.optInt("type", 0)
-            if (list.none { it.name == name && it.type == type }) list.add(buildActivity(a))
-        }
-    }
-    return list
-}
-
-private fun isNewerVersion(latest: String, current: String): Boolean {
-    val l = latest.trimStart('v').split(".").mapNotNull { it.toIntOrNull() }
-    val c = current.trimStart('v').split(".").mapNotNull { it.toIntOrNull() }
-    for (i in 0 until maxOf(l.size, c.size)) {
-        val lv = l.getOrElse(i) { 0 }; val cv = c.getOrElse(i) { 0 }
-        if (lv > cv) return true; if (lv < cv) return false
-    }
-    return false
-}
-
-private fun isNetworkAvailable(context: Context): Boolean {
-    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
-    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-           caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-}
-
 private fun formatElapsed(startMs: Long): String {
     val elapsed = (System.currentTimeMillis() - startMs) / 1000
     val h = elapsed / 3600; val m = (elapsed % 3600) / 60; val s = elapsed % 60
@@ -616,10 +476,29 @@ private fun accountAgeString(createdMs: Long): String {
     return buildString {
         if (years  > 0) append("${years}y ")
         if (months > 0) append("${months}mo ")
-        if (rem    > 0 && years == 0L) append("${rem}d")
+        if (rem > 0 && years == 0L) append("${rem}d")
         if (isEmpty()) append("Today")
     }.trim()
 }
+
+private fun isNewerVersion(latest: String, current: String): Boolean {
+    val l = latest.trimStart('v').split(".").mapNotNull { it.toIntOrNull() }
+    val c = current.trimStart('v').split(".").mapNotNull { it.toIntOrNull() }
+    for (i in 0 until maxOf(l.size, c.size)) {
+        val lv = l.getOrElse(i) { 0 }; val cv = c.getOrElse(i) { 0 }
+        if (lv > cv) return true; if (lv < cv) return false
+    }
+    return false
+}
+
+private fun isNetworkAvailable(context: Context): Boolean {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+    return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+           caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
+
+// ─── Markdown ─────────────────────────────────────────────────────────────────
 
 private sealed class MdBlock {
     data class Heading(val text: String, val level: Int)     : MdBlock()
@@ -630,14 +509,15 @@ private sealed class MdBlock {
 }
 
 private fun parseBlocks(raw: String): List<MdBlock> {
-    val blocks = mutableListOf<MdBlock>()
-    val lines = raw.lines(); var i = 0
+    val blocks = mutableListOf<MdBlock>(); val lines = raw.lines(); var i = 0
     while (i < lines.size) {
         val line = lines[i]
         when {
             line.startsWith("```") -> {
                 val lang = line.removePrefix("```").trim(); val sb = StringBuilder(); i++
-                while (i < lines.size && !lines[i].trimEnd().endsWith("```")) { if (sb.isNotEmpty()) sb.append('\n'); sb.append(lines[i]); i++ }
+                while (i < lines.size && !lines[i].trimEnd().endsWith("```")) {
+                    if (sb.isNotEmpty()) sb.append('\n'); sb.append(lines[i]); i++
+                }
                 blocks.add(MdBlock.CodeBlock(sb.toString(), lang))
             }
             line.startsWith("### ") -> blocks.add(MdBlock.Heading(line.removePrefix("### "), 3))
@@ -655,8 +535,7 @@ private fun parseBlocks(raw: String): List<MdBlock> {
                 }
                 if (pLines.any { it.isNotBlank() }) blocks.add(MdBlock.Paragraph(pLines.joinToString("\n")))
             }
-        }
-        i++
+        }; i++
     }
     return blocks
 }
@@ -699,18 +578,25 @@ private fun DiscordMarkdown(text: String, modifier: Modifier = Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         parseBlocks(text).forEach { block ->
             when (block) {
-                is MdBlock.Heading -> Text(parseInline(block.text, AppColors.TextPrimary),
-                    fontSize = when (block.level) { 1 -> 22.sp; 2 -> 18.sp; else -> 16.sp },
-                    fontWeight = FontWeight.Bold,
-                    lineHeight = when (block.level) { 1 -> 28.sp; 2 -> 24.sp; else -> 22.sp })
+                is MdBlock.Heading -> Text(
+                    parseInline(block.text, AppColors.TextPrimary),
+                    fontSize    = when (block.level) { 1 -> 22.sp; 2 -> 18.sp; else -> 16.sp },
+                    fontWeight  = FontWeight.Bold,
+                    lineHeight  = when (block.level) { 1 -> 28.sp; 2 -> 24.sp; else -> 22.sp }
+                )
                 is MdBlock.SubText -> Text(parseInline(block.text, AppColors.TextMuted), fontSize = 11.sp, lineHeight = 16.sp)
-                is MdBlock.Blockquote -> Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
-                    .background(AppColors.Surface.copy(0.5f), RoundedCornerShape(Radius.Small)).padding(vertical = 6.dp)) {
+                is MdBlock.Blockquote -> Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .background(AppColors.Surface.copy(0.5f), RoundedCornerShape(Radius.Small))
+                        .padding(vertical = 6.dp)
+                ) {
                     Box(Modifier.width(3.dp).fillMaxHeight().background(AppColors.TextMuted.copy(0.6f), RoundedCornerShape(2.dp)))
                     Spacer(Modifier.width(10.dp))
                     Text(parseInline(block.text, AppColors.TextSecondary), fontSize = 14.sp, lineHeight = 20.sp, modifier = Modifier.padding(end = 8.dp))
                 }
-                is MdBlock.CodeBlock -> Box(Modifier.fillMaxWidth().background(AppColors.CodeBg, RoundedCornerShape(Radius.Medium)).padding(12.dp)) {
+                is MdBlock.CodeBlock -> Box(
+                    Modifier.fillMaxWidth().background(AppColors.CodeBg, RoundedCornerShape(Radius.Medium)).padding(12.dp)
+                ) {
                     Column {
                         if (block.lang.isNotEmpty()) Text(block.lang, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 4.dp))
                         Text(block.code, fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = Color(0xFFE8739C), lineHeight = 18.sp)
@@ -722,13 +608,112 @@ private fun DiscordMarkdown(text: String, modifier: Modifier = Modifier) {
     }
 }
 
+// ─── Profile Gradient Banner ──────────────────────────────────────────────────
+
+/**
+ * Renders the Discord Nitro two-tone gradient profile theme.
+ * theme_colors comes from user_profile.theme_colors in the /profile endpoint
+ * as a JSON array: [primaryInt, accentInt]
+ */
+@Composable
+private fun ProfileThemeGradient(
+    primaryColor: Color,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.background(
+            Brush.linearGradient(
+                colors = listOf(primaryColor, accentColor),
+                start  = Offset(0f, 0f),
+                end    = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+            )
+        )
+    )
+}
+
+// ─── Nameplate ────────────────────────────────────────────────────────────────
+
+/**
+ * Shows the nameplate behind the display name, similar to how Discord renders it.
+ * asset format: "nameplates/nameplates/<name>/"  → we append "nameplate.png" for a static preview.
+ */
+@Composable
+private fun NameplateRow(asset: String, label: String?, palette: String?) {
+    val baseUrl = "https://cdn.discordapp.com/assets/${asset}nameplate.png"
+    val paletteColor = when (palette) {
+        "cobalt"    -> Color(0xFF1D63E8)
+        "crimson"   -> Color(0xFFE8341D)
+        "forest"    -> Color(0xFF1DB954)
+        "gold"      -> Color(0xFFFFD700)
+        "violet"    -> Color(0xFF9747FF)
+        "twilight"  -> Color(0xFF5865F2)
+        else        -> AppColors.Primary
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(paletteColor.copy(0.12f), RoundedCornerShape(Radius.Badge))
+            .border(1.dp, paletteColor.copy(0.35f), RoundedCornerShape(Radius.Badge))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(
+            model = baseUrl,
+            contentDescription = "Nameplate",
+            modifier = Modifier.height(22.dp)
+        )
+        if (!label.isNullOrBlank()) {
+            Spacer(Modifier.width(8.dp))
+            Text(label, fontSize = 12.sp, color = paletteColor, fontWeight = FontWeight.Bold)
+        }
+        if (!palette.isNullOrBlank()) {
+            Spacer(Modifier.width(6.dp))
+            Box(
+                Modifier.background(paletteColor.copy(0.20f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 5.dp, vertical = 2.dp)
+            ) { Text(palette.replaceFirstChar { it.uppercase() }, fontSize = 9.sp, color = paletteColor, fontWeight = FontWeight.Bold) }
+        }
+    }
+}
+
+// ─── Profile Effect Badge ─────────────────────────────────────────────────────
+
+@Composable
+private fun ProfileEffectBadge(effectId: String) {
+    val thumbUrl = "https://cdn.discordapp.com/profile-effects/$effectId/thumbnail.png"
+    Row(
+        modifier = Modifier
+            .background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge))
+            .border(1.dp, AppColors.Primary.copy(0.25f), RoundedCornerShape(Radius.Badge))
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AsyncImage(thumbUrl, "Profile Effect", Modifier.size(20.dp).clip(RoundedCornerShape(4.dp)))
+        Spacer(Modifier.width(6.dp))
+        Text("Profile Effect", fontSize = 11.sp, color = AppColors.Primary, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+// ─── ParticleBackground ───────────────────────────────────────────────────────
+
 @Composable
 private fun ParticleBackground(speedMultiplier: Float = 1f, modifier: Modifier = Modifier) {
     data class Particle(val x: Float, val y: Float, val speed: Float, val size: Float, val alpha: Float, val phase: Float, val wobble: Float)
     data class Glob(val x: Float, val y: Float, val r: Float, val color: Color, val phase: Float)
-    val particles = remember { List(90) { Particle(Random.nextFloat(), Random.nextFloat(), Random.nextFloat() * 0.5f + 0.1f, Random.nextFloat() * 2.5f + 0.5f, Random.nextFloat() * 0.4f + 0.06f, Random.nextFloat() * 6.28f, Random.nextFloat() * 0.08f + 0.02f) } }
-    val globs = remember { listOf(Glob(0.15f, 0.25f, 420f, Color(0xFF5865F2), 0.47f), Glob(0.80f, 0.60f, 350f, Color(0xFF7B5EA7), 2.51f), Glob(0.50f, 0.85f, 280f, Color(0xFF3B4EC8), 1.57f), Glob(0.70f, 0.10f, 220f, Color(0xFF5865F2), 3.14f), Glob(0.30f, 0.70f, 180f, Color(0xFF9B59B6), 0.92f)) }
-    val transition = rememberInfiniteTransition(label = "bg")
+    val particles = remember {
+        List(90) { Particle(Random.nextFloat(), Random.nextFloat(), Random.nextFloat() * 0.5f + 0.1f, Random.nextFloat() * 2.5f + 0.5f, Random.nextFloat() * 0.4f + 0.06f, Random.nextFloat() * 6.28f, Random.nextFloat() * 0.08f + 0.02f) }
+    }
+    val globs = remember {
+        listOf(
+            Glob(0.15f, 0.25f, 420f, Color(0xFF5865F2), 0.47f),
+            Glob(0.80f, 0.60f, 350f, Color(0xFF7B5EA7), 2.51f),
+            Glob(0.50f, 0.85f, 280f, Color(0xFF3B4EC8), 1.57f),
+            Glob(0.70f, 0.10f, 220f, Color(0xFF5865F2), 3.14f),
+            Glob(0.30f, 0.70f, 180f, Color(0xFF9B59B6), 0.92f)
+        )
+    }
+    val transition   = rememberInfiniteTransition(label = "bg")
     val baseDuration = (80000f / speedMultiplier).toInt().coerceAtLeast(3000)
     val time by transition.animateFloat(0f, 10000f, infiniteRepeatable(tween(baseDuration, easing = LinearEasing)), label = "t")
     Canvas(modifier = modifier) {
@@ -745,6 +730,102 @@ private fun ParticleBackground(speedMultiplier: Float = 1f, modifier: Modifier =
         }
     }
 }
+
+// ─── Gateway helpers (unchanged from original) ────────────────────────────────
+
+private fun resolvePresenceFromSessions(sessions: JSONArray?): Triple<String, List<String>, CustomStatus?> {
+    if (sessions == null || sessions.length() == 0) return Triple("offline", emptyList(), null)
+    val priority = mapOf("dnd" to 3, "online" to 2, "idle" to 1, "invisible" to 0, "offline" to -1)
+    var bestStatus = "offline"; val platforms = mutableListOf<String>(); var customStatus: CustomStatus? = null
+    for (i in 0 until sessions.length()) {
+        val s  = sessions.getJSONObject(i); val st = s.optString("status", "offline")
+        if ((priority[st] ?: -1) > (priority[bestStatus] ?: -1)) bestStatus = st
+        val ci = s.optJSONObject("client_info")
+        if (ci != null) {
+            when (ci.optString("client")) {
+                "mobile"  -> if (!platforms.contains("Mobile"))  platforms.add("Mobile")
+                "desktop" -> if (!platforms.contains("Desktop")) platforms.add("Desktop")
+                "web"     -> if (!platforms.contains("Web"))     platforms.add("Web")
+            }
+        }
+        if (customStatus == null) {
+            val acts = s.optJSONArray("activities") ?: continue
+            for (j in 0 until acts.length()) {
+                val a = acts.getJSONObject(j)
+                if (a.optInt("type", -1) == 4) {
+                    val emoji = a.optJSONObject("emoji")
+                    customStatus = CustomStatus(
+                        text          = a.optString("state").takeIf { it.isNotEmpty() && it != "null" },
+                        emojiName     = emoji?.optString("name")?.takeIf { it.isNotEmpty() },
+                        emojiId       = emoji?.optString("id")?.takeIf  { it.isNotEmpty() && it != "null" },
+                        emojiAnimated = emoji?.optBoolean("animated", false) ?: false
+                    ); break
+                }
+            }
+        }
+    }
+    return Triple(bestStatus, platforms, customStatus)
+}
+
+private fun resolveActivityImageUrl(image: String, appId: String?): String? = when {
+    image.startsWith("spotify:")    -> "https://i.scdn.co/image/${image.removePrefix("spotify:")}"
+    image.startsWith("mp:external/")-> "https://media.discordapp.net/external/${image.removePrefix("mp:external/")}"
+    image.startsWith("mp:")         -> "https://media.discordapp.net/${image.removePrefix("mp:")}"
+    image.isEmpty() || image == "null" -> null
+    appId != null -> "https://cdn.discordapp.com/app-assets/$appId/$image.png"
+    else -> null
+}
+
+private fun resolveSmallImageUrl(image: String, appId: String?): String? = when {
+    image.startsWith("mp:external/")-> "https://media.discordapp.net/external/${image.removePrefix("mp:external/")}"
+    image.startsWith("mp:")         -> "https://media.discordapp.net/${image.removePrefix("mp:")}"
+    image.startsWith("spotify:")    -> "https://i.scdn.co/image/${image.removePrefix("spotify:")}"
+    image.isEmpty() || image == "null" -> null
+    appId != null -> "https://cdn.discordapp.com/app-assets/$appId/$image.png"
+    else -> null
+}
+
+private fun buildActivity(a: JSONObject): PresenceActivity {
+    val type  = a.optInt("type", 0); val name = a.optString("name")
+    val appId = a.optString("application_id").takeIf { it.isNotEmpty() && it != "null" }
+    val ts    = a.optJSONObject("timestamps")
+    val richTs = if (ts != null) RichTimestamps(
+        start = if (!ts.isNull("start")) ts.optLong("start") else null,
+        end   = if (!ts.isNull("end"))   ts.optLong("end")   else null
+    ) else null
+    val as_ = a.optJSONObject("assets")
+    val richAs = if (as_ != null) RichAssets(
+        largeImage = as_.optString("large_image").takeIf { it.isNotEmpty() && it != "null" },
+        largeText  = as_.optString("large_text").takeIf  { it.isNotEmpty() && it != "null" },
+        smallImage = as_.optString("small_image").takeIf { it.isNotEmpty() && it != "null" },
+        smallText  = as_.optString("small_text").takeIf  { it.isNotEmpty() && it != "null" }
+    ) else null
+    val largeImageUrl = richAs?.largeImage?.let { resolveActivityImageUrl(it, appId) }
+    val smallImageUrl = richAs?.smallImage?.let { resolveSmallImageUrl(it, appId) }
+    val btns = mutableListOf<ActivityButton>()
+    val btnsArr = a.optJSONArray("buttons")
+    if (btnsArr != null) for (bi in 0 until btnsArr.length()) {
+        val b = btnsArr.optJSONObject(bi)
+        if (b != null) { val lbl = b.optString("label").takeIf { it.isNotEmpty() }; val url = b.optString("url").takeIf { it.isNotEmpty() }; if (lbl != null && url != null) btns.add(ActivityButton(lbl, url)) }
+    }
+    return PresenceActivity(type = type, name = name, details = a.optString("details").takeIf { it.isNotEmpty() && it != "null" }, state = a.optString("state").takeIf { it.isNotEmpty() && it != "null" }, applicationId = appId, timestamps = richTs, assets = richAs, syncId = a.optString("sync_id").takeIf { it.isNotEmpty() && it != "null" }, largeImageUrl = largeImageUrl, smallImageUrl = smallImageUrl, buttons = btns)
+}
+
+private fun activitiesFromArray(acts: JSONArray?): List<PresenceActivity> {
+    if (acts == null) return emptyList()
+    val list = mutableListOf<PresenceActivity>()
+    for (j in 0 until acts.length()) { val a = acts.getJSONObject(j); if (a.optInt("type", -1) == 4) continue; val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue; val type = a.optInt("type", 0); if (list.none { it.name == name && it.type == type }) list.add(buildActivity(a)) }
+    return list
+}
+
+private fun activitiesFromSessions(sessions: JSONArray?): List<PresenceActivity> {
+    if (sessions == null) return emptyList()
+    val list = mutableListOf<PresenceActivity>()
+    for (i in 0 until sessions.length()) { val s = sessions.getJSONObject(i); val acts = s.optJSONArray("activities") ?: continue; for (j in 0 until acts.length()) { val a = acts.getJSONObject(j); if (a.optInt("type", -1) == 4) continue; val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue; val type = a.optInt("type", 0); if (list.none { it.name == name && it.type == type }) list.add(buildActivity(a)) }  }
+    return list
+}
+
+// ─── MainActivity ─────────────────────────────────────────────────────────────
 
 class MainActivity : ComponentActivity() {
 
@@ -777,9 +858,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        heartbeatJob?.cancel()
-        reconnectJob?.cancel()
-        gatewayWs?.close(1000, null)
+        heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
     }
 
     private fun saveToken(token: String) = getSharedPreferences(PREF_SESSION, Context.MODE_PRIVATE).edit().putString(KEY_TOKEN, token).apply()
@@ -803,210 +882,100 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun scheduleReconnect(token: String) {
-        if (gatewayReconnectAttempts >= GATEWAY_MAX_RECONNECT_ATTEMPTS) {
-            addLog("WARN", "Gateway", "Max reconnect attempts reached ($GATEWAY_MAX_RECONNECT_ATTEMPTS), giving up")
-            return
-        }
+        if (gatewayReconnectAttempts >= GATEWAY_MAX_RECONNECT_ATTEMPTS) { addLog("WARN", "Gateway", "Max reconnect attempts reached"); return }
         val delay = GATEWAY_RECONNECT_DELAY_MS * (1L shl gatewayReconnectAttempts.coerceAtMost(4))
         gatewayReconnectAttempts++
-        addLog("INFO", "Gateway", "Scheduling reconnect in ${delay}ms (attempt $gatewayReconnectAttempts/$GATEWAY_MAX_RECONNECT_ATTEMPTS)")
+        addLog("INFO", "Gateway", "Reconnect in ${delay}ms (attempt $gatewayReconnectAttempts/$GATEWAY_MAX_RECONNECT_ATTEMPTS)")
         reconnectJob?.cancel()
         reconnectJob = CoroutineScope(Dispatchers.IO).launch {
             delay(delay)
-            val canResume = gatewaySessionId.isNotEmpty() && gatewaySequence > 0
-            addLog("INFO", "Gateway", "Reconnecting… canResume=$canResume sessionId=$gatewaySessionId seq=$gatewaySequence")
-            connectGatewayInternal(token, canResume) { updated ->
-                currentPresence = updated
-                onPresenceLive?.invoke(updated)
-            }
+            connectGatewayInternal(token, gatewaySessionId.isNotEmpty() && gatewaySequence > 0) { updated -> currentPresence = updated; onPresenceLive?.invoke(updated) }
         }
     }
 
     private fun buildIdentifyPayload(token: String): String = JSONObject().apply {
         put("op", 2)
         put("d", JSONObject().apply {
-            put("token", token)
-            put("capabilities", 16381)
+            put("token", token); put("capabilities", 16381)
             put("properties", JSONObject().apply {
-                put("os", "Android")
-                put("browser", "Discord Android")
-                put("device", "Android")
-                put("system_locale", Locale.getDefault().toLanguageTag())
-                put("browser_version", "")
-                put("os_version", Build.VERSION.RELEASE)
-                put("referrer", "")
-                put("referring_domain", "")
-                put("release_channel", "stable")
-                put("client_build_number", 0)
+                put("os", "Android"); put("browser", "Discord Android"); put("device", "Android")
+                put("system_locale", Locale.getDefault().toLanguageTag()); put("browser_version", ""); put("os_version", Build.VERSION.RELEASE)
+                put("referrer", ""); put("referring_domain", ""); put("release_channel", "stable"); put("client_build_number", 0)
             })
             put("compress", false)
-            put("presence", JSONObject().apply {
-                put("status", "unknown")
-                put("since", 0)
-                put("activities", JSONArray())
-                put("afk", false)
-            })
+            put("presence", JSONObject().apply { put("status", "unknown"); put("since", 0); put("activities", JSONArray()); put("afk", false) })
         })
     }.toString()
 
     private fun buildResumePayload(token: String): String = JSONObject().apply {
         put("op", 6)
-        put("d", JSONObject().apply {
-            put("token", token)
-            put("session_id", gatewaySessionId)
-            put("seq", gatewaySequence)
-        })
+        put("d", JSONObject().apply { put("token", token); put("session_id", gatewaySessionId); put("seq", gatewaySequence) })
     }.toString()
 
     private fun connectGatewayInternal(token: String, tryResume: Boolean, onUpdate: (DiscordPresence) -> Unit) {
-        heartbeatJob?.cancel()
-        gatewayWs?.close(1000, null)
-        onPresenceLive = onUpdate
-
+        heartbeatJob?.cancel(); gatewayWs?.close(1000, null); onPresenceLive = onUpdate
         val listener = object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                addLog("INFO", "Gateway", "WebSocket opened", "HTTP ${response.code}")
-            }
-
+            override fun onOpen(ws: WebSocket, r: Response) { addLog("INFO", "Gateway", "WebSocket opened") }
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
-                    val json = JSONObject(text)
-                    val op   = json.optInt("op", -1)
-                    val seq  = json.optInt("s", -1)
+                    val json = JSONObject(text); val op = json.optInt("op", -1); val seq = json.optInt("s", -1)
                     if (seq > 0) gatewaySequence = seq
-
                     when (op) {
                         10 -> {
                             val interval = json.getJSONObject("d").getLong("heartbeat_interval")
-                            addLog("INFO", "Gateway", "Hello OP10 — heartbeat every ${interval}ms")
                             heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
                                 delay((interval * Random.nextFloat() * 0.5f).toLong())
-                                while (true) {
-                                    val s = if (gatewaySequence > 0) gatewaySequence.toString() else "null"
-                                    webSocket.send("""{"op":1,"d":$s}""")
-                                    addLog("INFO", "Gateway", "♥ Heartbeat sent", "seq=$s")
-                                    delay(interval)
-                                }
+                                while (true) { val s = if (gatewaySequence > 0) gatewaySequence.toString() else "null"; webSocket.send("""{"op":1,"d":$s}"""); delay(interval) }
                             }
-                            if (tryResume && gatewaySessionId.isNotEmpty() && gatewaySequence > 0) {
-                                webSocket.send(buildResumePayload(token))
-                                addLog("INFO", "Gateway", "Resume OP6 sent", "sessionId=$gatewaySessionId seq=$gatewaySequence")
-                            } else {
-                                webSocket.send(buildIdentifyPayload(token))
-                                addLog("INFO", "Gateway", "Identify OP2 sent")
-                            }
+                            if (tryResume && gatewaySessionId.isNotEmpty() && gatewaySequence > 0) { webSocket.send(buildResumePayload(token)); addLog("INFO", "Gateway", "Resume OP6 sent") }
+                            else { webSocket.send(buildIdentifyPayload(token)); addLog("INFO", "Gateway", "Identify OP2 sent") }
                         }
-
-                        11 -> addLog("INFO", "Gateway", "♥ Heartbeat ACK received")
-
-                        7 -> {
-                            addLog("WARN", "Gateway", "Reconnect requested OP7 — scheduling reconnect")
-                            webSocket.close(4000, "Reconnect requested")
-                            scheduleReconnect(token)
-                        }
-
-                        9 -> {
-                            val resumable = json.optBoolean("d", false)
-                            addLog("WARN", "Gateway", "Invalid session OP9 — resumable=$resumable")
-                            if (!resumable) {
-                                gatewaySessionId = ""
-                                gatewaySequence = -1
-                            }
-                            webSocket.close(4000, "Invalid session")
-                            scheduleReconnect(token)
-                        }
-
-                        0 -> {
+                        11 -> {}
+                        7  -> { webSocket.close(4000, "Reconnect"); scheduleReconnect(token) }
+                        9  -> { val r = json.optBoolean("d", false); if (!r) { gatewaySessionId = ""; gatewaySequence = -1 }; webSocket.close(4000, "Invalid session"); scheduleReconnect(token) }
+                        0  -> {
                             val ev = json.optString("t")
                             when (ev) {
                                 "READY" -> {
                                     gatewayReconnectAttempts = 0
-                                    val data     = json.getJSONObject("d")
-                                    gatewaySessionId = data.optString("session_id", "")
-                                    val selfUser = data.optJSONObject("user")
-                                    val selfId   = selfUser?.optString("id") ?: ownUserId
+                                    val data = json.getJSONObject("d"); gatewaySessionId = data.optString("session_id", "")
+                                    val selfId = data.optJSONObject("user")?.optString("id") ?: ownUserId
                                     if (ownUserId.isEmpty()) ownUserId = selfId
                                     val sessions = data.optJSONArray("sessions")
-                                    val (status, platforms, customStatus) = resolvePresenceFromSessions(sessions)
-                                    val activities = activitiesFromSessions(sessions)
-                                    val presence   = DiscordPresence(status, activities, platforms, customStatus)
-                                    currentPresence = presence
-                                    addLog("SUCCESS", "Gateway", "READY — userId=$selfId status=$status platforms=${platforms.joinToString()} acts=${activities.size}")
-                                    onPresenceLive?.invoke(presence)
-                                }
-
-                                "RESUMED" -> {
-                                    gatewayReconnectAttempts = 0
-                                    addLog("SUCCESS", "Gateway", "RESUMED — session restored seq=$gatewaySequence")
-                                    currentPresence?.let { onPresenceLive?.invoke(it) }
-                                }
-
-                                "PRESENCE_UPDATE" -> {
-                                    val data   = json.getJSONObject("d")
-                                    val userId = data.optJSONObject("user")?.optString("id") ?: ""
-                                    if (userId.isNotEmpty() && ownUserId.isNotEmpty() && userId != ownUserId) return
-                                    val status     = data.optString("status", "offline")
-                                    val acts       = data.optJSONArray("activities")
-                                    val activities = activitiesFromArray(acts)
-                                    var cs: CustomStatus? = null
-                                    if (acts != null) {
-                                        for (i in 0 until acts.length()) {
-                                            val a = acts.getJSONObject(i)
-                                            if (a.optInt("type", -1) == 4) {
-                                                val em = a.optJSONObject("emoji")
-                                                cs = CustomStatus(
-                                                    text          = a.optString("state").takeIf { it.isNotEmpty() && it != "null" },
-                                                    emojiName     = em?.optString("name")?.takeIf { it.isNotEmpty() },
-                                                    emojiId       = em?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" },
-                                                    emojiAnimated = em?.optBoolean("animated", false) ?: false
-                                                )
-                                                break
-                                            }
-                                        }
-                                    }
-                                    val updated = DiscordPresence(status, activities, currentPresence?.platforms ?: emptyList(), cs)
-                                    currentPresence = updated
-                                    addLog("INFO", "Gateway", "PRESENCE_UPDATE uid=$userId", "status=$status acts=${activities.size} customStatus=${cs?.text}")
-                                    onPresenceLive?.invoke(updated)
-                                }
-
-                                "SESSION_REPLACE" -> {
-                                    val sessions = json.optJSONArray("d") ?: return
                                     val (status, platforms, cs) = resolvePresenceFromSessions(sessions)
                                     val activities = activitiesFromSessions(sessions)
-                                    addLog("INFO", "Gateway", "SESSION_REPLACE", "sessions=${sessions.length()} status=$status acts=${activities.size}")
-                                    val updated = DiscordPresence(status, activities, platforms, cs)
-                                    currentPresence = updated
-                                    onPresenceLive?.invoke(updated)
+                                    val presence   = DiscordPresence(status, activities, platforms, cs)
+                                    currentPresence = presence; addLog("SUCCESS", "Gateway", "READY — userId=$selfId status=$status"); onPresenceLive?.invoke(presence)
                                 }
-
-                                "READY_SUPPLEMENTAL" -> addLog("INFO", "Gateway", "READY_SUPPLEMENTAL received")
-                                else -> if (ev.isNotEmpty()) addLog("INFO", "Gateway", "Event: $ev")
+                                "RESUMED" -> { gatewayReconnectAttempts = 0; addLog("SUCCESS", "Gateway", "RESUMED"); currentPresence?.let { onPresenceLive?.invoke(it) } }
+                                "PRESENCE_UPDATE" -> {
+                                    val data = json.getJSONObject("d"); val userId = data.optJSONObject("user")?.optString("id") ?: ""
+                                    if (userId.isNotEmpty() && ownUserId.isNotEmpty() && userId != ownUserId) return
+                                    val status = data.optString("status", "offline"); val acts = data.optJSONArray("activities")
+                                    val activities = activitiesFromArray(acts)
+                                    var cs: CustomStatus? = null
+                                    if (acts != null) for (i in 0 until acts.length()) { val a = acts.getJSONObject(i); if (a.optInt("type", -1) == 4) { val em = a.optJSONObject("emoji"); cs = CustomStatus(text = a.optString("state").takeIf { it.isNotEmpty() && it != "null" }, emojiName = em?.optString("name")?.takeIf { it.isNotEmpty() }, emojiId = em?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" }, emojiAnimated = em?.optBoolean("animated", false) ?: false); break } }
+                                    val updated = DiscordPresence(status, activities, currentPresence?.platforms ?: emptyList(), cs)
+                                    currentPresence = updated; onPresenceLive?.invoke(updated)
+                                }
+                                "SESSION_REPLACE" -> {
+                                    val sessions = json.optJSONArray("d") ?: return
+                                    val (status, platforms, cs) = resolvePresenceFromSessions(sessions); val activities = activitiesFromSessions(sessions)
+                                    val updated = DiscordPresence(status, activities, platforms, cs); currentPresence = updated; onPresenceLive?.invoke(updated)
+                                }
                             }
                         }
                     }
-                } catch (e: Exception) {
-                    addLog("ERROR", "Gateway", "Parse error: ${e.message}", e.stackTraceToString().take(400))
-                }
+                } catch (e: Exception) { addLog("ERROR", "Gateway", "Parse error: ${e.message}") }
             }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                addLog("ERROR", "Gateway", "Failure: ${t.message}", "code=${response?.code}")
-                scheduleReconnect(token)
-            }
-
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                addLog("INFO", "Gateway", "Closed: $code", reason.ifBlank { "no reason" })
-                if (code != 1000 && code != 4004) {
-                    scheduleReconnect(token)
-                }
-            }
+            override fun onFailure(ws: WebSocket, t: Throwable, r: Response?) { addLog("ERROR", "Gateway", "Failure: ${t.message}"); scheduleReconnect(token) }
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) { if (code != 1000 && code != 4004) scheduleReconnect(token) }
         }
-
-        val ws = httpClient.newWebSocket(Request.Builder().url(GATEWAY_URL).build(), listener)
-        gatewayWs = ws
+        gatewayWs = httpClient.newWebSocket(Request.Builder().url(GATEWAY_URL).build(), listener)
         gatewayToken = token
     }
+
+    // ─── Screens ──────────────────────────────────────────────────────────────
 
     @Composable
     fun CrashScreen(trace: String) {
@@ -1021,8 +990,12 @@ class MainActivity : ComponentActivity() {
             }
             Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
                 Text("An unexpected error occurred. Copy the log below and report it.", style = MaterialTheme.typography.bodyMedium, color = AppColors.TextSecondary, modifier = Modifier.padding(bottom = 12.dp))
-                Button(onClick = { (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Crash Log", trace)) },
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary), shape = RoundedCornerShape(Radius.Button)) {
+                Button(
+                    onClick = { (ctx.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Crash Log", trace)) },
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
+                    shape    = RoundedCornerShape(Radius.Button)
+                ) {
                     Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text("Copy Log", fontWeight = FontWeight.Bold, color = AppColors.OnPrimary)
                 }
                 Card(modifier = Modifier.fillMaxSize(), colors = CardDefaults.cardColors(containerColor = AppColors.ErrorContainer), shape = RoundedCornerShape(Radius.Card)) {
@@ -1035,24 +1008,24 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun DiscordTokenApp(initialToken: String?) {
         val ctx = LocalContext.current
-        var token            by remember { mutableStateOf(initialToken) }
-        var user             by remember { mutableStateOf<DiscordUser?>(null) }
-        var presence         by remember { mutableStateOf<DiscordPresence?>(null) }
-        var connections      by remember { mutableStateOf<List<DiscordConnection>?>(null) }
-        var badges           by remember { mutableStateOf<List<BadgeInfo>>(emptyList()) }
-        var guildCount       by remember { mutableStateOf<Int?>(null) }
-        var loadingUser      by remember { mutableStateOf(false) }
-        var loadingPresence  by remember { mutableStateOf(false) }
-        var loadingConns     by remember { mutableStateOf(false) }
-        var loadingBadges    by remember { mutableStateOf(false) }
-        var loadingGuilds    by remember { mutableStateOf(false) }
-        var showWebView      by remember { mutableStateOf(false) }
-        var updateTag        by remember { mutableStateOf<String?>(null) }
-        var noInternet       by remember { mutableStateOf(false) }
-        var showLogs         by remember { mutableStateOf(false) }
-        var footerClicks     by remember { mutableIntStateOf(0) }
-        var logEnabled       by remember { mutableStateOf(true) }
-        var refreshTick      by remember { mutableIntStateOf(0) }
+        var token           by remember { mutableStateOf(initialToken) }
+        var user            by remember { mutableStateOf<DiscordUser?>(null) }
+        var presence        by remember { mutableStateOf<DiscordPresence?>(null) }
+        var connections     by remember { mutableStateOf<List<DiscordConnection>?>(null) }
+        var badges          by remember { mutableStateOf<List<BadgeInfo>>(emptyList()) }
+        var guildCount      by remember { mutableStateOf<Int?>(null) }
+        var loadingUser     by remember { mutableStateOf(false) }
+        var loadingPresence by remember { mutableStateOf(false) }
+        var loadingConns    by remember { mutableStateOf(false) }
+        var loadingBadges   by remember { mutableStateOf(false) }
+        var loadingGuilds   by remember { mutableStateOf(false) }
+        var showWebView     by remember { mutableStateOf(false) }
+        var updateTag       by remember { mutableStateOf<String?>(null) }
+        var noInternet      by remember { mutableStateOf(false) }
+        var showLogs        by remember { mutableStateOf(false) }
+        var footerClicks    by remember { mutableIntStateOf(0) }
+        var logEnabled      by remember { mutableStateOf(true) }
+        var refreshTick     by remember { mutableIntStateOf(0) }
 
         logsEnabled.value = logEnabled
 
@@ -1063,69 +1036,44 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(token, refreshTick) {
             val t = token ?: return@LaunchedEffect
-            addLog("INFO", "Session", "Fetching all user data (tick=$refreshTick)", "token=${t.take(20)}...")
-
+            addLog("INFO", "Session", "Fetching all data (tick=$refreshTick)")
             loadingUser = true
             val fetched: DiscordUser? = try {
-                fetchUserInfo(t).also { u ->
-                    ownUserId = u.id
-                    addLog("SUCCESS", "API", "User: ${u.username} (id=${u.id})", "flags=${u.publicFlags} nitro=${u.premiumType}")
-                }
+                fetchUserInfo(t).also { u -> ownUserId = u.id; addLog("SUCCESS", "API", "User: ${u.username} (${u.id})") }
             } catch (e: Exception) {
-                addLog("ERROR", "API", "User fetch failed: ${e.message}", e.stackTraceToString().take(600))
+                addLog("ERROR", "API", "User fetch failed: ${e.message}")
                 if (initialToken != null && user == null) { clearToken(); token = null }
                 loadingUser = false; return@LaunchedEffect
             }
-            user = fetched
-            loadingUser = false
+            user = fetched; loadingUser = false
 
             loadingPresence = true
             launch {
                 try {
-                    gatewayReconnectAttempts = 0
-                    gatewaySessionId = ""
-                    gatewaySequence = -1
-                    currentPresence = null
+                    gatewayReconnectAttempts = 0; gatewaySessionId = ""; gatewaySequence = -1; currentPresence = null
                     connectGatewayInternal(t, false) { updated -> presence = updated }
                     var waited = 0
                     while (presence == null && waited < 15000) { delay(100); waited += 100 }
-                    if (presence == null) addLog("WARN", "Gateway", "Timed out waiting for READY (${waited}ms)")
-                } catch (e: Exception) {
-                    addLog("ERROR", "Gateway", "Gateway init failed: ${e.message}")
-                }
+                    if (presence == null) addLog("WARN", "Gateway", "Timed out (${waited}ms)")
+                } catch (e: Exception) { addLog("ERROR", "Gateway", "Gateway init failed: ${e.message}") }
                 loadingPresence = false
             }
-
             loadingBadges = true
             launch {
-                badges = try {
-                    val uid = fetched?.id ?: ""
-                    if (uid.isNotEmpty()) fetchUserBadges(t, uid) else emptyList()
-                } catch (e: Exception) {
-                    addLog("ERROR", "API", "Badges: ${e.message}")
-                    emptyList()
-                }
+                badges = try { val uid = fetched?.id ?: ""; if (uid.isNotEmpty()) fetchUserBadges(t, uid) else emptyList() } catch (e: Exception) { addLog("ERROR", "API", "Badges: ${e.message}"); emptyList() }
                 loadingBadges = false
             }
-
             loadingConns = true
-            launch {
-                connections = try { fetchConnections(t) } catch (e: Exception) { addLog("ERROR", "API", "Connections: ${e.message}"); emptyList() }
-                loadingConns = false
-            }
-
+            launch { connections = try { fetchConnections(t) } catch (e: Exception) { addLog("ERROR", "API", "Connections: ${e.message}"); emptyList() }; loadingConns = false }
             loadingGuilds = true
-            launch {
-                guildCount = try { fetchGuildCount(t) } catch (e: Exception) { addLog("ERROR", "API", "Guilds: ${e.message}"); null }
-                loadingGuilds = false
-            }
+            launch { guildCount = try { fetchGuildCount(t) } catch (e: Exception) { addLog("ERROR", "API", "Guilds: ${e.message}"); null }; loadingGuilds = false }
         }
 
         if (noInternet) {
             AlertDialog(onDismissRequest = { noInternet = false },
                 icon = { Icon(Icons.Outlined.WifiOff, null, tint = AppColors.Error, modifier = Modifier.size(32.dp)) },
                 title = { Text("No Internet Connection", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold) },
-                text = { Text("This app requires internet to function.", color = AppColors.TextSecondary) },
+                text  = { Text("This app requires internet to function.", color = AppColors.TextSecondary) },
                 confirmButton = { Button(onClick = { noInternet = false; if (!isNetworkAvailable(ctx)) noInternet = true }, colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary), shape = RoundedCornerShape(Radius.Button)) { Text("Retry", color = AppColors.OnPrimary, fontWeight = FontWeight.Bold) } },
                 dismissButton = { TextButton(onClick = { noInternet = false }) { Text("Dismiss", color = AppColors.TextMuted) } },
                 containerColor = AppColors.Surface, shape = RoundedCornerShape(Radius.Card))
@@ -1135,26 +1083,20 @@ class MainActivity : ComponentActivity() {
             AlertDialog(onDismissRequest = { updateTag = null },
                 icon = { Icon(Icons.Outlined.Update, null, tint = AppColors.Primary, modifier = Modifier.size(32.dp)) },
                 title = { Text("Update Available", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold) },
-                text = { Text("v${updateTag!!.trimStart('v')} is available. You are on v$CURRENT_VERSION.", color = AppColors.TextSecondary) },
+                text  = { Text("v${updateTag!!.trimStart('v')} is available. You are on v$CURRENT_VERSION.", color = AppColors.TextSecondary) },
                 confirmButton = { Button(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken/releases/tag/$updateTag"))); updateTag = null }, colors = ButtonDefaults.buttonColors(containerColor = AppColors.Primary), shape = RoundedCornerShape(Radius.Button)) { Text("Update", color = AppColors.OnPrimary, fontWeight = FontWeight.Bold) } },
                 dismissButton = { TextButton(onClick = { updateTag = null }) { Text("Later", color = AppColors.TextMuted) } },
                 containerColor = AppColors.Surface, shape = RoundedCornerShape(Radius.Card))
         }
 
-        if (showLogs) {
-            LogsScreen(onClose = { showLogs = false }, logsEnabled = logEnabled, onToggle = { logEnabled = it; logsEnabled.value = it })
-        }
+        if (showLogs) LogsScreen(onClose = { showLogs = false }, logsEnabled = logEnabled, onToggle = { logEnabled = it; logsEnabled.value = it })
 
-        val screen = when {
-            showWebView && token == null -> "webview"
-            token == null               -> "login"
-            else                        -> "profile"
-        }
+        val screen = when { showWebView && token == null -> "webview"; token == null -> "login"; else -> "profile" }
 
         AnimatedContent(targetState = screen, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(300)) }, label = "nav") { s ->
             when (s) {
                 "webview" -> WebViewScreen(
-                    onTokenReceived = { t -> addLog("SUCCESS", "Token", "Token extracted!", "length=${t.length}"); token = t; saveToken(t); showWebView = false },
+                    onTokenReceived = { t -> addLog("SUCCESS", "Token", "Token extracted! length=${t.length}"); token = t; saveToken(t); showWebView = false },
                     onBack = { showWebView = false })
                 "login"   -> LoginScreen(onLoginClick = { showWebView = true }, footerClicks = footerClicks,
                     onFooterClick = { footerClicks++; if (footerClicks >= 5) { showLogs = true; footerClicks = 0 } })
@@ -1165,14 +1107,13 @@ class MainActivity : ComponentActivity() {
                     footerClicks = footerClicks,
                     onFooterClick = { footerClicks++; if (footerClicks >= 5) { showLogs = true; footerClicks = 0 } },
                     onRefresh = {
-                        addLog("INFO", "Session", "Manual refresh triggered")
+                        addLog("INFO", "Session", "Manual refresh")
                         user = null; presence = null; connections = null; guildCount = null; badges = emptyList()
                         heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
-                        gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0
-                        refreshTick++
+                        gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; refreshTick++
                     },
                     onLogout = {
-                        addLog("INFO", "Session", "Logout — clearing state")
+                        addLog("INFO", "Session", "Logout")
                         heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
                         gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; ownUserId = ""
                         clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null; badges = emptyList()
@@ -1181,13 +1122,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ─── Logs ─────────────────────────────────────────────────────────────────
+
     @Composable
     fun LogsScreen(onClose: () -> Unit, logsEnabled: Boolean, onToggle: (Boolean) -> Unit) {
         Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Box(modifier = Modifier.fillMaxSize().background(AppColors.Background)) {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    Row(modifier = Modifier.fillMaxWidth().background(AppColors.Surface).padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(modifier = Modifier.fillMaxWidth().background(AppColors.Surface).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Outlined.Terminal, null, tint = AppColors.Primary, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
                             Text("App Console", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = AppColors.TextPrimary); Spacer(Modifier.width(8.dp))
@@ -1195,39 +1137,26 @@ class MainActivity : ComponentActivity() {
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Logging", fontSize = 11.sp, color = AppColors.TextMuted); Spacer(Modifier.width(6.dp))
-                            Switch(checked = logsEnabled, onCheckedChange = onToggle, modifier = Modifier.height(24.dp),
-                                colors = SwitchDefaults.colors(checkedThumbColor = AppColors.Primary, checkedTrackColor = AppColors.Primary.copy(0.3f)))
+                            Switch(checked = logsEnabled, onCheckedChange = onToggle, modifier = Modifier.height(24.dp), colors = SwitchDefaults.colors(checkedThumbColor = AppColors.Primary, checkedTrackColor = AppColors.Primary.copy(0.3f)))
                             Spacer(Modifier.width(8.dp))
                             TextButton(onClick = { appLogs.clear() }) { Text("Clear", color = AppColors.Error, fontSize = 11.sp) }
                             IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp)) }
                         }
                     }
-                    Row(Modifier.fillMaxWidth().background(AppColors.Surface.copy(0.4f)).padding(horizontal = 16.dp, vertical = 5.dp)) {
-                        Text("Tap any entry to expand details. ${appLogs.size} entries.", fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
-                    }
                     if (appLogs.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Outlined.Terminal, null, tint = AppColors.TextMuted, modifier = Modifier.size(40.dp)); Spacer(Modifier.height(8.dp))
-                                Text("No logs yet", color = AppColors.TextMuted, fontSize = 14.sp)
-                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Outlined.Terminal, null, tint = AppColors.TextMuted, modifier = Modifier.size(40.dp)); Spacer(Modifier.height(8.dp)); Text("No logs yet", color = AppColors.TextMuted, fontSize = 14.sp) }
                         }
                     } else {
                         LazyColumn(Modifier.fillMaxSize().padding(8.dp)) {
                             items(appLogs) { log ->
                                 var expanded by remember { mutableStateOf(false) }
                                 val levelColor = when (log.level) { "SUCCESS" -> AppColors.Success; "ERROR" -> AppColors.Error; "WARN" -> AppColors.Warning; else -> AppColors.Primary }
-                                Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)
-                                    .background(AppColors.Surface.copy(0.5f), RoundedCornerShape(Radius.Small))
-                                    .clickable { expanded = !expanded }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)) {
+                                Column(Modifier.fillMaxWidth().padding(vertical = 2.dp).background(AppColors.Surface.copy(0.5f), RoundedCornerShape(Radius.Small)).clickable { expanded = !expanded }.padding(horizontal = 10.dp, vertical = 6.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(log.timestamp, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
-                                        Spacer(Modifier.width(5.dp))
+                                        Text(log.timestamp, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace); Spacer(Modifier.width(5.dp))
                                         Box(Modifier.background(levelColor.copy(0.15f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) { Text(log.level, fontSize = 9.sp, color = levelColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) }
-                                        Spacer(Modifier.width(5.dp))
-                                        Text("[${log.tag}]", fontSize = 10.sp, color = AppColors.Primary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                                        Spacer(Modifier.width(4.dp))
+                                        Spacer(Modifier.width(5.dp)); Text("[${log.tag}]", fontSize = 10.sp, color = AppColors.Primary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold); Spacer(Modifier.width(4.dp))
                                         Text(log.message, fontSize = 11.sp, color = AppColors.TextSecondary, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
                                         Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp))
                                     }
@@ -1241,82 +1170,57 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ─── Login Screen ─────────────────────────────────────────────────────────
+
     @Composable
     fun LoginScreen(onLoginClick: () -> Unit, footerClicks: Int, onFooterClick: () -> Unit) {
-        val ctx = LocalContext.current
+        val ctx   = LocalContext.current
         val scale = remember { Animatable(0f) }
         LaunchedEffect(Unit) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow)) }
         var keyClicks by remember { mutableIntStateOf(0) }
         var speed     by remember { mutableStateOf(1f) }
         var bgGreen   by remember { mutableStateOf(false) }
-        val shimmerT = rememberInfiniteTransition(label = "sh")
-        val shimmer  by shimmerT.animateFloat(-1.5f, 1.5f, infiniteRepeatable(tween(2000, easing = LinearEasing)), label = "shv")
-        val glowT    = rememberInfiniteTransition(label = "gl")
-        val glow     by glowT.animateFloat(0.25f, 0.75f, infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Reverse), label = "glv")
+        val shimmerT  = rememberInfiniteTransition(label = "sh")
+        val shimmer   by shimmerT.animateFloat(-1.5f, 1.5f, infiniteRepeatable(tween(2000, easing = LinearEasing)), label = "shv")
+        val glowT     = rememberInfiniteTransition(label = "gl")
+        val glow      by glowT.animateFloat(0.25f, 0.75f, infiniteRepeatable(tween(1800, easing = LinearEasing), RepeatMode.Reverse), label = "glv")
 
         Box(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().background(if (bgGreen)
-                Brush.verticalGradient(listOf(Color(0xFF0A2A0A), Color(0xFF010F01), Color.Black))
-            else Brush.verticalGradient(listOf(AppColors.LoginBg1, AppColors.LoginBg2, AppColors.LoginBg3))))
+            Box(Modifier.fillMaxSize().background(if (bgGreen) Brush.verticalGradient(listOf(Color(0xFF0A2A0A), Color(0xFF010F01), Color.Black)) else Brush.verticalGradient(listOf(AppColors.LoginBg1, AppColors.LoginBg2, AppColors.LoginBg3))))
             ParticleBackground(speedMultiplier = speed, modifier = Modifier.fillMaxSize())
-            Column(Modifier.fillMaxSize().padding(28.dp).verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Column(Modifier.fillMaxSize().padding(28.dp).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 Spacer(Modifier.weight(1f))
-                Box(
-                    modifier = Modifier.size(96.dp)
-                        .background(AppColors.Primary.copy(0.18f), CircleShape)
-                        .border(1.5.dp, AppColors.Primary.copy(0.4f), CircleShape)
-                        .clickable {
-                            keyClicks++
-                            speed = 1f + keyClicks * 1.2f
-                            if (keyClicks >= 5) bgGreen = true
-                            if (keyClicks >= 10) {
-                                val url = if (Random.nextBoolean()) "https://youtu.be/iik25wqIuFo" else "https://youtu.be/OWSlGSnupeY"
-                                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                keyClicks = 0; speed = 1f; bgGreen = false
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Outlined.Key, null, tint = AppColors.Primary,
-                        modifier = Modifier.size(48.dp).scale(if (keyClicks > 5) 1f + (keyClicks - 5) * 0.06f else 1f))
+                Box(modifier = Modifier.size(96.dp).background(AppColors.Primary.copy(0.18f), CircleShape).border(1.5.dp, AppColors.Primary.copy(0.4f), CircleShape).clickable {
+                    keyClicks++; speed = 1f + keyClicks * 1.2f
+                    if (keyClicks >= 5) bgGreen = true
+                    if (keyClicks >= 10) { val url = if (Random.nextBoolean()) "https://youtu.be/iik25wqIuFo" else "https://youtu.be/OWSlGSnupeY"; ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); keyClicks = 0; speed = 1f; bgGreen = false }
+                }, contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Key, null, tint = AppColors.Primary, modifier = Modifier.size(48.dp).scale(if (keyClicks > 5) 1f + (keyClicks - 5) * 0.06f else 1f))
                 }
                 Spacer(Modifier.height(14.dp))
                 Text("v$CURRENT_VERSION", fontSize = 10.sp, color = AppColors.TextMuted.copy(0.5f), fontFamily = FontFamily.Monospace)
                 Spacer(Modifier.height(36.dp))
-                Card(Modifier.fillMaxWidth().scale(scale.value),
-                    colors = CardDefaults.cardColors(containerColor = AppColors.Surface.copy(0.9f)),
-                    shape = RoundedCornerShape(Radius.XLarge), elevation = CardDefaults.cardElevation(10.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Primary.copy(0.2f))) {
+                Card(Modifier.fillMaxWidth().scale(scale.value), colors = CardDefaults.cardColors(containerColor = AppColors.Surface.copy(0.9f)), shape = RoundedCornerShape(Radius.XLarge), elevation = CardDefaults.cardElevation(10.dp), border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Primary.copy(0.2f))) {
                     Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Sign in with your Discord account to obtain your token.", fontSize = 13.sp, color = AppColors.TextMuted, textAlign = TextAlign.Center)
                         Spacer(Modifier.height(22.dp))
                         Box(Modifier.fillMaxWidth()) {
-                            Box(Modifier.fillMaxWidth().height(58.dp)
-                                .graphicsLayer { shadowElevation = 28f; shape = RoundedCornerShape(Radius.Button); clip = false }
-                                .background(AppColors.Primary.copy(glow * 0.4f), RoundedCornerShape(Radius.Button + 2.dp)))
-                            Box(Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(Radius.Button))
-                                .background(AppColors.Primary).clickable { onLoginClick() },
-                                contentAlignment = Alignment.Center) {
-                                Box(Modifier.fillMaxSize().background(Brush.linearGradient(
-                                    listOf(Color.Transparent, Color.White.copy(0.28f), Color.Transparent),
-                                    start = Offset(shimmer * 400f + 200f, 0f), end = Offset(shimmer * 400f + 350f, 80f))))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.AutoMirrored.Outlined.Login, null, modifier = Modifier.size(19.dp), tint = Color.White)
-                                    Spacer(Modifier.width(10.dp))
-                                    Text("Sign in with Discord", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                                }
+                            Box(Modifier.fillMaxWidth().height(58.dp).graphicsLayer { shadowElevation = 28f; shape = RoundedCornerShape(Radius.Button); clip = false }.background(AppColors.Primary.copy(glow * 0.4f), RoundedCornerShape(Radius.Button + 2.dp)))
+                            Box(Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(Radius.Button)).background(AppColors.Primary).clickable { onLoginClick() }, contentAlignment = Alignment.Center) {
+                                Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color.Transparent, Color.White.copy(0.28f), Color.Transparent), start = Offset(shimmer * 400f + 200f, 0f), end = Offset(shimmer * 400f + 350f, 80f))))
+                                Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.AutoMirrored.Outlined.Login, null, modifier = Modifier.size(19.dp), tint = Color.White); Spacer(Modifier.width(10.dp)); Text("Sign in with Discord", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White) }
                             }
                         }
                         Spacer(Modifier.height(22.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
-                            SecurityBadge(Icons.Outlined.Security, "Secure"); SecurityBadge(Icons.Outlined.VisibilityOff, "Private"); SecurityBadge(Icons.Outlined.Smartphone, "Local")
+                            SecurityBadge(Icons.Outlined.Security,      "Secure")
+                            SecurityBadge(Icons.Outlined.VisibilityOff, "Private")
+                            SecurityBadge(Icons.Outlined.Smartphone,    "Local")
                         }
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                Footer(clicks = footerClicks, onClick = onFooterClick)
-                Spacer(Modifier.height(12.dp)); GitHubButton(); Spacer(Modifier.height(8.dp))
+                Footer(clicks = footerClicks, onClick = onFooterClick); Spacer(Modifier.height(12.dp)); GitHubButton(); Spacer(Modifier.height(8.dp))
             }
         }
     }
@@ -1328,6 +1232,8 @@ class MainActivity : ComponentActivity() {
             Text(label, fontSize = 11.sp, color = AppColors.Success, fontWeight = FontWeight.SemiBold)
         }
     }
+
+    // ─── WebView ──────────────────────────────────────────────────────────────
 
     @Composable
     fun WebViewScreen(onTokenReceived: (String) -> Unit, onBack: () -> Unit) {
@@ -1348,16 +1254,14 @@ class MainActivity : ComponentActivity() {
                             return false
                         }
                         override fun onPageFinished(view: WebView, url: String) {
-                            super.onPageFinished(view, url)
-                            addLog("INFO", "WebView", "Page loaded", url)
+                            super.onPageFinished(view, url); addLog("INFO", "WebView", "Page loaded", url)
                             if (url.contains("/app") || url.endsWith("/channels/@me")) Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 800)
                         }
                     }
                     wv.webChromeClient = object : WebChromeClient() {
                         override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
                             result.confirm(); view.visibility = View.GONE
-                            if (message.isNotBlank() && message != "undefined")
-                                Handler(Looper.getMainLooper()).postDelayed({ currentReceived(message.trim()) }, 200)
+                            if (message.isNotBlank() && message != "undefined") Handler(Looper.getMainLooper()).postDelayed({ currentReceived(message.trim()) }, 200)
                             return true
                         }
                     }
@@ -1371,12 +1275,11 @@ class MainActivity : ComponentActivity() {
             }
         }
         DisposableEffect(Unit) {
-            onDispose {
-                webRef.value?.apply { stopLoading(); loadUrl("about:blank"); Handler(Looper.getMainLooper()).postDelayed({ clearHistory(); destroy() }, 500) }
-                webRef.value = null
-            }
+            onDispose { webRef.value?.apply { stopLoading(); loadUrl("about:blank"); Handler(Looper.getMainLooper()).postDelayed({ clearHistory(); destroy() }, 500) }; webRef.value = null }
         }
     }
+
+    // ─── User Profile Screen ──────────────────────────────────────────────────
 
     @Composable
     fun UserProfileScreen(
@@ -1387,45 +1290,42 @@ class MainActivity : ComponentActivity() {
         footerClicks: Int, onFooterClick: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit
     ) {
         val ctx = LocalContext.current
-        val ctx2            = LocalContext.current
-        var showToken       by remember { mutableStateOf(false) }
-        var copied          by remember { mutableStateOf(false) }
-        var expandConns     by remember { mutableStateOf(false) }
-        var selectedBadge   by remember { mutableStateOf<BadgeInfo?>(null) }
+        var showToken        by remember { mutableStateOf(false) }
+        var copied           by remember { mutableStateOf(false) }
+        var expandConns      by remember { mutableStateOf(false) }
+        var selectedBadge    by remember { mutableStateOf<BadgeInfo?>(null) }
         var showTokenWarning by remember { mutableStateOf(false) }
-        var pendingAction   by remember { mutableStateOf<String?>(null) }
-        val riskPrefs       = remember { ctx2.getSharedPreferences(PREF_SESSION, Context.MODE_PRIVATE) }
-        val riskAccepted    = remember { mutableStateOf(riskPrefs.getBoolean(KEY_RISK_ACCEPTED, false)) }
+        var pendingAction    by remember { mutableStateOf<String?>(null) }
+        val riskPrefs        = remember { ctx.getSharedPreferences(PREF_SESSION, Context.MODE_PRIVATE) }
+        val riskAccepted     = remember { mutableStateOf(riskPrefs.getBoolean(KEY_RISK_ACCEPTED, false)) }
+
         fun triggerTokenAction(action: String) {
             if (riskAccepted.value) {
                 when (action) {
-                    "copy" -> { (ctx2.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Token", token)); copied = true; CoroutineScope(Dispatchers.Main).launch { delay(2000); copied = false } }
+                    "copy" -> { (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Token", token)); copied = true; CoroutineScope(Dispatchers.Main).launch { delay(2000); copied = false } }
                     "show" -> { showToken = !showToken }
                 }
             } else { pendingAction = action; showTokenWarning = true }
         }
+
         val scale = remember { Animatable(0.95f) }
         LaunchedEffect(user?.id) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy)) }
 
+        // ── Token warning dialog ──
         if (showTokenWarning) {
             AlertDialog(
                 onDismissRequest = { showTokenWarning = false; pendingAction = null },
                 icon = { Icon(Icons.Outlined.Warning, null, tint = AppColors.Warning, modifier = Modifier.size(32.dp)) },
                 title = { Text("Security Warning", color = AppColors.TextPrimary, fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Your access token is like a password. Never share it with anyone!", color = AppColors.Warning, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Text("This app is not responsible for any consequences arising from the misuse or sharing of your token, including account loss, bans, or unauthorized access.", color = AppColors.TextSecondary, fontSize = 13.sp, lineHeight = 18.sp)
-                        Text("By continuing, you confirm that you understand the risks.", color = AppColors.TextMuted, fontSize = 12.sp)
-                    }
-                },
+                text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Your access token is like a password. Never share it with anyone!", color = AppColors.Warning, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("This app is not responsible for any consequences from misuse or sharing of your token.", color = AppColors.TextSecondary, fontSize = 13.sp, lineHeight = 18.sp)
+                    Text("By continuing, you confirm you understand the risks.", color = AppColors.TextMuted, fontSize = 12.sp)
+                }},
                 confirmButton = {
                     Button(onClick = {
-                        riskPrefs.edit().putBoolean(KEY_RISK_ACCEPTED, true).apply()
-                        riskAccepted.value = true
-                        showTokenWarning = false
-                        val act = pendingAction; pendingAction = null
-                        if (act != null) triggerTokenAction(act)
+                        riskPrefs.edit().putBoolean(KEY_RISK_ACCEPTED, true).apply(); riskAccepted.value = true
+                        showTokenWarning = false; val act = pendingAction; pendingAction = null; if (act != null) triggerTokenAction(act)
                     }, colors = ButtonDefaults.buttonColors(containerColor = AppColors.Warning), shape = RoundedCornerShape(Radius.Button)) {
                         Text("I understand, continue", fontWeight = FontWeight.Bold, color = Color.Black)
                     }
@@ -1434,6 +1334,7 @@ class MainActivity : ComponentActivity() {
                 containerColor = AppColors.Surface, shape = RoundedCornerShape(Radius.Card))
         }
 
+        // ── Badge detail dialog ──
         if (selectedBadge != null) {
             AlertDialog(
                 onDismissRequest = { selectedBadge = null },
@@ -1445,14 +1346,27 @@ class MainActivity : ComponentActivity() {
         }
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+
+            // ── Banner / Profile Theme Gradient ──
             Box(Modifier.fillMaxWidth().height(160.dp)) {
-                if (user?.banner != null) {
-                    val ext = if (user.banner.startsWith("a_")) "gif" else "png"
-                    AsyncImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                } else {
-                    val brush = if (user?.accentColor != null) { val c = Color(0xFF000000 or user.accentColor.toLong()); Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background)) }
-                    else Brush.verticalGradient(listOf(AppColors.Primary, Color(0xFF7289DA), AppColors.Background))
-                    Box(Modifier.fillMaxSize().background(brush))
+                when {
+                    user?.banner != null -> {
+                        val ext = if (user.banner.startsWith("a_")) "gif" else "png"
+                        AsyncImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    }
+                    user?.themeColorPrimary != null && user.themeColorAccent != null -> {
+                        // Nitro profile theme — two-tone gradient
+                        ProfileThemeGradient(
+                            primaryColor = discordColorToCompose(user.themeColorPrimary),
+                            accentColor  = discordColorToCompose(user.themeColorAccent),
+                            modifier     = Modifier.fillMaxSize()
+                        )
+                    }
+                    user?.accentColor != null -> {
+                        val c = Color(0xFF000000 or user.accentColor.toLong())
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
+                    }
+                    else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary, Color(0xFF7289DA), AppColors.Background))))
                 }
             }
 
@@ -1484,9 +1398,12 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.height(14.dp))
 
                 if (loadingUser) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = AppColors.Primary, strokeWidth = 3.dp, modifier = Modifier.size(40.dp)) }
+                    Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = AppColors.Primary, strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
+                    }
                 } else if (user != null) {
 
+                    // ── Token ──
                     ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
                         Button(onClick = { triggerTokenAction("copy") }, modifier = Modifier.fillMaxWidth().height(46.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = if (copied) AppColors.Success.copy(0.8f) else AppColors.Success),
@@ -1509,13 +1426,13 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
 
+                    // ── Name + Status ──
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(user.globalName ?: user.username, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
                         if (presence != null) {
                             val sc = statusColor(presence.status)
                             Row(Modifier.background(sc.copy(0.12f), RoundedCornerShape(Radius.Badge)).border(1.dp, sc.copy(0.25f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(7.dp).background(sc, CircleShape)); Spacer(Modifier.width(5.dp))
-                                Text(statusLabel(presence.status), fontSize = 11.sp, color = sc, fontWeight = FontWeight.SemiBold)
+                                Box(Modifier.size(7.dp).background(sc, CircleShape)); Spacer(Modifier.width(5.dp)); Text(statusLabel(presence.status), fontSize = 11.sp, color = sc, fontWeight = FontWeight.SemiBold)
                             }
                         } else if (loadingPresence) {
                             Box(Modifier.background(AppColors.TextMuted.copy(0.12f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 4.dp)) { Text("Loading...", fontSize = 11.sp, color = AppColors.TextMuted) }
@@ -1524,38 +1441,40 @@ class MainActivity : ComponentActivity() {
 
                     Text("@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "", fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium)
 
+                    // ── Nameplate ──
+                    if (user.nameplateAsset != null) {
+                        Spacer(Modifier.height(8.dp))
+                        NameplateRow(
+                            asset   = user.nameplateAsset,
+                            label   = user.nameplateLabel,
+                            palette = user.nameplatePalette
+                        )
+                    }
+
+                    // ── Clan tag ──
                     if (user.primaryGuildTag != null) {
                         Spacer(Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge))
-                                .border(1.dp, AppColors.Primary.copy(0.25f), RoundedCornerShape(Radius.Badge))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)) {
+                            modifier = Modifier.background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge)).border(1.dp, AppColors.Primary.copy(0.25f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 3.dp)) {
                             if (user.primaryGuildBadge != null && user.primaryGuildId != null) {
-                                AsyncImage("https://cdn.discordapp.com/clan-badges/${user.primaryGuildId}/${user.primaryGuildBadge}.png?size=16", null, Modifier.size(14.dp).clip(CircleShape))
-                                Spacer(Modifier.width(4.dp))
+                                AsyncImage("https://cdn.discordapp.com/clan-badges/${user.primaryGuildId}/${user.primaryGuildBadge}.png?size=16", null, Modifier.size(14.dp).clip(CircleShape)); Spacer(Modifier.width(4.dp))
                             }
                             Text(user.primaryGuildTag, fontSize = 10.sp, color = AppColors.Primary, fontWeight = FontWeight.Bold)
                         }
                     }
 
+                    // ── Custom status ──
                     if (presence?.customStatus != null) {
                         Spacer(Modifier.height(8.dp))
                         val cs = presence.customStatus
-                        Row(Modifier.background(AppColors.Surface, RoundedCornerShape(Radius.Medium)).border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (cs.emojiId != null) {
-                                val ext = if (cs.emojiAnimated) "gif" else "png"
-                                AsyncImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=32", null, Modifier.size(20.dp))
-                                if (cs.text != null) Spacer(Modifier.width(6.dp))
-                            } else if (cs.emojiName != null) {
-                                Text(cs.emojiName, fontSize = 18.sp)
-                                if (cs.text != null) Spacer(Modifier.width(6.dp))
-                            }
-                            if (!cs.text.isNullOrBlank()) {
-                                Text(cs.text, fontSize = 13.sp, color = AppColors.TextSecondary, modifier = Modifier.weight(1f))
-                            }
+                        Row(Modifier.fillMaxWidth().background(AppColors.Surface, RoundedCornerShape(Radius.Medium)).border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (cs.emojiId != null) { val ext = if (cs.emojiAnimated) "gif" else "png"; AsyncImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=32", null, Modifier.size(20.dp)); if (cs.text != null) Spacer(Modifier.width(6.dp)) }
+                            else if (cs.emojiName != null) { Text(cs.emojiName, fontSize = 18.sp); if (cs.text != null) Spacer(Modifier.width(6.dp)) }
+                            if (!cs.text.isNullOrBlank()) Text(cs.text, fontSize = 13.sp, color = AppColors.TextSecondary, modifier = Modifier.weight(1f))
                         }
                     }
 
+                    // ── Platforms ──
                     if (presence?.platforms?.isNotEmpty() == true) {
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1567,40 +1486,52 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // ── Profile Effect ──
+                    if (user.profileEffectId != null) {
+                        Spacer(Modifier.height(8.dp))
+                        ProfileEffectBadge(user.profileEffectId)
+                    }
+
+                    // ── Theme Colors swatch ──
+                    if (user.themeColorPrimary != null && user.themeColorAccent != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.background(AppColors.Surface, RoundedCornerShape(Radius.Medium)).border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium)).padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Outlined.Palette, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(8.dp))
+                            Text("Profile Theme", fontSize = 12.sp, color = AppColors.TextMuted, modifier = Modifier.weight(1f))
+                            Box(Modifier.size(20.dp).background(discordColorToCompose(user.themeColorPrimary), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
+                            Spacer(Modifier.width(4.dp))
+                            Box(Modifier.size(20.dp).background(discordColorToCompose(user.themeColorAccent), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
+                        }
+                    }
+
+                    // ── Badges ──
                     if (loadingBadges) {
                         Spacer(Modifier.height(12.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.size(12.dp), color = AppColors.Primary, strokeWidth = 1.5.dp)
-                            Spacer(Modifier.width(6.dp))
-                            Text("Loading badges...", fontSize = 11.sp, color = AppColors.TextMuted)
-                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(12.dp), color = AppColors.Primary, strokeWidth = 1.5.dp); Spacer(Modifier.width(6.dp)); Text("Loading badges...", fontSize = 11.sp, color = AppColors.TextMuted) }
                     } else if (badges.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             badges.forEach { badge ->
-                                Row(Modifier.background(badge.color.copy(0.12f), RoundedCornerShape(Radius.Badge))
-                                    .border(1.dp, badge.color.copy(0.35f), RoundedCornerShape(Radius.Badge))
-                                    .clickable { selectedBadge = badge }
-                                    .padding(horizontal = 8.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    AsyncImage(badge.cdnUrl, badge.label, Modifier.size(16.dp))
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(badge.label, fontSize = 11.sp, color = badge.color, fontWeight = FontWeight.SemiBold)
+                                Row(Modifier.background(badge.color.copy(0.12f), RoundedCornerShape(Radius.Badge)).border(1.dp, badge.color.copy(0.35f), RoundedCornerShape(Radius.Badge)).clickable { selectedBadge = badge }.padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    AsyncImage(badge.cdnUrl, badge.label, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(badge.label, fontSize = 11.sp, color = badge.color, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
                     }
 
+                    // ── Bio ──
                     if (!user.bio.isNullOrBlank()) {
                         Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
                         ProfileSection("About Me", Icons.AutoMirrored.Outlined.Notes) { DiscordMarkdown(user.bio, Modifier.fillMaxWidth()) }
                     }
 
+                    // ── Activity ──
                     if (loadingPresence) {
                         Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
-                        ProfileSection("Current Activity", Icons.Outlined.Games) {
-                            Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading activity...", fontSize = 13.sp, color = AppColors.TextMuted) }
-                        }
+                        ProfileSection("Current Activity", Icons.Outlined.Games) { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading activity...", fontSize = 13.sp, color = AppColors.TextMuted) } }
                     } else if (presence?.activities?.isNotEmpty() == true) {
                         Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
                         ProfileSection("Current Activity", Icons.Outlined.Games) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { presence.activities.forEach { ActivityCard(it) } } }
@@ -1608,16 +1539,17 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
 
+                    // ── Account Info ──
                     val createdMs = snowflakeToTimestamp(user.id)
                     ProfileSection("Account Info", Icons.Outlined.Tag) {
                         InfoRow(Icons.Outlined.Tag, "User ID", user.id)
                         InfoRow(Icons.Outlined.CalendarMonth, "Created", snowflakeToDate(user.id))
                         InfoRow(Icons.Outlined.Update, "Account Age", accountAgeString(createdMs))
-                        if (!user.email.isNullOrBlank())  InfoRow(Icons.Outlined.Email,    "Email",    user.email)
-                        if (!user.phone.isNullOrBlank())  InfoRow(Icons.Outlined.Phone,    "Phone",    user.phone)
-                        if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale",   localeLabel(user.locale))
-                        InfoRow(Icons.Outlined.Lock,  "2FA",      if (user.mfaEnabled)  "Enabled"  else "Disabled",  if (user.mfaEnabled)  AppColors.Success else AppColors.TextMuted)
-                        InfoRow(Icons.Outlined.CheckCircle, "Verified", if (user.verified) "Yes"  else "No",          if (user.verified)    AppColors.Success else AppColors.TextMuted)
+                        if (!user.email.isNullOrBlank())  InfoRow(Icons.Outlined.Email,    "Email",   user.email)
+                        if (!user.phone.isNullOrBlank())  InfoRow(Icons.Outlined.Phone,    "Phone",   user.phone)
+                        if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale",  localeLabel(user.locale))
+                        InfoRow(Icons.Outlined.Lock,        "2FA",      if (user.mfaEnabled)  "Enabled"  else "Disabled", if (user.mfaEnabled) AppColors.Success else AppColors.TextMuted)
+                        InfoRow(Icons.Outlined.CheckCircle, "Verified", if (user.verified)    "Yes"      else "No",       if (user.verified)   AppColors.Success else AppColors.TextMuted)
                         if (user.premiumType > 0) InfoRow(Icons.Outlined.WorkspacePremium, "Nitro", nitroLabel(user.premiumType), Color(0xFF5865F2))
                         if (loadingGuilds) InfoRow(Icons.Outlined.Groups, "Servers", "Loading...")
                         else if (guildCount != null) InfoRow(Icons.Outlined.Groups, "Servers", guildCount.toString() + if (guildCount >= 100) "+" else "")
@@ -1625,6 +1557,8 @@ class MainActivity : ComponentActivity() {
                         if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
                         if (user.avatarDecorationAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Decoration", "Active ✓", AppColors.Success)
                         if (user.nameplateAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Nameplate", if (!user.nameplateLabel.isNullOrBlank()) user.nameplateLabel else "Active ✓", AppColors.Success)
+                        if (user.profileEffectId != null) InfoRow(Icons.Outlined.Star, "Profile Effect", "Active (ID: ${user.profileEffectId.take(12)}…)", AppColors.Primary)
+                        if (user.displayNameStyle != null) InfoRow(Icons.Outlined.AutoAwesome, "Name Style", user.displayNameStyle, AppColors.Primary)
                         if (!user.bannerColor.isNullOrBlank()) {
                             val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrNull()
                             if (c != null) {
@@ -1641,31 +1575,21 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
 
+                    // ── Connections ──
                     if (loadingConns) {
-                        ProfileSection("Connected Accounts", Icons.Outlined.Link) { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading connections...", fontSize = 13.sp, color = AppColors.TextMuted) } }
+                        ProfileSection("Connected Accounts", Icons.Outlined.Link) { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading...", fontSize = 13.sp, color = AppColors.TextMuted) } }
                         Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
                     } else if (!connections.isNullOrEmpty()) {
                         val visible = if (expandConns) connections else connections.take(3)
                         ProfileSection("Connected Accounts (${connections.size})", Icons.Outlined.Link) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 visible.forEach { conn ->
-                                    val cc = connectionColor(conn.type)
-                                    val profileUrl = connectionProfileUrl(conn.type, conn.name)
-                                    Row(Modifier.fillMaxWidth()
-                                        .background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium))
-                                        .border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium))
-                                        .then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier)
-                                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                                        verticalAlignment = Alignment.CenterVertically) {
-                                        Box(Modifier.size(32.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) {
-                                            Text(connectionLabel(conn.type).first().toString(), fontSize = 14.sp, color = cc, fontWeight = FontWeight.Black)
-                                        }
+                                    val cc = connectionColor(conn.type); val profileUrl = connectionProfileUrl(conn.type, conn.name)
+                                    Row(Modifier.fillMaxWidth().background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium)).border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium)).then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier).padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Box(Modifier.size(32.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) { Text(connectionLabel(conn.type).first().toString(), fontSize = 14.sp, color = cc, fontWeight = FontWeight.Black) }
                                         Spacer(Modifier.width(10.dp))
                                         Column(Modifier.weight(1f)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(connectionLabel(conn.type), fontSize = 11.sp, color = cc, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
-                                                if (profileUrl != null) { Spacer(Modifier.width(4.dp)); Icon(Icons.Outlined.Link, null, tint = cc.copy(0.6f), modifier = Modifier.size(10.dp)) }
-                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) { Text(connectionLabel(conn.type), fontSize = 11.sp, color = cc, fontWeight = FontWeight.Bold); if (profileUrl != null) { Spacer(Modifier.width(4.dp)); Icon(Icons.Outlined.Link, null, tint = cc.copy(0.6f), modifier = Modifier.size(10.dp)) } }
                                             Text(conn.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                         if (conn.verified) Box(Modifier.background(AppColors.Success.copy(0.12f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 7.dp, vertical = 2.dp)) { Text("✓", fontSize = 11.sp, color = AppColors.Success, fontWeight = FontWeight.Bold) }
@@ -1689,32 +1613,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ─── Activity Card ────────────────────────────────────────────────────────
+
     @Composable
     fun ActivityCard(activity: PresenceActivity) {
-        val isSpotify = activity.type == 2
+        val isSpotify   = activity.type == 2
         val isStreaming = activity.type == 1
-        val accent = when {
-            isSpotify   -> AppColors.Spotify
-            isStreaming  -> Color(0xFF9147FF)
-            else         -> AppColors.Primary
-        }
-        var elapsed   by remember { mutableStateOf("") }
-        var remaining by remember { mutableStateOf("") }
+        val accent = when { isSpotify -> AppColors.Spotify; isStreaming -> Color(0xFF9147FF); else -> AppColors.Primary }
+        var elapsed      by remember { mutableStateOf("") }
+        var remaining    by remember { mutableStateOf("") }
         var progFraction by remember { mutableStateOf(0f) }
         LaunchedEffect(activity.name, activity.timestamps?.start, activity.timestamps?.end) {
             while (true) {
                 val ts = activity.timestamps
                 if (ts?.start != null) elapsed = formatElapsed(ts.start)
-                if (ts?.end != null) {
-                    remaining = formatRemaining(ts.end)
-                    val total = (ts.end - (ts.start ?: ts.end)).coerceAtLeast(1L)
-                    progFraction = ((System.currentTimeMillis() - (ts.start ?: ts.end)).toFloat() / total).coerceIn(0f, 1f)
-                }
+                if (ts?.end != null) { remaining = formatRemaining(ts.end); val total = (ts.end - (ts.start ?: ts.end)).coerceAtLeast(1L); progFraction = ((System.currentTimeMillis() - (ts.start ?: ts.end)).toFloat() / total).coerceIn(0f, 1f) }
                 delay(1000)
             }
         }
-        Card(colors = CardDefaults.cardColors(containerColor = accent.copy(0.07f)), shape = RoundedCornerShape(Radius.Card),
-            border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(0.22f))) {
+        Card(colors = CardDefaults.cardColors(containerColor = accent.copy(0.07f)), shape = RoundedCornerShape(Radius.Card), border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(0.22f))) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
                 Row(verticalAlignment = Alignment.Top) {
                     val largeUrl = activity.largeImageUrl
@@ -1722,30 +1639,19 @@ class MainActivity : ComponentActivity() {
                         Box(Modifier.size(60.dp)) {
                             AsyncImage(largeUrl, null, Modifier.fillMaxSize().clip(RoundedCornerShape(Radius.Small)), contentScale = ContentScale.Crop)
                             val smallUrl = activity.smallImageUrl
-                            if (smallUrl != null) {
-                                AsyncImage(smallUrl, null,
-                                    Modifier.size(22.dp).align(Alignment.BottomEnd).clip(CircleShape).border(2.dp, AppColors.Background, CircleShape),
-                                    contentScale = ContentScale.Crop)
-                            }
+                            if (smallUrl != null) AsyncImage(smallUrl, null, Modifier.size(22.dp).align(Alignment.BottomEnd).clip(CircleShape).border(2.dp, AppColors.Background, CircleShape), contentScale = ContentScale.Crop)
                         }
                     } else if (activity.applicationId != null) {
-                        AsyncImage(
-                            model = "https://cdn.discordapp.com/app-icons/${activity.applicationId}/icon.png",
-                            contentDescription = null,
-                            modifier = Modifier.size(60.dp).clip(RoundedCornerShape(Radius.Small)),
-                            contentScale = ContentScale.Crop
-                        )
+                        AsyncImage("https://cdn.discordapp.com/app-icons/${activity.applicationId}/icon.png", null, Modifier.size(60.dp).clip(RoundedCornerShape(Radius.Small)), contentScale = ContentScale.Crop)
                     } else {
-                        Box(Modifier.size(60.dp).background(accent.copy(0.15f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) {
-                            Icon(if (isSpotify) Icons.Outlined.MusicNote else Icons.Outlined.Games, null, tint = accent, modifier = Modifier.size(28.dp))
-                        }
+                        Box(Modifier.size(60.dp).background(accent.copy(0.15f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) { Icon(if (isSpotify) Icons.Outlined.MusicNote else Icons.Outlined.Games, null, tint = accent, modifier = Modifier.size(28.dp)) }
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(activityTypeLabel(activity.type), fontSize = 10.sp, color = accent, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                         Text(activity.name, fontSize = 14.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!activity.details.isNullOrBlank()) Text(activity.details, fontSize = 12.sp, color = AppColors.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (!activity.state.isNullOrBlank())   Text(activity.state,   fontSize = 12.sp, color = AppColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (!activity.state.isNullOrBlank())   Text(activity.state,   fontSize = 12.sp, color = AppColors.TextMuted,      maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!activity.assets?.largeText.isNullOrBlank()) Text(activity.assets!!.largeText!!, fontSize = 11.sp, color = AppColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (!activity.assets?.smallText.isNullOrBlank()) Text(activity.assets!!.smallText!!, fontSize = 11.sp, color = AppColors.TextMuted.copy(0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -1755,13 +1661,9 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(8.dp))
                     if (ts.start != null && ts.end != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(elapsed, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
-                            Spacer(Modifier.width(6.dp))
-                            Box(Modifier.weight(1f).height(3.dp).background(accent.copy(0.2f), CircleShape)) {
-                                Box(Modifier.fillMaxHeight().fillMaxWidth(progFraction).background(accent, CircleShape))
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            Text(remaining, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
+                            Text(elapsed, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace); Spacer(Modifier.width(6.dp))
+                            Box(Modifier.weight(1f).height(3.dp).background(accent.copy(0.2f), CircleShape)) { Box(Modifier.fillMaxHeight().fillMaxWidth(progFraction).background(accent, CircleShape)) }
+                            Spacer(Modifier.width(6.dp)); Text(remaining, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
                         }
                     } else if (ts.start != null) {
                         Text("$elapsed elapsed", fontSize = 10.sp, color = AppColors.TextMuted)
@@ -1772,14 +1674,7 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(10.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         activity.buttons.forEach { btn ->
-                            OutlinedButton(
-                                onClick = { runCatching { btnCtx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(btn.url))) } },
-                                modifier = Modifier.weight(1f).height(32.dp),
-                                shape = RoundedCornerShape(6.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(0.5f)),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
-                            ) {
+                            OutlinedButton(onClick = { runCatching { btnCtx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(btn.url))) } }, modifier = Modifier.weight(1f).height(32.dp), shape = RoundedCornerShape(6.dp), border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(0.5f)), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)) {
                                 Text(btn.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
@@ -1788,6 +1683,8 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    // ─── Small helpers ────────────────────────────────────────────────────────
 
     @Composable
     fun ProfileSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
@@ -1811,9 +1708,9 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun Footer(clicks: Int, onClick: () -> Unit) {
-        val t = rememberInfiniteTransition(label = "rgb")
+        val t   = rememberInfiniteTransition(label = "rgb")
         val hue by t.animateFloat(0f, 360f, infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Restart), label = "h")
-        val c = Color.hsv(hue, 0.75f, 1f)
+        val c   = Color.hsv(hue, 0.75f, 1f)
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.clickable { onClick() }, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.AutoAwesome, null, tint = c, modifier = Modifier.size(13.dp)); Spacer(Modifier.width(6.dp))
@@ -1827,32 +1724,26 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun GitHubButton() {
         val ctx = LocalContext.current
-        OutlinedButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken"))) },
-            modifier = Modifier.fillMaxWidth().height(46.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.TextMuted),
-            border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Divider), shape = RoundedCornerShape(Radius.Button)) {
+        OutlinedButton(onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Sc-Rhyan57/GetDiscordToken"))) }, modifier = Modifier.fillMaxWidth().height(46.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = AppColors.TextMuted), border = androidx.compose.foundation.BorderStroke(1.dp, AppColors.Divider), shape = RoundedCornerShape(Radius.Button)) {
             Icon(Icons.Outlined.Code, null, modifier = Modifier.size(16.dp), tint = AppColors.TextMuted); Spacer(Modifier.width(8.dp))
             Text("Sc-Rhyan57/GetDiscordToken", fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
         }
     }
 
+    // ─── API ──────────────────────────────────────────────────────────────────
+
     private suspend fun fetchUserInfo(token: String): DiscordUser = withContext(Dispatchers.IO) {
-        val startMs = System.currentTimeMillis()
-        addLog("INFO", "API", "GET /users/@me", "Authorization: ${token.take(20)}...")
-        val req  = Request.Builder().url("https://discord.com/api/v10/users/@me").header("Authorization", token).build()
-        val resp = httpClient.newCall(req).execute()
+        addLog("INFO", "API", "GET /users/@me")
+        val resp = httpClient.newCall(Request.Builder().url("https://discord.com/api/v10/users/@me").header("Authorization", token).build()).execute()
         val body = resp.body?.string() ?: throw IOException("Empty body")
-        val ms   = System.currentTimeMillis() - startMs
-        if (!resp.isSuccessful) {
-            addLog("ERROR", "API", "HTTP ${resp.code} /users/@me (${ms}ms)", "Body: ${body.take(300)}")
-            throw IOException("HTTP ${resp.code}")
-        }
-        addLog("SUCCESS", "API", "HTTP 200 /users/@me (${ms}ms)", "size=${body.length} bytes")
+        if (!resp.isSuccessful) { addLog("ERROR", "API", "HTTP ${resp.code} /users/@me"); throw IOException("HTTP ${resp.code}") }
         val j = JSONObject(body)
         fun str(k: String) = j.optString(k).takeIf { it.isNotEmpty() && it != "null" }
         val dec = j.optJSONObject("avatar_decoration_data")
         val col = j.optJSONObject("collectibles")
         val np  = col?.optJSONObject("nameplate")
         val pg  = j.optJSONObject("primary_guild")
+        addLog("SUCCESS", "API", "HTTP 200 /users/@me → ${j.optString("username")}")
         DiscordUser(
             id = j.optString("id"), username = j.optString("username"),
             discriminator = j.optString("discriminator", "0"), globalName = str("global_name"),
@@ -1864,20 +1755,24 @@ class MainActivity : ComponentActivity() {
             flags = j.optLong("flags", j.optLong("public_flags", 0L)),
             accentColor = if (!j.isNull("accent_color")) j.optInt("accent_color") else null,
             avatarDecorationAsset = dec?.optString("asset")?.takeIf { it.isNotEmpty() },
-            nameplateAsset        = np?.optString("asset")?.takeIf { it.isNotEmpty() },
-            nameplateLabel        = np?.optString("label")?.takeIf { it.isNotEmpty() },
-            primaryGuildTag       = pg?.optString("tag")?.takeIf { it.isNotEmpty() },
-            primaryGuildBadge     = pg?.optString("badge")?.takeIf { it.isNotEmpty() },
-            primaryGuildId        = pg?.optString("identity_guild_id")?.takeIf { it.isNotEmpty() },
-            hasLegacyUsername     = j.has("legacy_username") || j.optJSONObject("legacy_username") != null,
-            hasQuestBadge         = (j.optLong("public_flags", 0L) and 549755813888L != 0L),
-            hasOrbsBadge          = false
+            nameplateAsset  = np?.optString("asset")?.takeIf  { it.isNotEmpty() },
+            nameplateLabel  = np?.optString("label")?.takeIf  { it.isNotEmpty() },
+            nameplatePalette= np?.optString("palette")?.takeIf{ it.isNotEmpty() },
+            primaryGuildTag  = pg?.optString("tag")?.takeIf  { it.isNotEmpty() },
+            primaryGuildBadge= pg?.optString("badge")?.takeIf { it.isNotEmpty() },
+            primaryGuildId   = pg?.optString("identity_guild_id")?.takeIf { it.isNotEmpty() },
+            hasLegacyUsername= j.has("legacy_username"),
+            hasQuestBadge    = (j.optLong("public_flags", 0L) and 549755813888L != 0L),
+            hasOrbsBadge     = false,
+            themeColorPrimary = null,
+            themeColorAccent  = null,
+            profileEffectId   = null,
+            displayNameStyle  = null
         )
     }
 
-    private suspend fun fetchUserBadges(token: String, userId: String): List<BadgeInfo> = withContext(Dispatchers.IO) {
-        val startMs = System.currentTimeMillis()
-        addLog("INFO", "API", "GET /users/$userId/profile")
+    private suspend fun fetchProfileExtras(token: String, userId: String): Triple<Int?, Int?, String?> = withContext(Dispatchers.IO) {
+        // Returns (themeColorPrimary, themeColorAccent, profileEffectId)
         try {
             val resp = httpClient.newCall(
                 Request.Builder()
@@ -1885,101 +1780,80 @@ class MainActivity : ComponentActivity() {
                     .header("Authorization", token)
                     .build()
             ).execute()
-            if (!resp.isSuccessful) {
-                addLog("WARN", "API", "HTTP ${resp.code} /profile — badges unavailable")
-                return@withContext emptyList()
-            }
-            val body = resp.body?.string() ?: return@withContext emptyList()
-            val ms = System.currentTimeMillis() - startMs
-            val json = JSONObject(body)
-            val badgesArr = json.optJSONArray("badges")
-            if (badgesArr == null || badgesArr.length() == 0) {
-                addLog("INFO", "API", "HTTP 200 /profile (${ms}ms) — no badges")
-                return@withContext emptyList()
-            }
-            val result = mutableListOf<BadgeInfo>()
+            if (!resp.isSuccessful) return@withContext Triple(null, null, null)
+            val json       = JSONObject(resp.body?.string() ?: return@withContext Triple(null, null, null))
+            val up         = json.optJSONObject("user_profile")
+            val themeArr   = up?.optJSONArray("theme_colors")
+            val primary    = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0).takeIf { it != 0 } else null
+            val accent     = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1).takeIf { it != 0 } else null
+            val effectId   = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
+            addLog("SUCCESS", "API", "Profile extras: theme=${primary != null} effect=${effectId != null}")
+            Triple(primary, accent, effectId)
+        } catch (e: Exception) {
+            addLog("WARN", "API", "fetchProfileExtras failed: ${e.message}")
+            Triple(null, null, null)
+        }
+    }
+
+    private suspend fun fetchUserBadges(token: String, userId: String): List<BadgeInfo> = withContext(Dispatchers.IO) {
+        try {
+            val resp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v10/users/$userId/profile?with_mutual_guilds=false&with_mutual_friends_count=false")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /profile"); return@withContext emptyList() }
+            val json      = JSONObject(resp.body?.string() ?: return@withContext emptyList())
+            val badgesArr = json.optJSONArray("badges") ?: return@withContext emptyList()
+            val result    = mutableListOf<BadgeInfo>()
             for (i in 0 until badgesArr.length()) {
-                val b = badgesArr.getJSONObject(i)
+                val b    = badgesArr.getJSONObject(i)
                 val id   = b.optString("id", "")
                 val icon = b.optString("icon", "").takeIf { it.isNotEmpty() } ?: continue
                 val desc = b.optString("description", id)
                 val link = b.optString("link").takeIf { it.isNotEmpty() && it != "null" }
-                val label = badgeLabelFromId(id, desc)
-                result.add(BadgeInfo(
-                    id          = id,
-                    label       = label,
-                    color       = badgeColorFromId(id),
-                    cdnUrl      = "https://cdn.discordapp.com/badge-icons/$icon.png",
-                    description = desc,
-                    link        = link
-                ))
+                result.add(BadgeInfo(id = id, label = badgeLabelFromId(id, desc), color = badgeColorFromId(id), cdnUrl = "https://cdn.discordapp.com/badge-icons/$icon.png", description = desc, link = link))
             }
-            addLog("SUCCESS", "API", "HTTP 200 /profile (${ms}ms) — ${result.size} badges", result.map { it.id }.joinToString())
+            addLog("SUCCESS", "API", "Badges: ${result.size}")
             result
-        } catch (e: Exception) {
-            addLog("ERROR", "API", "fetchUserBadges failed: ${e.message}")
-            emptyList()
-        }
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchUserBadges: ${e.message}"); emptyList() }
     }
 
     private fun badgeLabelFromId(id: String, fallback: String): String = when {
-        id == "staff"                      -> "Discord Staff"
-        id == "partner"                    -> "Partner"
-        id == "hypesquad"                  -> "HypeSquad Events"
-        id == "bug_hunter_level_1"         -> "Bug Hunter"
-        id == "bug_hunter_level_2"         -> "Bug Hunter Lv.2"
-        id == "hypesquad_house_1"          -> "HypeSquad Bravery"
-        id == "hypesquad_house_2"          -> "HypeSquad Brilliance"
-        id == "hypesquad_house_3"          -> "HypeSquad Balance"
-        id == "early_supporter"            -> "Early Supporter"
-        id == "verified_developer"         -> "Early Dev"
-        id == "moderator_programs_alumni"  -> "Mod Alumni"
-        id == "active_developer"           -> "Active Dev"
-        id == "legacy_username"            -> "Legacy Username"
-        id.startsWith("premium_tenure")    -> {
-            val months = id.filter { it.isDigit() }.take(4).toIntOrNull()
-            if (months != null) "Nitro ${months}mo" else "Nitro Tenure"
-        }
-        id.startsWith("guild_booster")     -> {
-            val lvl = id.lastOrNull { it.isDigit() }?.toString()
-            if (lvl != null) "Booster Lv.$lvl" else "Server Booster"
-        }
-        id == "premium"                    -> "Nitro"
-        id.contains("quest")               -> "Quest"
-        else                               -> fallback.take(18)
-    }
-
-    private suspend fun connectGateway(token: String, onUpdate: (DiscordPresence) -> Unit): DiscordPresence? = withContext(Dispatchers.IO) {
-        addLog("INFO", "Gateway", "Starting gateway connection…", GATEWAY_URL)
-        connectGatewayInternal(token, false, onUpdate)
-        var waited = 0
-        while (currentPresence == null && waited < 15000) { delay(100); waited += 100 }
-        if (currentPresence == null) addLog("WARN", "Gateway", "Timed out waiting for READY (${waited}ms)")
-        currentPresence
+        id == "staff"                     -> "Discord Staff"
+        id == "partner"                   -> "Partner"
+        id == "hypesquad"                 -> "HypeSquad Events"
+        id == "bug_hunter_level_1"        -> "Bug Hunter"
+        id == "bug_hunter_level_2"        -> "Bug Hunter Lv.2"
+        id == "hypesquad_house_1"         -> "HypeSquad Bravery"
+        id == "hypesquad_house_2"         -> "HypeSquad Brilliance"
+        id == "hypesquad_house_3"         -> "HypeSquad Balance"
+        id == "early_supporter"           -> "Early Supporter"
+        id == "verified_developer"        -> "Early Dev"
+        id == "moderator_programs_alumni" -> "Mod Alumni"
+        id == "active_developer"          -> "Active Dev"
+        id == "legacy_username"           -> "Legacy Username"
+        id.startsWith("premium_tenure")   -> { val m = id.filter { it.isDigit() }.take(4).toIntOrNull(); if (m != null) "Nitro ${m}mo" else "Nitro Tenure" }
+        id.startsWith("guild_booster")    -> { val l = id.lastOrNull { it.isDigit() }?.toString(); if (l != null) "Booster Lv.$l" else "Server Booster" }
+        id == "premium"                   -> "Nitro"
+        id.contains("quest")              -> "Quest"
+        else                              -> fallback.take(18)
     }
 
     private suspend fun fetchConnections(token: String): List<DiscordConnection> = withContext(Dispatchers.IO) {
-        val start = System.currentTimeMillis()
-        addLog("INFO", "API", "GET /users/@me/connections")
         val resp = httpClient.newCall(Request.Builder().url("https://discord.com/api/v10/users/@me/connections").header("Authorization", token).build()).execute()
-        if (!resp.isSuccessful) {
-            addLog("ERROR", "API", "HTTP ${resp.code} /connections (${System.currentTimeMillis()-start}ms)")
-            return@withContext emptyList()
-        }
-        val body = resp.body?.string() ?: return@withContext emptyList()
-        val arr = JSONArray(body)
-        addLog("SUCCESS", "API", "HTTP 200 /connections (${System.currentTimeMillis()-start}ms)", "count=${arr.length()}")
+        if (!resp.isSuccessful) { addLog("ERROR", "API", "HTTP ${resp.code} /connections"); return@withContext emptyList() }
+        val arr = JSONArray(resp.body?.string() ?: return@withContext emptyList())
+        addLog("SUCCESS", "API", "Connections: ${arr.length()}")
         buildList { for (i in 0 until arr.length()) { val o = arr.getJSONObject(i); add(DiscordConnection(o.optString("type"), o.optString("name"), o.optBoolean("verified", false), o.optInt("visibility", 0))) } }
     }
 
     private suspend fun fetchGuildCount(token: String): Int? = withContext(Dispatchers.IO) {
-        val start = System.currentTimeMillis()
-        addLog("INFO", "API", "GET /users/@me/guilds")
         val resp = httpClient.newCall(Request.Builder().url("https://discord.com/api/v10/users/@me/guilds").header("Authorization", token).build()).execute()
         if (!resp.isSuccessful) { addLog("ERROR", "API", "HTTP ${resp.code} /guilds"); return@withContext null }
         val count = JSONArray(resp.body?.string() ?: return@withContext null).length()
-        addLog("SUCCESS", "API", "HTTP 200 /guilds (${System.currentTimeMillis()-start}ms)", "count=$count")
-        count
+        addLog("SUCCESS", "API", "Guilds: $count"); count
     }
 
     private suspend fun checkLatestVersion(): String? = withContext(Dispatchers.IO) {
