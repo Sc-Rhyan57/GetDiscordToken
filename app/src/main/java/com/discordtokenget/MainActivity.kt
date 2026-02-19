@@ -145,6 +145,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -154,7 +155,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -215,7 +219,10 @@ data class DiscordUser(
     val themeColorAccent: Int?,
     val profileEffectId: String?,
     val displayNameStyle: String?,
-    val themeGradientAngle: Float
+    val themeGradientAngle: Float,
+    val nitroSince: String?,
+    val nitroEnds: String?,
+    val orbsBalance: Int?
 )
 
 data class CustomStatus(
@@ -673,10 +680,56 @@ private fun ProfileEffectBadge(effectId: String) {
             .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AsyncImage(thumbUrl, "Profile Effect", Modifier.size(20.dp).clip(RoundedCornerShape(4.dp)))
+        AnimatedImage(thumbUrl, "Profile Effect", Modifier.size(20.dp).clip(RoundedCornerShape(4.dp)))
         Spacer(Modifier.width(6.dp))
         Text("Profile Effect", fontSize = 11.sp, color = AppColors.Primary, fontWeight = FontWeight.SemiBold)
     }
+}
+
+@Composable
+private fun ProfileEffectOverlay(effectId: String, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
+    val effectUrl = "https://cdn.discordapp.com/profile-effects/$effectId/effect_component.png"
+    val gifLoader = remember(ctx) {
+        ImageLoader.Builder(ctx)
+            .components {
+                if (android.os.Build.VERSION.SDK_INT >= 28) add(ImageDecoderDecoder.Factory())
+                else add(GifDecoder.Factory())
+            }
+            .build()
+    }
+    AsyncImage(
+        model = ImageRequest.Builder(ctx).data(effectUrl).crossfade(false).build(),
+        contentDescription = "Profile Effect",
+        imageLoader = gifLoader,
+        modifier = modifier,
+        contentScale = ContentScale.Crop
+    )
+}
+
+@Composable
+private fun AnimatedImage(
+    url: String,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop
+) {
+    val ctx = LocalContext.current
+    val gifLoader = remember(ctx) {
+        ImageLoader.Builder(ctx)
+            .components {
+                if (android.os.Build.VERSION.SDK_INT >= 28) add(ImageDecoderDecoder.Factory())
+                else add(GifDecoder.Factory())
+            }
+            .build()
+    }
+    AsyncImage(
+        model = ImageRequest.Builder(ctx).data(url).crossfade(false).build(),
+        contentDescription = contentDescription,
+        imageLoader = gifLoader,
+        modifier = modifier,
+        contentScale = contentScale
+    )
 }
 
 @Composable
@@ -941,7 +994,15 @@ class MainActivity : ComponentActivity() {
                                     val activities = activitiesFromArray(acts)
                                     var cs: CustomStatus? = null
                                     if (acts != null) for (i in 0 until acts.length()) { val a = acts.getJSONObject(i); if (a.optInt("type", -1) == 4) { val em = a.optJSONObject("emoji"); cs = CustomStatus(text = a.optString("state").takeIf { it.isNotEmpty() && it != "null" }, emojiName = em?.optString("name")?.takeIf { it.isNotEmpty() }, emojiId = em?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" }, emojiAnimated = em?.optBoolean("animated", false) ?: false); break } }
-                                    val updated = DiscordPresence(status, activities, currentPresence?.platforms ?: emptyList(), cs)
+                                    val clientStatus = data.optJSONObject("client_status")
+                                    val platforms = mutableListOf<String>()
+                                    if (clientStatus != null) {
+                                        if (clientStatus.has("desktop")) platforms.add("Desktop")
+                                        if (clientStatus.has("mobile"))  platforms.add("Mobile")
+                                        if (clientStatus.has("web"))     platforms.add("Web")
+                                    }
+                                    val finalPlatforms = if (platforms.isNotEmpty()) platforms else currentPresence?.platforms ?: emptyList()
+                                    val updated = DiscordPresence(status, activities, finalPlatforms, cs)
                                     currentPresence = updated; onPresenceLive?.invoke(updated)
                                 }
                                 "SESSION_REPLACE" -> {
@@ -1005,6 +1066,10 @@ class MainActivity : ComponentActivity() {
         var loadingBadges   by remember { mutableStateOf(false) }
         var loadingGuilds   by remember { mutableStateOf(false) }
         var loadingFriends  by remember { mutableStateOf(false) }
+        var loadingNitro    by remember { mutableStateOf(false) }
+        var loadingOrbs     by remember { mutableStateOf(false) }
+        var nitroInfo       by remember { mutableStateOf<Triple<String?,String?,Int>?>(null) }
+        var orbsBalance     by remember { mutableStateOf<Int?>(null) }
         var showWebView     by remember { mutableStateOf(false) }
         var updateTag       by remember { mutableStateOf<String?>(null) }
         var noInternet      by remember { mutableStateOf(false) }
@@ -1067,6 +1132,16 @@ class MainActivity : ComponentActivity() {
             launch { guildCount = try { fetchGuildCount(t) } catch (e: Exception) { addLog("ERROR", "API", "Guilds: ${e.message}"); null }; loadingGuilds = false }
             loadingFriends = true
             launch { friendCount = try { fetchFriendCount(t) } catch (e: Exception) { addLog("ERROR", "API", "Friends: ${e.message}"); null }; loadingFriends = false }
+            loadingNitro = true
+            launch {
+                nitroInfo = try { fetchNitroDetails(t) } catch (e: Exception) { addLog("ERROR", "API", "Nitro: ${e.message}"); null }
+                loadingNitro = false
+            }
+            loadingOrbs = true
+            launch {
+                orbsBalance = try { fetchOrbsBalance(t) } catch (e: Exception) { addLog("ERROR", "API", "Orbs: ${e.message}"); null }
+                loadingOrbs = false
+            }
         }
 
         if (noInternet) {
@@ -1104,13 +1179,14 @@ class MainActivity : ComponentActivity() {
                     user = user, token = token ?: "", loadingUser = loadingUser, loadingPresence = loadingPresence,
                     loadingConns = loadingConns, loadingGuilds = loadingGuilds, loadingBadges = loadingBadges,
                     loadingFriends = loadingFriends,
+                    loadingNitro = loadingNitro, loadingOrbs = loadingOrbs,
                     presence = presence, connections = connections, guildCount = guildCount, badges = badges,
-                    friendCount = friendCount,
+                    friendCount = friendCount, nitroInfo = nitroInfo, orbsBalance = orbsBalance,
                     footerClicks = footerClicks,
                     onFooterClick = { footerClicks++; if (footerClicks >= 5) { showLogs = true; footerClicks = 0 } },
                     onRefresh = {
                         addLog("INFO", "Session", "Manual refresh")
-                        user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null
+                        user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null; nitroInfo = null; orbsBalance = null
                         heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
                         gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; refreshTick++
                     },
@@ -1118,7 +1194,7 @@ class MainActivity : ComponentActivity() {
                         addLog("INFO", "Session", "Logout")
                         heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
                         gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; ownUserId = ""
-                        clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null
+                        clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null; nitroInfo = null; orbsBalance = null
                     })
             }
         }
@@ -1279,9 +1355,10 @@ class MainActivity : ComponentActivity() {
     fun UserProfileScreen(
         user: DiscordUser?, token: String, loadingUser: Boolean, loadingPresence: Boolean,
         loadingConns: Boolean, loadingGuilds: Boolean, loadingBadges: Boolean,
-        loadingFriends: Boolean,
+        loadingFriends: Boolean, loadingNitro: Boolean, loadingOrbs: Boolean,
         presence: DiscordPresence?, connections: List<DiscordConnection>?,
         guildCount: Int?, badges: List<BadgeInfo>, friendCount: Int?,
+        nitroInfo: Triple<String?,String?,Int>?, orbsBalance: Int?,
         footerClicks: Int, onFooterClick: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit
     ) {
         val ctx = LocalContext.current
@@ -1354,7 +1431,7 @@ class MainActivity : ComponentActivity() {
                         )
                     if (user.banner != null) {
                         val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
-                        AsyncImage(
+                        AnimatedImage(
                             "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600",
                             null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop
                         )
@@ -1362,7 +1439,7 @@ class MainActivity : ComponentActivity() {
                     }
                     user?.banner != null -> {
                         val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
-                        AsyncImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        AnimatedImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     }
                     user?.accentColor != null -> {
                         val c = Color(0xFF000000 or user.accentColor.toLong())
@@ -1374,13 +1451,16 @@ class MainActivity : ComponentActivity() {
                     }
                     else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary, Color(0xFF7289DA), AppColors.Background))))
                 }
+                if (user?.profileEffectId != null) {
+                    ProfileEffectOverlay(effectId = user.profileEffectId, modifier = Modifier.fillMaxSize())
+                }
             }
 
 
             Column(Modifier.fillMaxWidth().then(if (hasThemeGradient) Modifier.background(
                 Brush.verticalGradient(
-                    0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.14f),
-                    0.5f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.10f),
+                    0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.55f),
+                    0.4f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.30f),
                     1f to Color.Transparent
                 )
             ) else Modifier).padding(horizontal = 20.dp)) {
@@ -1389,14 +1469,9 @@ class MainActivity : ComponentActivity() {
                         Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
                             if (user?.avatar != null) {
                                 val ext = if (user.avatar.startsWith("a_")) "gif" else "png"
-                                AsyncImage(
-                                    model = coil.request.ImageRequest.Builder(LocalContext.current)
-                                        .data("https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256")
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
+                                AnimatedImage(
+                                    "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256",
+                                    null, Modifier.fillMaxSize(), ContentScale.Crop
                                 )
                             } else {
                                 Box(Modifier.fillMaxSize().background(AppColors.Primary), contentAlignment = Alignment.Center) {
@@ -1405,13 +1480,9 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         if (user?.avatarDecorationAsset != null) {
-                            AsyncImage(
-                                model = coil.request.ImageRequest.Builder(LocalContext.current)
-                                    .data("https://cdn.discordapp.com/avatar-decoration-presets/${user.avatarDecorationAsset}.png?size=160&passthrough=true")
-                                    .crossfade(false)
-                                    .build(),
-                                contentDescription = "decoration",
-                                modifier = Modifier.size(98.dp)
+                            AnimatedImage(
+                                "https://cdn.discordapp.com/avatar-decoration-presets/${user.avatarDecorationAsset}.png?size=160&passthrough=true",
+                                "decoration", Modifier.size(98.dp), ContentScale.FillBounds
                             )
                         }
                     }
@@ -1456,7 +1527,26 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(user.globalName ?: user.username, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
+                        val displayName = user.globalName ?: user.username
+                        val nameStyle = user.displayNameStyle?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+                        val nameColorPrimary = nameStyle?.optString("color_primary")?.takeIf { it.isNotBlank() && it != "null" }
+                        val nameColorAccent  = nameStyle?.optString("color_secondary")?.takeIf { it.isNotBlank() && it != "null" }
+                        if (nameColorPrimary != null && nameColorAccent != null) {
+                            val c1 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorPrimary.startsWith("#")) nameColorPrimary else "#$nameColorPrimary")) }.getOrElse { AppColors.TextPrimary }
+                            val c2 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorAccent.startsWith("#")) nameColorAccent else "#$nameColorAccent")) }.getOrElse { AppColors.TextPrimary }
+                            Text(
+                                text = displayName,
+                                fontSize = 26.sp, fontWeight = FontWeight.Black,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    brush = Brush.horizontalGradient(listOf(c1, c2))
+                                )
+                            )
+                        } else if (nameColorPrimary != null) {
+                            val c1 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorPrimary.startsWith("#")) nameColorPrimary else "#$nameColorPrimary")) }.getOrElse { AppColors.TextPrimary }
+                            Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = c1)
+                        } else {
+                            Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
+                        }
                         StatusBadge(presence = presence, loadingPresence = loadingPresence)
                     }
 
@@ -1480,20 +1570,42 @@ class MainActivity : ComponentActivity() {
 
                     if (presence?.customStatus != null) {
                         Spacer(Modifier.height(8.dp))
-                        val cs = presence.customStatus
-                        Row(Modifier.fillMaxWidth().background(AppColors.Surface, RoundedCornerShape(Radius.Medium)).border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (cs.emojiId != null) { val ext = if (cs.emojiAnimated) "gif" else "png"; AsyncImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=32", null, Modifier.size(20.dp)); if (cs.text != null) Spacer(Modifier.width(6.dp)) }
-                            else if (cs.emojiName != null) { Text(cs.emojiName, fontSize = 18.sp); if (cs.text != null) Spacer(Modifier.width(6.dp)) }
-                            if (!cs.text.isNullOrBlank()) Text(cs.text, fontSize = 13.sp, color = AppColors.TextSecondary, modifier = Modifier.weight(1f))
+                        val cs = presence.customStatus!!
+                        val sc = statusColor(presence.status)
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .background(sc.copy(alpha = 0.07f), RoundedCornerShape(Radius.Medium))
+                                .border(1.dp, sc.copy(alpha = 0.18f), RoundedCornerShape(Radius.Medium))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (cs.emojiId != null) {
+                                val ext = if (cs.emojiAnimated) "gif" else "png"
+                                AnimatedImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=64", null, Modifier.size(24.dp), ContentScale.Fit)
+                                Spacer(Modifier.width(8.dp))
+                            } else if (!cs.emojiName.isNullOrEmpty()) {
+                                Text(cs.emojiName, fontSize = 22.sp, lineHeight = 24.sp)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Column(Modifier.weight(1f)) {
+                                if (!cs.text.isNullOrBlank()) {
+                                    Text(cs.text, fontSize = 14.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, lineHeight = 18.sp)
+                                }
+                                Text(
+                                    statusLabel(presence.status) + if (presence.platforms.isNotEmpty()) " · " + presence.platforms.joinToString(" & ") else "",
+                                    fontSize = 11.sp, color = sc.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Box(Modifier.size(9.dp).background(sc, CircleShape))
                         }
                     }
 
-                    if (presence?.platforms?.isNotEmpty() == true) {
-                        Spacer(Modifier.height(8.dp))
+                    if (presence?.platforms?.isNotEmpty() == true && presence.customStatus == null) {
+                        Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             presence.platforms.forEach { p ->
-                                Box(Modifier.background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge)).border(1.dp, AppColors.Primary.copy(0.20f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                                    Text(p, fontSize = 10.sp, color = AppColors.Primary.copy(0.9f), fontWeight = FontWeight.SemiBold)
+                                Box(Modifier.background(statusColor(presence.status).copy(0.10f), RoundedCornerShape(Radius.Badge)).border(1.dp, statusColor(presence.status).copy(0.20f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                                    Text(p, fontSize = 10.sp, color = statusColor(presence.status).copy(0.9f), fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -1502,20 +1614,6 @@ class MainActivity : ComponentActivity() {
                     if (user.profileEffectId != null) {
                         Spacer(Modifier.height(8.dp))
                         ProfileEffectBadge(user.profileEffectId)
-                    }
-
-                    if (user.themeColorPrimary != null && user.themeColorAccent != null) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.background(AppColors.Surface, RoundedCornerShape(Radius.Medium)).border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium)).padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(Icons.Outlined.Palette, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(8.dp))
-                            Text("Profile Theme", fontSize = 12.sp, color = AppColors.TextMuted, modifier = Modifier.weight(1f))
-                            Box(Modifier.size(20.dp).background(discordColorToCompose(user.themeColorPrimary), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
-                            Spacer(Modifier.width(4.dp))
-                            Box(Modifier.size(20.dp).background(discordColorToCompose(user.themeColorAccent), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
-                        }
                     }
 
                     if (user.displayNameStyle != null) {
@@ -1562,11 +1660,47 @@ class MainActivity : ComponentActivity() {
                         if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale",  localeLabel(user.locale))
                         InfoRow(Icons.Outlined.Lock,        "2FA",      if (user.mfaEnabled)  "Enabled"  else "Disabled", if (user.mfaEnabled) AppColors.Success else AppColors.TextMuted)
                         InfoRow(Icons.Outlined.CheckCircle, "Verified", if (user.verified)    "Yes"      else "No",       if (user.verified)   AppColors.Success else AppColors.TextMuted)
-                        if (user.premiumType > 0) InfoRow(Icons.Outlined.WorkspacePremium, "Nitro", nitroLabel(user.premiumType), Color(0xFF5865F2))
+                        if (user.premiumType > 0) {
+                            val nitroColor = Color(0xFF5865F2)
+                            InfoRow(Icons.Outlined.WorkspacePremium, "Nitro Type", nitroLabel(user.premiumType), nitroColor)
+                            if (loadingNitro) {
+                                InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", "Loading...", nitroColor.copy(0.6f))
+                            } else if (nitroInfo != null) {
+                                if (!nitroInfo!!.first.isNullOrBlank()) InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", nitroInfo!!.first!!, nitroColor.copy(0.8f))
+                                if (!nitroInfo!!.second.isNullOrBlank()) {
+                                    val now = System.currentTimeMillis()
+                                    val end = runCatching { java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }.parse(nitroInfo!!.second!!.substringBefore('.'))?.time ?: 0L }.getOrElse { 0L }
+                                    val daysLeft = if (end > now) ((end - now) / 86400000L).toInt() else 0
+                                    val label = "${nitroInfo!!.second!!.substring(0, 10)} (${daysLeft}d left)"
+                                    InfoRow(Icons.Outlined.Update, "Renews", label, if (daysLeft <= 7) AppColors.Warning else nitroColor.copy(0.8f))
+                                }
+                                if (nitroInfo!!.third > 0) InfoRow(Icons.Outlined.Groups, "Boosts", "${nitroInfo!!.third} active", Color(0xFFFF73FA))
+                            }
+                        }
                         if (loadingGuilds) InfoRow(Icons.Outlined.Groups, "Servers", "Loading...")
                         else if (guildCount != null) InfoRow(Icons.Outlined.Groups, "Servers", guildCount.toString() + if (guildCount >= 100) "+" else "")
                         if (loadingFriends) InfoRow(Icons.Outlined.People, "Friends", "Loading...")
                         else if (friendCount != null) InfoRow(Icons.Outlined.People, "Friends", friendCount.toString())
+                        if (loadingOrbs) {
+                            InfoRow(Icons.Outlined.Star, "Orbs Balance", "Loading...", Color(0xFF7C43E0))
+                        } else if (orbsBalance != null && orbsBalance > 0) {
+                            InfoRow(Icons.Outlined.Star, "Orbs Balance", "🔮 ${orbsBalance.toString().reversed().chunked(3).joinToString(",").reversed()} orbs", Color(0xFF7C43E0))
+                        }
+                        if (user.themeColorPrimary != null && user.themeColorAccent != null) {
+                            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Outlined.Palette, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(12.dp))
+                                Text("Profile Theme", fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Box(Modifier.size(18.dp).background(discordColorToCompose(user.themeColorPrimary), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
+                                Spacer(Modifier.width(4.dp))
+                                Box(Modifier.size(18.dp).background(discordColorToCompose(user.themeColorAccent), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "→ " + "#%06X".format(user.themeColorPrimary and 0xFFFFFF) + " · #%06X".format(user.themeColorAccent and 0xFFFFFF),
+                                    fontSize = 11.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
                         InfoRow(Icons.Outlined.Security, "Public Flags", "0x${user.publicFlags.toString(16).uppercase()} (${user.publicFlags})")
                         if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
                         if (user.avatarDecorationAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Decoration", "Active ✓", AppColors.Success)
@@ -1683,39 +1817,43 @@ class MainActivity : ComponentActivity() {
     private fun DisplayNameStyleBadge(styleJson: String) {
         val parsed = runCatching { JSONObject(styleJson) }.getOrNull()
         val fontName = parsed?.optString("font_type")?.takeIf { it.isNotEmpty() && it != "null" }
-            ?: parsed?.optString("font")?.takeIf { it.isNotEmpty() && it != "null" }
-            ?: styleJson.trim().let { if (it.length < 40) it else null }
-            ?: "Custom"
-        val colorHex = parsed?.optString("color_primary")?.takeIf { it.isNotEmpty() && it != "null" }
-        val badgeColor = if (colorHex != null) {
-            runCatching {
-                val hex = if (colorHex.startsWith("#")) colorHex else "#$colorHex"
-                Color(android.graphics.Color.parseColor(hex))
-            }.getOrElse { AppColors.Primary }
-        } else AppColors.Primary
+            ?: parsed?.optString("font")?.takeIf  { it.isNotEmpty() && it != "null" }
+            ?: styleJson.trim().let { if (it.length < 40 && !it.startsWith("{")) it else null }
+            ?: "Custom Style"
+        val colorPrimaryHex  = parsed?.optString("color_primary")?.takeIf   { it.isNotEmpty() && it != "null" }
+        val colorSecondaryHex= parsed?.optString("color_secondary")?.takeIf  { it.isNotEmpty() && it != "null" }
+        fun hexToColor(h: String?): Color? = h?.let {
+            runCatching { Color(android.graphics.Color.parseColor(if (it.startsWith("#")) it else "#$it")) }.getOrNull()
+        }
+        val c1 = hexToColor(colorPrimaryHex)  ?: AppColors.Primary
+        val c2 = hexToColor(colorSecondaryHex) ?: c1
+        val hasGradient = colorSecondaryHex != null && c1 != c2
 
         Row(
             modifier = Modifier
-                .background(badgeColor.copy(0.10f), RoundedCornerShape(Radius.Badge))
-                .border(1.dp, badgeColor.copy(0.30f), RoundedCornerShape(Radius.Badge))
+                .background(c1.copy(0.10f), RoundedCornerShape(Radius.Badge))
+                .border(1.dp, c1.copy(0.30f), RoundedCornerShape(Radius.Badge))
                 .padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Outlined.TextFields, null, tint = badgeColor, modifier = Modifier.size(13.dp))
+            Icon(Icons.Outlined.TextFields, null, tint = c1, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(6.dp))
-            Text(
-                text = fontName.replaceFirstChar { it.uppercase() },
-                fontSize = 11.sp,
-                color = badgeColor,
-                fontWeight = FontWeight.Bold
-            )
+            if (hasGradient) {
+                Text(
+                    text = fontName.replaceFirstChar { it.uppercase() },
+                    fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                    style = TextStyle(brush = Brush.horizontalGradient(listOf(c1, c2)))
+                )
+            } else {
+                Text(fontName.replaceFirstChar { it.uppercase() }, fontSize = 11.sp, color = c1, fontWeight = FontWeight.Bold)
+            }
             Spacer(Modifier.width(6.dp))
-            Box(
-                Modifier
-                    .background(badgeColor.copy(0.15f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-            ) {
-                Text("Name Style", fontSize = 9.sp, color = badgeColor.copy(0.8f), fontWeight = FontWeight.SemiBold)
+            if (hasGradient) {
+                Box(Modifier.size(16.dp).background(Brush.horizontalGradient(listOf(c1, c2)), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
+                Spacer(Modifier.width(4.dp))
+            }
+            Box(Modifier.background(c1.copy(0.15f), RoundedCornerShape(4.dp)).padding(horizontal = 4.dp, vertical = 2.dp)) {
+                Text("Name Style", fontSize = 9.sp, color = c1.copy(0.8f), fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -1871,7 +2009,10 @@ class MainActivity : ComponentActivity() {
             themeColorAccent  = null,
             profileEffectId   = null,
             displayNameStyle  = nameStyleRaw,
-            themeGradientAngle = 0f
+            themeGradientAngle = 0f,
+            nitroSince = null,
+            nitroEnds  = null,
+            orbsBalance = null
         )
     }
 
@@ -1963,6 +2104,74 @@ class MainActivity : ComponentActivity() {
             }
             addLog("SUCCESS", "API", "Friends: $count"); count
         } catch (e: Exception) { addLog("ERROR", "API", "fetchFriendCount: ${e.message}"); null }
+    }
+
+
+    // Returns Triple(nitroSince, nitroEnds, boostCount)
+    private suspend fun fetchNitroDetails(token: String): Triple<String?, String?, Int>? = withContext(Dispatchers.IO) {
+        try {
+            val resp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v9/users/@me/billing/subscriptions")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /billing/subscriptions"); return@withContext null }
+            val body = resp.body?.string() ?: return@withContext null
+            val arr = org.json.JSONArray(body)
+            if (arr.length() == 0) return@withContext null
+            val sub = arr.getJSONObject(0)
+            val since = sub.optString("current_period_start").takeIf { it.isNotEmpty() && it != "null" }?.substring(0, 10)
+            val ends  = sub.optString("current_period_end").takeIf  { it.isNotEmpty() && it != "null" }
+            // Fetch boost count from subscription slots
+            val boostResp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v9/users/@me/guilds/premium/subscription-slots")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            var boostCount = 0
+            if (boostResp.isSuccessful) {
+                val slots = org.json.JSONArray(boostResp.body?.string() ?: "[]")
+                for (i in 0 until slots.length()) {
+                    val slot = slots.getJSONObject(i)
+                    if (!slot.isNull("subscription_id")) boostCount++
+                }
+            }
+            addLog("SUCCESS", "API", "Nitro since=$since ends=${ends?.substring(0,10)} boosts=$boostCount")
+            Triple(since, ends, boostCount)
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchNitroDetails: ${e.message}"); null }
+    }
+
+    private suspend fun fetchOrbsBalance(token: String): Int? = withContext(Dispatchers.IO) {
+        try {
+            val resp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v10/users/@me/quests/collectibles/balance")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (resp.isSuccessful) {
+                val j = org.json.JSONObject(resp.body?.string() ?: "{}")
+                val balance = j.optInt("balance", -1)
+                if (balance >= 0) { addLog("SUCCESS", "API", "Orbs: $balance"); return@withContext balance }
+            }
+            val questResp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v10/users/@me/quests?with_userquest=true&with_orb_balance=true&include_dismissed=false&user_quest_completions=false")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (questResp.isSuccessful) {
+                val qj = org.json.JSONObject(questResp.body?.string() ?: "{}")
+                val balance = qj.optInt("orb_balance", -1)
+                if (balance >= 0) { addLog("SUCCESS", "API", "Orbs (quests): $balance"); return@withContext balance }
+                val nested = qj.optJSONObject("orbs")?.optInt("balance", -1) ?: -1
+                if (nested >= 0) { addLog("SUCCESS", "API", "Orbs (nested): $nested"); return@withContext nested }
+            }
+            addLog("WARN", "API", "Could not fetch orbs balance (may not be exposed in API)")
+            null
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchOrbsBalance: ${e.message}"); null }
     }
 
     private suspend fun checkLatestVersion(): String? = withContext(Dispatchers.IO) {
