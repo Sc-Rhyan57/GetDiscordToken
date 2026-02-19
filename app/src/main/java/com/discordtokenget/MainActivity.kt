@@ -53,6 +53,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -85,6 +86,7 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Security
@@ -92,6 +94,7 @@ import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -176,10 +179,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
-// ─── Version auto-set from BuildConfig ────────────────────────────────────────
 private val CURRENT_VERSION: String get() = BuildConfig.VERSION_NAME
-
-// ─── Data Classes ─────────────────────────────────────────────────────────────
 
 data class DiscordUser(
     val id: String,
@@ -209,11 +209,10 @@ data class DiscordUser(
     val hasLegacyUsername: Boolean,
     val hasQuestBadge: Boolean,
     val hasOrbsBadge: Boolean,
-    // ── New fields ──
     val themeColorPrimary: Int?,
     val themeColorAccent: Int?,
     val profileEffectId: String?,
-    val displayNameStyle: String?       // font/style from Display Name Styles
+    val displayNameStyle: String?
 )
 
 data class CustomStatus(
@@ -279,8 +278,6 @@ data class AppLog(
     val detail: String? = null
 )
 
-// ─── Colors & Constants ───────────────────────────────────────────────────────
-
 private object AppColors {
     val Background     = Color(0xFF1E1F22)
     val Surface        = Color(0xFF2B2D31)
@@ -334,8 +331,6 @@ private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/G
 private const val GATEWAY_URL      = "wss://gateway.discord.gg/?v=10&encoding=json"
 private const val GATEWAY_RECONNECT_DELAY_MS = 3000L
 private const val GATEWAY_MAX_RECONNECT_ATTEMPTS = 5
-
-// CDN base for profile effects (Lottie JSON files served by Discord)
 private const val PROFILE_EFFECT_CDN = "https://cdn.discordapp.com/profile-effects"
 
 private val httpClient = OkHttpClient.Builder()
@@ -346,16 +341,12 @@ private val httpClient = OkHttpClient.Builder()
 private val appLogs     = mutableStateListOf<AppLog>()
 private val logsEnabled = mutableStateOf(true)
 
-// ─── Logging ──────────────────────────────────────────────────────────────────
-
 private fun addLog(level: String, tag: String, message: String, detail: String? = null) {
     if (!logsEnabled.value) return
     val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
     appLogs.add(0, AppLog(ts, level, tag, message, detail))
     if (appLogs.size > 300) appLogs.removeAt(appLogs.size - 1)
 }
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
 
 private fun snowflakeToDate(id: String): String = try {
     val ts = (id.toLong() ushr 22) + DISCORD_EPOCH
@@ -395,7 +386,6 @@ private fun activityTypeLabel(type: Int): String = when (type) {
     3 -> "Watching"; 5 -> "Competing in"; else -> "Activity"
 }
 
-/** Convert Discord decimal color int to Compose Color safely */
 private fun discordColorToCompose(intColor: Int): Color =
     Color(0xFF000000L or (intColor.toLong() and 0xFFFFFFL))
 
@@ -497,8 +487,6 @@ private fun isNetworkAvailable(context: Context): Boolean {
     return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
-
-// ─── Markdown ─────────────────────────────────────────────────────────────────
 
 private sealed class MdBlock {
     data class Heading(val text: String, val level: Int)     : MdBlock()
@@ -608,13 +596,6 @@ private fun DiscordMarkdown(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-// ─── Profile Gradient Banner ──────────────────────────────────────────────────
-
-/**
- * Renders the Discord Nitro two-tone gradient profile theme.
- * theme_colors comes from user_profile.theme_colors in the /profile endpoint
- * as a JSON array: [primaryInt, accentInt]
- */
 @Composable
 private fun ProfileThemeGradient(
     primaryColor: Color,
@@ -632,12 +613,6 @@ private fun ProfileThemeGradient(
     )
 }
 
-// ─── Nameplate ────────────────────────────────────────────────────────────────
-
-/**
- * Shows the nameplate behind the display name, similar to how Discord renders it.
- * asset format: "nameplates/nameplates/<name>/"  → we append "nameplate.png" for a static preview.
- */
 @Composable
 private fun NameplateRow(asset: String, label: String?, palette: String?) {
     val baseUrl = "https://cdn.discordapp.com/assets/${asset}nameplate.png"
@@ -677,8 +652,6 @@ private fun NameplateRow(asset: String, label: String?, palette: String?) {
     }
 }
 
-// ─── Profile Effect Badge ─────────────────────────────────────────────────────
-
 @Composable
 private fun ProfileEffectBadge(effectId: String) {
     val thumbUrl = "https://cdn.discordapp.com/profile-effects/$effectId/thumbnail.png"
@@ -694,8 +667,6 @@ private fun ProfileEffectBadge(effectId: String) {
         Text("Profile Effect", fontSize = 11.sp, color = AppColors.Primary, fontWeight = FontWeight.SemiBold)
     }
 }
-
-// ─── ParticleBackground ───────────────────────────────────────────────────────
 
 @Composable
 private fun ParticleBackground(speedMultiplier: Float = 1f, modifier: Modifier = Modifier) {
@@ -730,8 +701,6 @@ private fun ParticleBackground(speedMultiplier: Float = 1f, modifier: Modifier =
         }
     }
 }
-
-// ─── Gateway helpers (unchanged from original) ────────────────────────────────
 
 private fun resolvePresenceFromSessions(sessions: JSONArray?): Triple<String, List<String>, CustomStatus?> {
     if (sessions == null || sessions.length() == 0) return Triple("offline", emptyList(), null)
@@ -824,8 +793,6 @@ private fun activitiesFromSessions(sessions: JSONArray?): List<PresenceActivity>
     for (i in 0 until sessions.length()) { val s = sessions.getJSONObject(i); val acts = s.optJSONArray("activities") ?: continue; for (j in 0 until acts.length()) { val a = acts.getJSONObject(j); if (a.optInt("type", -1) == 4) continue; val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue; val type = a.optInt("type", 0); if (list.none { it.name == name && it.type == type }) list.add(buildActivity(a)) }  }
     return list
 }
-
-// ─── MainActivity ─────────────────────────────────────────────────────────────
 
 class MainActivity : ComponentActivity() {
 
@@ -975,8 +942,6 @@ class MainActivity : ComponentActivity() {
         gatewayToken = token
     }
 
-    // ─── Screens ──────────────────────────────────────────────────────────────
-
     @Composable
     fun CrashScreen(trace: String) {
         val ctx = LocalContext.current
@@ -1014,11 +979,13 @@ class MainActivity : ComponentActivity() {
         var connections     by remember { mutableStateOf<List<DiscordConnection>?>(null) }
         var badges          by remember { mutableStateOf<List<BadgeInfo>>(emptyList()) }
         var guildCount      by remember { mutableStateOf<Int?>(null) }
+        var friendCount     by remember { mutableStateOf<Int?>(null) }
         var loadingUser     by remember { mutableStateOf(false) }
         var loadingPresence by remember { mutableStateOf(false) }
         var loadingConns    by remember { mutableStateOf(false) }
         var loadingBadges   by remember { mutableStateOf(false) }
         var loadingGuilds   by remember { mutableStateOf(false) }
+        var loadingFriends  by remember { mutableStateOf(false) }
         var showWebView     by remember { mutableStateOf(false) }
         var updateTag       by remember { mutableStateOf<String?>(null) }
         var noInternet      by remember { mutableStateOf(false) }
@@ -1067,6 +1034,8 @@ class MainActivity : ComponentActivity() {
             launch { connections = try { fetchConnections(t) } catch (e: Exception) { addLog("ERROR", "API", "Connections: ${e.message}"); emptyList() }; loadingConns = false }
             loadingGuilds = true
             launch { guildCount = try { fetchGuildCount(t) } catch (e: Exception) { addLog("ERROR", "API", "Guilds: ${e.message}"); null }; loadingGuilds = false }
+            loadingFriends = true
+            launch { friendCount = try { fetchFriendCount(t) } catch (e: Exception) { addLog("ERROR", "API", "Friends: ${e.message}"); null }; loadingFriends = false }
         }
 
         if (noInternet) {
@@ -1103,12 +1072,14 @@ class MainActivity : ComponentActivity() {
                 else      -> UserProfileScreen(
                     user = user, token = token ?: "", loadingUser = loadingUser, loadingPresence = loadingPresence,
                     loadingConns = loadingConns, loadingGuilds = loadingGuilds, loadingBadges = loadingBadges,
+                    loadingFriends = loadingFriends,
                     presence = presence, connections = connections, guildCount = guildCount, badges = badges,
+                    friendCount = friendCount,
                     footerClicks = footerClicks,
                     onFooterClick = { footerClicks++; if (footerClicks >= 5) { showLogs = true; footerClicks = 0 } },
                     onRefresh = {
                         addLog("INFO", "Session", "Manual refresh")
-                        user = null; presence = null; connections = null; guildCount = null; badges = emptyList()
+                        user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null
                         heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
                         gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; refreshTick++
                     },
@@ -1116,13 +1087,11 @@ class MainActivity : ComponentActivity() {
                         addLog("INFO", "Session", "Logout")
                         heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
                         gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; ownUserId = ""
-                        clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null; badges = emptyList()
+                        clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null
                     })
             }
         }
     }
-
-    // ─── Logs ─────────────────────────────────────────────────────────────────
 
     @Composable
     fun LogsScreen(onClose: () -> Unit, logsEnabled: Boolean, onToggle: (Boolean) -> Unit) {
@@ -1169,8 +1138,6 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
-    // ─── Login Screen ─────────────────────────────────────────────────────────
 
     @Composable
     fun LoginScreen(onLoginClick: () -> Unit, footerClicks: Int, onFooterClick: () -> Unit) {
@@ -1233,8 +1200,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ─── WebView ──────────────────────────────────────────────────────────────
-
     @Composable
     fun WebViewScreen(onTokenReceived: (String) -> Unit, onBack: () -> Unit) {
         val currentReceived by rememberUpdatedState(onTokenReceived)
@@ -1279,14 +1244,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ─── User Profile Screen ──────────────────────────────────────────────────
-
     @Composable
     fun UserProfileScreen(
         user: DiscordUser?, token: String, loadingUser: Boolean, loadingPresence: Boolean,
         loadingConns: Boolean, loadingGuilds: Boolean, loadingBadges: Boolean,
+        loadingFriends: Boolean,
         presence: DiscordPresence?, connections: List<DiscordConnection>?,
-        guildCount: Int?, badges: List<BadgeInfo>,
+        guildCount: Int?, badges: List<BadgeInfo>, friendCount: Int?,
         footerClicks: Int, onFooterClick: () -> Unit, onRefresh: () -> Unit, onLogout: () -> Unit
     ) {
         val ctx = LocalContext.current
@@ -1311,7 +1275,6 @@ class MainActivity : ComponentActivity() {
         val scale = remember { Animatable(0.95f) }
         LaunchedEffect(user?.id) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy)) }
 
-        // ── Token warning dialog ──
         if (showTokenWarning) {
             AlertDialog(
                 onDismissRequest = { showTokenWarning = false; pendingAction = null },
@@ -1334,7 +1297,6 @@ class MainActivity : ComponentActivity() {
                 containerColor = AppColors.Surface, shape = RoundedCornerShape(Radius.Card))
         }
 
-        // ── Badge detail dialog ──
         if (selectedBadge != null) {
             AlertDialog(
                 onDismissRequest = { selectedBadge = null },
@@ -1347,7 +1309,6 @@ class MainActivity : ComponentActivity() {
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
 
-            // ── Banner / Profile Theme Gradient ──
             Box(Modifier.fillMaxWidth().height(160.dp)) {
                 when {
                     user?.banner != null -> {
@@ -1355,7 +1316,6 @@ class MainActivity : ComponentActivity() {
                         AsyncImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     }
                     user?.themeColorPrimary != null && user.themeColorAccent != null -> {
-                        // Nitro profile theme — two-tone gradient
                         ProfileThemeGradient(
                             primaryColor = discordColorToCompose(user.themeColorPrimary),
                             accentColor  = discordColorToCompose(user.themeColorAccent),
@@ -1364,6 +1324,10 @@ class MainActivity : ComponentActivity() {
                     }
                     user?.accentColor != null -> {
                         val c = Color(0xFF000000 or user.accentColor.toLong())
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
+                    }
+                    user?.bannerColor != null -> {
+                        val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrElse { AppColors.Primary }
                         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
                     }
                     else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary, Color(0xFF7289DA), AppColors.Background))))
@@ -1382,7 +1346,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         if (user?.avatarDecorationAsset != null) {
-                            AsyncImage("https://cdn.discordapp.com/avatar-decoration-presets/${user.avatarDecorationAsset}.png?size=96&passthrough=true", "decoration", Modifier.fillMaxSize().padding((-8).dp))
+                            AsyncImage("https://cdn.discordapp.com/avatar-decoration-presets/${user.avatarDecorationAsset}.png?size=96&passthrough=true", "decoration", Modifier.size(106.dp).offset((-8).dp, (-8).dp))
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1403,7 +1367,6 @@ class MainActivity : ComponentActivity() {
                     }
                 } else if (user != null) {
 
-                    // ── Token ──
                     ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
                         Button(onClick = { triggerTokenAction("copy") }, modifier = Modifier.fillMaxWidth().height(46.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = if (copied) AppColors.Success.copy(0.8f) else AppColors.Success),
@@ -1426,32 +1389,18 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
 
-                    // ── Name + Status ──
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(user.globalName ?: user.username, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
-                        if (presence != null) {
-                            val sc = statusColor(presence.status)
-                            Row(Modifier.background(sc.copy(0.12f), RoundedCornerShape(Radius.Badge)).border(1.dp, sc.copy(0.25f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.size(7.dp).background(sc, CircleShape)); Spacer(Modifier.width(5.dp)); Text(statusLabel(presence.status), fontSize = 11.sp, color = sc, fontWeight = FontWeight.SemiBold)
-                            }
-                        } else if (loadingPresence) {
-                            Box(Modifier.background(AppColors.TextMuted.copy(0.12f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 4.dp)) { Text("Loading...", fontSize = 11.sp, color = AppColors.TextMuted) }
-                        }
+                        StatusBadge(presence = presence, loadingPresence = loadingPresence)
                     }
 
                     Text("@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "", fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium)
 
-                    // ── Nameplate ──
                     if (user.nameplateAsset != null) {
                         Spacer(Modifier.height(8.dp))
-                        NameplateRow(
-                            asset   = user.nameplateAsset,
-                            label   = user.nameplateLabel,
-                            palette = user.nameplatePalette
-                        )
+                        NameplateRow(asset = user.nameplateAsset, label = user.nameplateLabel, palette = user.nameplatePalette)
                     }
 
-                    // ── Clan tag ──
                     if (user.primaryGuildTag != null) {
                         Spacer(Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.CenterVertically,
@@ -1463,7 +1412,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // ── Custom status ──
                     if (presence?.customStatus != null) {
                         Spacer(Modifier.height(8.dp))
                         val cs = presence.customStatus
@@ -1474,7 +1422,6 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // ── Platforms ──
                     if (presence?.platforms?.isNotEmpty() == true) {
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1486,13 +1433,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // ── Profile Effect ──
                     if (user.profileEffectId != null) {
                         Spacer(Modifier.height(8.dp))
                         ProfileEffectBadge(user.profileEffectId)
                     }
 
-                    // ── Theme Colors swatch ──
                     if (user.themeColorPrimary != null && user.themeColorAccent != null) {
                         Spacer(Modifier.height(8.dp))
                         Row(
@@ -1507,7 +1452,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // ── Badges ──
+                    if (user.displayNameStyle != null) {
+                        Spacer(Modifier.height(8.dp))
+                        DisplayNameStyleBadge(styleJson = user.displayNameStyle)
+                    }
+
                     if (loadingBadges) {
                         Spacer(Modifier.height(12.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(12.dp), color = AppColors.Primary, strokeWidth = 1.5.dp); Spacer(Modifier.width(6.dp)); Text("Loading badges...", fontSize = 11.sp, color = AppColors.TextMuted) }
@@ -1522,13 +1471,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    // ── Bio ──
                     if (!user.bio.isNullOrBlank()) {
                         Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
                         ProfileSection("About Me", Icons.AutoMirrored.Outlined.Notes) { DiscordMarkdown(user.bio, Modifier.fillMaxWidth()) }
                     }
 
-                    // ── Activity ──
                     if (loadingPresence) {
                         Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
                         ProfileSection("Current Activity", Icons.Outlined.Games) { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading activity...", fontSize = 13.sp, color = AppColors.TextMuted) } }
@@ -1539,7 +1486,6 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
 
-                    // ── Account Info ──
                     val createdMs = snowflakeToTimestamp(user.id)
                     ProfileSection("Account Info", Icons.Outlined.Tag) {
                         InfoRow(Icons.Outlined.Tag, "User ID", user.id)
@@ -1553,12 +1499,14 @@ class MainActivity : ComponentActivity() {
                         if (user.premiumType > 0) InfoRow(Icons.Outlined.WorkspacePremium, "Nitro", nitroLabel(user.premiumType), Color(0xFF5865F2))
                         if (loadingGuilds) InfoRow(Icons.Outlined.Groups, "Servers", "Loading...")
                         else if (guildCount != null) InfoRow(Icons.Outlined.Groups, "Servers", guildCount.toString() + if (guildCount >= 100) "+" else "")
+                        if (loadingFriends) InfoRow(Icons.Outlined.People, "Friends", "Loading...")
+                        else if (friendCount != null) InfoRow(Icons.Outlined.People, "Friends", friendCount.toString())
                         InfoRow(Icons.Outlined.Security, "Public Flags", "0x${user.publicFlags.toString(16).uppercase()} (${user.publicFlags})")
                         if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
                         if (user.avatarDecorationAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Decoration", "Active ✓", AppColors.Success)
                         if (user.nameplateAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Nameplate", if (!user.nameplateLabel.isNullOrBlank()) user.nameplateLabel else "Active ✓", AppColors.Success)
                         if (user.profileEffectId != null) InfoRow(Icons.Outlined.Star, "Profile Effect", "Active (ID: ${user.profileEffectId.take(12)}…)", AppColors.Primary)
-                        if (user.displayNameStyle != null) InfoRow(Icons.Outlined.AutoAwesome, "Name Style", user.displayNameStyle, AppColors.Primary)
+                        if (user.displayNameStyle != null) InfoRow(Icons.Outlined.TextFields, "Name Style", "Active ✓", AppColors.Primary)
                         if (!user.bannerColor.isNullOrBlank()) {
                             val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrNull()
                             if (c != null) {
@@ -1575,7 +1523,6 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
 
-                    // ── Connections ──
                     if (loadingConns) {
                         ProfileSection("Connected Accounts", Icons.Outlined.Link) { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading...", fontSize = 13.sp, color = AppColors.TextMuted) } }
                         Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
@@ -1613,7 +1560,99 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ─── Activity Card ────────────────────────────────────────────────────────
+    @Composable
+    private fun StatusBadge(presence: DiscordPresence?, loadingPresence: Boolean) {
+        when {
+            presence != null -> {
+                val sc = statusColor(presence.status)
+                Row(
+                    modifier = Modifier
+                        .background(sc.copy(0.12f), RoundedCornerShape(Radius.Badge))
+                        .border(1.dp, sc.copy(0.3f), RoundedCornerShape(Radius.Badge))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(8.dp).background(sc, CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text(statusLabel(presence.status), fontSize = 12.sp, color = sc, fontWeight = FontWeight.Bold)
+                    if (presence.platforms.isNotEmpty()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text("·", fontSize = 12.sp, color = sc.copy(0.6f))
+                        Spacer(Modifier.width(6.dp))
+                        Text(presence.platforms.joinToString(" & "), fontSize = 11.sp, color = sc.copy(0.8f))
+                    }
+                }
+            }
+            loadingPresence -> {
+                Box(
+                    Modifier
+                        .background(AppColors.TextMuted.copy(0.10f), RoundedCornerShape(Radius.Badge))
+                        .border(1.dp, AppColors.TextMuted.copy(0.15f), RoundedCornerShape(Radius.Badge))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(9.dp), color = AppColors.TextMuted, strokeWidth = 1.5.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Loading…", fontSize = 11.sp, color = AppColors.TextMuted)
+                    }
+                }
+            }
+            else -> {
+                Row(
+                    modifier = Modifier
+                        .background(AppColors.TextMuted.copy(0.08f), RoundedCornerShape(Radius.Badge))
+                        .border(1.dp, AppColors.TextMuted.copy(0.15f), RoundedCornerShape(Radius.Badge))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(Modifier.size(8.dp).background(AppColors.TextMuted, CircleShape))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Offline", fontSize = 12.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun DisplayNameStyleBadge(styleJson: String) {
+        val parsed = runCatching { JSONObject(styleJson) }.getOrNull()
+        val fontName = parsed?.optString("font_type")?.takeIf { it.isNotEmpty() && it != "null" }
+            ?: parsed?.optString("font")?.takeIf { it.isNotEmpty() && it != "null" }
+            ?: styleJson.trim().let { if (it.length < 40) it else null }
+            ?: "Custom"
+        val colorHex = parsed?.optString("color_primary")?.takeIf { it.isNotEmpty() && it != "null" }
+        val badgeColor = if (colorHex != null) {
+            runCatching {
+                val hex = if (colorHex.startsWith("#")) colorHex else "#$colorHex"
+                Color(android.graphics.Color.parseColor(hex))
+            }.getOrElse { AppColors.Primary }
+        } else AppColors.Primary
+
+        Row(
+            modifier = Modifier
+                .background(badgeColor.copy(0.10f), RoundedCornerShape(Radius.Badge))
+                .border(1.dp, badgeColor.copy(0.30f), RoundedCornerShape(Radius.Badge))
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.TextFields, null, tint = badgeColor, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = fontName.replaceFirstChar { it.uppercase() },
+                fontSize = 11.sp,
+                color = badgeColor,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.width(6.dp))
+            Box(
+                Modifier
+                    .background(badgeColor.copy(0.15f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            ) {
+                Text("Name Style", fontSize = 9.sp, color = badgeColor.copy(0.8f), fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
 
     @Composable
     fun ActivityCard(activity: PresenceActivity) {
@@ -1684,8 +1723,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ─── Small helpers ────────────────────────────────────────────────────────
-
     @Composable
     fun ProfileSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
         Column(Modifier.fillMaxWidth()) {
@@ -1730,8 +1767,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ─── API ──────────────────────────────────────────────────────────────────
-
     private suspend fun fetchUserInfo(token: String): DiscordUser = withContext(Dispatchers.IO) {
         addLog("INFO", "API", "GET /users/@me")
         val resp = httpClient.newCall(Request.Builder().url("https://discord.com/api/v10/users/@me").header("Authorization", token).build()).execute()
@@ -1743,6 +1778,8 @@ class MainActivity : ComponentActivity() {
         val col = j.optJSONObject("collectibles")
         val np  = col?.optJSONObject("nameplate")
         val pg  = j.optJSONObject("primary_guild")
+        val nameStyleRaw = j.optJSONObject("display_name_style")?.toString()
+            ?: j.optString("display_name_style").takeIf { it.isNotEmpty() && it != "null" }
         addLog("SUCCESS", "API", "HTTP 200 /users/@me → ${j.optString("username")}")
         DiscordUser(
             id = j.optString("id"), username = j.optString("username"),
@@ -1767,32 +1804,8 @@ class MainActivity : ComponentActivity() {
             themeColorPrimary = null,
             themeColorAccent  = null,
             profileEffectId   = null,
-            displayNameStyle  = null
+            displayNameStyle  = nameStyleRaw
         )
-    }
-
-    private suspend fun fetchProfileExtras(token: String, userId: String): Triple<Int?, Int?, String?> = withContext(Dispatchers.IO) {
-        // Returns (themeColorPrimary, themeColorAccent, profileEffectId)
-        try {
-            val resp = httpClient.newCall(
-                Request.Builder()
-                    .url("https://discord.com/api/v10/users/$userId/profile?with_mutual_guilds=false&with_mutual_friends_count=false")
-                    .header("Authorization", token)
-                    .build()
-            ).execute()
-            if (!resp.isSuccessful) return@withContext Triple(null, null, null)
-            val json       = JSONObject(resp.body?.string() ?: return@withContext Triple(null, null, null))
-            val up         = json.optJSONObject("user_profile")
-            val themeArr   = up?.optJSONArray("theme_colors")
-            val primary    = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0).takeIf { it != 0 } else null
-            val accent     = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1).takeIf { it != 0 } else null
-            val effectId   = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
-            addLog("SUCCESS", "API", "Profile extras: theme=${primary != null} effect=${effectId != null}")
-            Triple(primary, accent, effectId)
-        } catch (e: Exception) {
-            addLog("WARN", "API", "fetchProfileExtras failed: ${e.message}")
-            Triple(null, null, null)
-        }
     }
 
     private suspend fun fetchUserBadges(token: String, userId: String): List<BadgeInfo> = withContext(Dispatchers.IO) {
@@ -1804,7 +1817,15 @@ class MainActivity : ComponentActivity() {
                     .build()
             ).execute()
             if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /profile"); return@withContext emptyList() }
-            val json      = JSONObject(resp.body?.string() ?: return@withContext emptyList())
+            val body = resp.body?.string() ?: return@withContext emptyList()
+            val json      = JSONObject(body)
+
+            val up = json.optJSONObject("user_profile")
+            val themeArr   = up?.optJSONArray("theme_colors")
+            val primary    = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0).takeIf { it != 0 } else null
+            val accent     = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1).takeIf { it != 0 } else null
+            val effectId   = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
+
             val badgesArr = json.optJSONArray("badges") ?: return@withContext emptyList()
             val result    = mutableListOf<BadgeInfo>()
             for (i in 0 until badgesArr.length()) {
@@ -1815,7 +1836,7 @@ class MainActivity : ComponentActivity() {
                 val link = b.optString("link").takeIf { it.isNotEmpty() && it != "null" }
                 result.add(BadgeInfo(id = id, label = badgeLabelFromId(id, desc), color = badgeColorFromId(id), cdnUrl = "https://cdn.discordapp.com/badge-icons/$icon.png", description = desc, link = link))
             }
-            addLog("SUCCESS", "API", "Badges: ${result.size}")
+            addLog("SUCCESS", "API", "Badges: ${result.size} theme=${primary != null} effect=${effectId != null}")
             result
         } catch (e: Exception) { addLog("ERROR", "API", "fetchUserBadges: ${e.message}"); emptyList() }
     }
@@ -1854,6 +1875,25 @@ class MainActivity : ComponentActivity() {
         if (!resp.isSuccessful) { addLog("ERROR", "API", "HTTP ${resp.code} /guilds"); return@withContext null }
         val count = JSONArray(resp.body?.string() ?: return@withContext null).length()
         addLog("SUCCESS", "API", "Guilds: $count"); count
+    }
+
+    private suspend fun fetchFriendCount(token: String): Int? = withContext(Dispatchers.IO) {
+        try {
+            val resp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v10/users/@me/relationships")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /relationships"); return@withContext null }
+            val arr = JSONArray(resp.body?.string() ?: return@withContext null)
+            var count = 0
+            for (i in 0 until arr.length()) {
+                val rel = arr.getJSONObject(i)
+                if (rel.optInt("type", -1) == 1) count++
+            }
+            addLog("SUCCESS", "API", "Friends: $count"); count
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchFriendCount: ${e.message}"); null }
     }
 
     private suspend fun checkLatestVersion(): String? = withContext(Dispatchers.IO) {
