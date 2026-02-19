@@ -155,6 +155,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -177,6 +178,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.random.Random
 
 private val CURRENT_VERSION: String get() = BuildConfig.VERSION_NAME
@@ -212,7 +214,8 @@ data class DiscordUser(
     val themeColorPrimary: Int?,
     val themeColorAccent: Int?,
     val profileEffectId: String?,
-    val displayNameStyle: String?
+    val displayNameStyle: String?,
+    val themeGradientAngle: Float
 )
 
 data class CustomStatus(
@@ -600,17 +603,25 @@ private fun DiscordMarkdown(text: String, modifier: Modifier = Modifier) {
 private fun ProfileThemeGradient(
     primaryColor: Color,
     accentColor: Color,
+    angleRadians: Float = 0f,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier.background(
-            Brush.linearGradient(
+    Canvas(modifier = modifier) {
+        val w = size.width; val h = size.height
+        val cx = w / 2f; val cy = h / 2f
+        val diag = sqrt(w * w + h * h) / 2f
+        val cos = kotlin.math.cos(angleRadians); val sin = kotlin.math.sin(angleRadians)
+        val startX = cx - cos * diag; val startY = cy - sin * diag
+        val endX   = cx + cos * diag; val endY   = cy + sin * diag
+        drawRect(
+            brush = Brush.linearGradient(
                 colors = listOf(primaryColor, accentColor),
-                start  = Offset(0f, 0f),
-                end    = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
-            )
+                start  = Offset(startX, startY),
+                end    = Offset(endX, endY)
+            ),
+            size = size
         )
-    )
+    }
 }
 
 @Composable
@@ -793,6 +804,14 @@ private fun activitiesFromSessions(sessions: JSONArray?): List<PresenceActivity>
     for (i in 0 until sessions.length()) { val s = sessions.getJSONObject(i); val acts = s.optJSONArray("activities") ?: continue; for (j in 0 until acts.length()) { val a = acts.getJSONObject(j); if (a.optInt("type", -1) == 4) continue; val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue; val type = a.optInt("type", 0); if (list.none { it.name == name && it.type == type }) list.add(buildActivity(a)) }  }
     return list
 }
+
+private data class ProfileData(
+    val badges: List<BadgeInfo>,
+    val themeColorPrimary: Int?,
+    val themeColorAccent: Int?,
+    val profileEffectId: String?,
+    val gradientAngle: Float
+)
 
 class MainActivity : ComponentActivity() {
 
@@ -1027,7 +1046,19 @@ class MainActivity : ComponentActivity() {
             }
             loadingBadges = true
             launch {
-                badges = try { val uid = fetched?.id ?: ""; if (uid.isNotEmpty()) fetchUserBadges(t, uid) else emptyList() } catch (e: Exception) { addLog("ERROR", "API", "Badges: ${e.message}"); emptyList() }
+                val profileResult = try { val uid = fetched?.id ?: ""; if (uid.isNotEmpty()) fetchProfileData(t, uid) else null } catch (e: Exception) { addLog("ERROR", "API", "Profile: ${e.message}"); null }
+                if (profileResult != null) {
+                    badges = profileResult.badges
+                    val prevUser = user
+                    if (prevUser != null && (profileResult.themeColorPrimary != null || profileResult.themeColorAccent != null || profileResult.profileEffectId != null)) {
+                        user = prevUser.copy(
+                            themeColorPrimary  = profileResult.themeColorPrimary ?: prevUser.themeColorPrimary,
+                            themeColorAccent   = profileResult.themeColorAccent  ?: prevUser.themeColorAccent,
+                            profileEffectId    = profileResult.profileEffectId   ?: prevUser.profileEffectId,
+                            themeGradientAngle = profileResult.gradientAngle
+                        )
+                    }
+                }
                 loadingBadges = false
             }
             loadingConns = true
@@ -1309,18 +1340,29 @@ class MainActivity : ComponentActivity() {
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
 
+            val hasThemeGradient = user?.themeColorPrimary != null && user.themeColorAccent != null
+            val themeAngleRad    = if (hasThemeGradient) user!!.themeGradientAngle else 0f
+
             Box(Modifier.fillMaxWidth().height(160.dp)) {
                 when {
-                    user?.banner != null -> {
-                        val ext = if (user.banner.startsWith("a_")) "gif" else "png"
-                        AsyncImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    }
-                    user?.themeColorPrimary != null && user.themeColorAccent != null -> {
+                    hasThemeGradient -> {
                         ProfileThemeGradient(
-                            primaryColor = discordColorToCompose(user.themeColorPrimary),
-                            accentColor  = discordColorToCompose(user.themeColorAccent),
-                            modifier     = Modifier.fillMaxSize()
+                            primaryColor  = discordColorToCompose(user!!.themeColorPrimary!!),
+                            accentColor   = discordColorToCompose(user.themeColorAccent!!),
+                            angleRadians  = themeAngleRad,
+                            modifier      = Modifier.fillMaxSize()
                         )
+                    if (user.banner != null) {
+                        val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
+                        AsyncImage(
+                            "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600",
+                            null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+                        )
+                    }
+                    }
+                    user?.banner != null -> {
+                        val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
+                        AsyncImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     }
                     user?.accentColor != null -> {
                         val c = Color(0xFF000000 or user.accentColor.toLong())
@@ -1334,19 +1376,43 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+
+            Column(Modifier.fillMaxWidth().then(if (hasThemeGradient) Modifier.background(
+                Brush.verticalGradient(
+                    0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.14f),
+                    0.5f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.10f),
+                    1f to Color.Transparent
+                )
+            ) else Modifier).padding(horizontal = 20.dp)) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
-                        if (user?.avatar != null) {
-                            val ext = if (user.avatar.startsWith("a_")) "gif" else "png"
-                            AsyncImage("https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        } else {
-                            Box(Modifier.fillMaxSize().background(AppColors.Primary), contentAlignment = Alignment.Center) {
-                                Text(user?.username?.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 34.sp, fontWeight = FontWeight.Black, color = AppColors.OnPrimary)
+                    Box(Modifier.size(98.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
+                            if (user?.avatar != null) {
+                                val ext = if (user.avatar.startsWith("a_")) "gif" else "png"
+                                AsyncImage(
+                                    model = coil.request.ImageRequest.Builder(LocalContext.current)
+                                        .data("https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256")
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Box(Modifier.fillMaxSize().background(AppColors.Primary), contentAlignment = Alignment.Center) {
+                                    Text(user?.username?.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 34.sp, fontWeight = FontWeight.Black, color = AppColors.OnPrimary)
+                                }
                             }
                         }
                         if (user?.avatarDecorationAsset != null) {
-                            AsyncImage("https://cdn.discordapp.com/avatar-decoration-presets/${user.avatarDecorationAsset}.png?size=96&passthrough=true", "decoration", Modifier.size(106.dp).offset((-8).dp, (-8).dp))
+                            AsyncImage(
+                                model = coil.request.ImageRequest.Builder(LocalContext.current)
+                                    .data("https://cdn.discordapp.com/avatar-decoration-presets/${user.avatarDecorationAsset}.png?size=160&passthrough=true")
+                                    .crossfade(false)
+                                    .build(),
+                                contentDescription = "decoration",
+                                modifier = Modifier.size(98.dp)
+                            )
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1804,11 +1870,12 @@ class MainActivity : ComponentActivity() {
             themeColorPrimary = null,
             themeColorAccent  = null,
             profileEffectId   = null,
-            displayNameStyle  = nameStyleRaw
+            displayNameStyle  = nameStyleRaw,
+            themeGradientAngle = 0f
         )
     }
 
-    private suspend fun fetchUserBadges(token: String, userId: String): List<BadgeInfo> = withContext(Dispatchers.IO) {
+    private suspend fun fetchProfileData(token: String, userId: String): ProfileData = withContext(Dispatchers.IO) {
         try {
             val resp = httpClient.newCall(
                 Request.Builder()
@@ -1816,17 +1883,19 @@ class MainActivity : ComponentActivity() {
                     .header("Authorization", token)
                     .build()
             ).execute()
-            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /profile"); return@withContext emptyList() }
-            val body = resp.body?.string() ?: return@withContext emptyList()
-            val json      = JSONObject(body)
+            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /profile"); return@withContext ProfileData(emptyList(), null, null, null, 0f) }
+            val body = resp.body?.string() ?: return@withContext ProfileData(emptyList(), null, null, null, 0f)
+            val json = JSONObject(body)
 
             val up = json.optJSONObject("user_profile")
-            val themeArr   = up?.optJSONArray("theme_colors")
-            val primary    = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0).takeIf { it != 0 } else null
-            val accent     = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1).takeIf { it != 0 } else null
-            val effectId   = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
+            val themeArr = up?.optJSONArray("theme_colors")
+            val primary  = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0).takeIf { it != 0 } else null
+            val accent   = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1).takeIf { it != 0 } else null
+            val effectId = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
+            val angleRaw = up?.optDouble("theme_gradient_angle", 0.0) ?: 0.0
+            val angleRad = (angleRaw * kotlin.math.PI / 180.0).toFloat()
 
-            val badgesArr = json.optJSONArray("badges") ?: return@withContext emptyList()
+            val badgesArr = json.optJSONArray("badges") ?: JSONArray()
             val result    = mutableListOf<BadgeInfo>()
             for (i in 0 until badgesArr.length()) {
                 val b    = badgesArr.getJSONObject(i)
@@ -1836,9 +1905,9 @@ class MainActivity : ComponentActivity() {
                 val link = b.optString("link").takeIf { it.isNotEmpty() && it != "null" }
                 result.add(BadgeInfo(id = id, label = badgeLabelFromId(id, desc), color = badgeColorFromId(id), cdnUrl = "https://cdn.discordapp.com/badge-icons/$icon.png", description = desc, link = link))
             }
-            addLog("SUCCESS", "API", "Badges: ${result.size} theme=${primary != null} effect=${effectId != null}")
-            result
-        } catch (e: Exception) { addLog("ERROR", "API", "fetchUserBadges: ${e.message}"); emptyList() }
+            addLog("SUCCESS", "API", "Profile: badges=${result.size} theme=${primary != null} effect=${effectId != null} angle=${angleRaw}°")
+            ProfileData(result, primary, accent, effectId, angleRad)
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchProfileData: ${e.message}"); ProfileData(emptyList(), null, null, null, 0f) }
     }
 
     private fun badgeLabelFromId(id: String, fallback: String): String = when {
