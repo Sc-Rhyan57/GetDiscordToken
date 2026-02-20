@@ -486,14 +486,6 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                 selectedTabIndex = selectedTab,
                 containerColor   = DC.Surface,
                 contentColor     = DC.Primary,
-                indicator        = { tabPos ->
-                    if (selectedTab < tabPos.size) {
-                        Box(
-                            Modifier.tabIndicatorOffset(tabPos[selectedTab]).height(3.dp)
-                                .padding(horizontal = 24.dp).background(DC.Primary, RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                        )
-                    }
-                },
                 divider = { HorizontalDivider(color = DC.Border) }
             ) {
                 listOf(
