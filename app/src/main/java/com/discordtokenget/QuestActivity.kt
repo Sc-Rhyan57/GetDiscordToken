@@ -116,11 +116,15 @@ private val QC = object {
     val Nitro         = Color(0xFF5865F2)
 }
 
+private val SUPER_PROPERTIES = "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTI7IE1vYmlsZTsgcnY6MTQ3LjApIEdlY2tvLzE0Ny4wIEZpcmVmb3gvMTQ3LjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNDcuMCIsIm9zX3ZlcnNpb24iOiIxMiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiJodHRwczovL2Rpc2NvcmQuY29tL2xvZ2luP3JlZGlyZWN0X3RvPSUyRnF1ZXN0LWhvbWUiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiJkaXNjb3JkLmNvbSIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjQ5OTEyMywiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0="
 private val DISCORD_HEADERS = mapOf(
     "Content-Type" to "application/json",
-    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9166 Chrome/124.0.6367.243 Electron/30.2.0 Safari/537.36",
-    "X-Super-Properties" to "ewogICJvcyI6ICJXaW5kb3dzIiwKICAiY2xpZW50X2J1aWxkX251bWJlciI6IDE1MjQ1MAp9",
-    "X-Discord-Locale" to "en-US"
+    "User-Agent" to "Mozilla/5.0 (Android 12; Mobile; rv:147.0) Gecko/147.0 Firefox/147.0",
+    "X-Super-Properties" to SUPER_PROPERTIES,
+    "X-Discord-Locale" to "pt-BR",
+    "X-Discord-Timezone" to "America/Sao_Paulo",
+    "X-Debug-Options" to "bugReporterEnabled",
+    "Referer" to "https://discord.com/quest-home"
 )
 
 data class QuestItem(
@@ -557,24 +561,52 @@ class QuestActivity : ComponentActivity() {
     }
 
     private suspend fun fetchQuests(token: String): List<QuestItem> = withContext(Dispatchers.IO) {
-        val resp = questHttpClient.newCall(
-            buildRequest("https://discord.com/api/v10/users/@me/quests?with_user_status=true", token).build()
-        ).execute()
+        val heartbeatSessionId = java.util.UUID.randomUUID().toString()
+        val adSessionId = java.util.UUID.randomUUID().toString()
 
-        val body = resp.body?.string() ?: throw Exception("Empty response")
+        val collected = mutableListOf<JSONObject>()
+        var placement = 1
+        val seenIds = mutableSetOf<String>()
 
-        if (!resp.isSuccessful) {
-            val errorMsg = try {
-                val obj = JSONObject(body)
-                obj.optString("message", "HTTP ${resp.code}")
-            } catch (_: Exception) { "HTTP ${resp.code}" }
-            throw Exception(errorMsg)
+        while (placement <= 50) {
+            val url = "https://discord.com/api/v9/quests/decision?placement=$placement" +
+                "&client_heartbeat_session_id=$heartbeatSessionId" +
+                "&client_ad_session_id=$adSessionId"
+
+            val resp = questHttpClient.newCall(buildRequest(url, token).build()).execute()
+            val body = resp.body?.string() ?: break
+
+            if (!resp.isSuccessful) {
+                if (placement == 1) {
+                    val errorMsg = try {
+                        JSONObject(body).optString("message", "HTTP ${resp.code}")
+                    } catch (_: Exception) { "HTTP ${resp.code}" }
+                    throw Exception(errorMsg)
+                }
+                break
+            }
+
+            val obj = try { JSONObject(body) } catch (_: Exception) { break }
+            val questObj = obj.optJSONObject("quest") ?: break
+            val questId = questObj.optString("id", "")
+            if (questId.isEmpty() || seenIds.contains(questId)) break
+            seenIds.add(questId)
+
+            val userStatusResp = questHttpClient.newCall(
+                buildRequest("https://discord.com/api/v9/users/@me/quests/$questId", token).build()
+            ).execute()
+            val userStatusBody = userStatusResp.body?.string() ?: ""
+            val userStatusObj = try { JSONObject(userStatusBody) } catch (_: Exception) { JSONObject() }
+
+            questObj.put("user_status", userStatusObj)
+            collected.add(questObj)
+            placement++
         }
 
-        val arr = try { JSONArray(body) } catch (_: Exception) {
-            val obj = JSONObject(body)
-            obj.optJSONArray("quests") ?: throw Exception("Unexpected response format")
-        }
+        if (collected.isEmpty()) return@withContext emptyList<QuestItem>()
+
+        val arr = JSONArray()
+        collected.forEach { arr.put(it) }
 
         val result = mutableListOf<QuestItem>()
         val now = System.currentTimeMillis()
@@ -676,23 +708,16 @@ class QuestActivity : ComponentActivity() {
             when (taskName) {
                 "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
                     val enrollResp = questHttpClient.newCall(
-                        buildRequest("https://discord.com/api/v10/users/@me/quests?with_user_status=true", token).build()
+                        buildRequest("https://discord.com/api/v9/users/@me/quests/$questId", token).build()
                     ).execute()
                     val enrolledAt = try {
-                        val rawArr = try { JSONArray(enrollResp.body?.string() ?: "[]") } catch (_: Exception) { JSONArray() }
+                        val statusObj = try { JSONObject(enrollResp.body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
                         var ea = System.currentTimeMillis() - 60000L
-                        for (i in 0 until rawArr.length()) {
-                            val q = rawArr.getJSONObject(i)
-                            if (q.optString("id") == questId) {
-                                val us = q.optJSONObject("user_status")
-                                val str = us?.optString("enrolled_at") ?: ""
-                                if (str.isNotEmpty()) {
-                                    ea = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                                        .also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }
-                                        .parse(str.substringBefore('.'))?.time ?: ea
-                                }
-                                break
-                            }
+                        val str = statusObj.optString("enrolled_at", "")
+                        if (str.isNotEmpty()) {
+                            ea = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                .also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                                .parse(str.substringBefore('.'))?.time ?: ea
                         }
                         ea
                     } catch (_: Exception) { System.currentTimeMillis() - 60000L }
@@ -707,7 +732,7 @@ class QuestActivity : ComponentActivity() {
                             val reqBody = JSONObject().apply { put("timestamp", ts) }
                                 .toString().toRequestBody("application/json".toMediaType())
                             val resp = questHttpClient.newCall(
-                                buildRequest("https://discord.com/api/v10/quests/$questId/video-progress", token)
+                                buildRequest("https://discord.com/api/v9/quests/$questId/video-progress", token)
                                     .post(reqBody).build()
                             ).execute()
                             val respBody = resp.body?.string() ?: ""
@@ -729,7 +754,7 @@ class QuestActivity : ComponentActivity() {
                     val finalBody = JSONObject().apply { put("timestamp", secondsNeeded.toDouble()) }
                         .toString().toRequestBody("application/json".toMediaType())
                     questHttpClient.newCall(
-                        buildRequest("https://discord.com/api/v10/quests/$questId/video-progress", token)
+                        buildRequest("https://discord.com/api/v9/quests/$questId/video-progress", token)
                             .post(finalBody).build()
                     ).execute()
 
@@ -739,7 +764,7 @@ class QuestActivity : ComponentActivity() {
 
                 "PLAY_ACTIVITY" -> {
                     val dmResp = questHttpClient.newCall(
-                        buildRequest("https://discord.com/api/v10/users/@me/channels", token).build()
+                        buildRequest("https://discord.com/api/v9/users/@me/channels", token).build()
                     ).execute()
                     val channelId = try {
                         val arr = JSONArray(dmResp.body?.string() ?: "[]")
@@ -754,7 +779,7 @@ class QuestActivity : ComponentActivity() {
                             put("terminal", false)
                         }.toString().toRequestBody("application/json".toMediaType())
                         val resp = questHttpClient.newCall(
-                            buildRequest("https://discord.com/api/v10/quests/$questId/heartbeat", token)
+                            buildRequest("https://discord.com/api/v9/quests/$questId/heartbeat", token)
                                 .post(reqBody).build()
                         ).execute()
                         val respStr = resp.body?.string() ?: "{}"
@@ -773,7 +798,7 @@ class QuestActivity : ComponentActivity() {
                         put("terminal", true)
                     }.toString().toRequestBody("application/json".toMediaType())
                     questHttpClient.newCall(
-                        buildRequest("https://discord.com/api/v10/quests/$questId/heartbeat", token)
+                        buildRequest("https://discord.com/api/v9/quests/$questId/heartbeat", token)
                             .post(termBody).build()
                     ).execute()
 
