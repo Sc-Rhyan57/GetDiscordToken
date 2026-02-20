@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -19,11 +18,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,10 +26,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,12 +39,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.outlined.AddCircleOutline
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Cast
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
@@ -81,7 +70,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.StrokeCap
+
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -97,7 +86,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,7 +95,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap as GraphicsStrokeCap
+
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -141,6 +129,44 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
+
+private object QC {
+    val Bg            = Color(0xFF1E1F22)
+    val Surface       = Color(0xFF2B2D31)
+    val SurfaceVar    = Color(0xFF313338)
+    val Primary       = Color(0xFF5865F2)
+    val Success       = Color(0xFF23A55A)
+    val Warning       = Color(0xFFFAA61A)
+    val Error         = Color(0xFFED4245)
+    val TextPrimary   = Color(0xFFF2F3F5)
+    val TextSecondary = Color(0xFFB5BAC1)
+    val TextMuted     = Color(0xFF80848E)
+    val Divider       = Color(0xFF3F4147)
+    val OnPrimary     = Color(0xFFFFFFFF)
+    val OrbViolet     = Color(0xFFB675F0)
+    val OrbPurple     = Color(0xFF9B59B6)
+    val Gold          = Color(0xFFFFD700)
+
+    val R_Small  = 8.dp
+    val R_Medium = 12.dp
+    val R_Large  = 16.dp
+    val R_XLarge = 20.dp
+    val R_Card   = 18.dp
+    val R_Button = 14.dp
+    val R_Badge  = 20.dp
+}
+
+private data class QuestLog(val timestamp: String, val level: String, val tag: String, val message: String, val detail: String? = null)
+
+private val questLogs       = mutableStateListOf<QuestLog>()
+private val questLogEnabled = mutableStateOf(true)
+
+private fun qLog(level: String, tag: String, message: String, detail: String? = null) {
+    if (!questLogEnabled.value) return
+    val ts = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date())
+    questLogs.add(0, QuestLog(ts, level, tag, message, detail))
+    if (questLogs.size > 300) questLogs.removeAt(questLogs.size - 1)
+}
 
 private val questHttpClient = OkHttpClient.Builder()
     .connectTimeout(30, TimeUnit.SECONDS)
@@ -306,14 +332,14 @@ data class QuestFetchResult(
 
 private suspend fun fetchAllQuests(token: String): QuestFetchResult = withContext(Dispatchers.IO) {
     val now = System.currentTimeMillis()
-    addLog("INFO", "Quest", "Fetching active quests")
+    qLog("INFO", "Quest", "Fetching active quests")
 
     val activeResp = questHttpClient.newCall(
         questReq("https://discord.com/api/v10/users/@me/quests?with_userquest=true&include_dismissed=false&user_quest_completions=false", token).build()
     ).execute()
     val activeBody = activeResp.body?.string() ?: ""
 
-    addLog(if (activeResp.isSuccessful) "SUCCESS" else "ERROR", "Quest", "Active quests HTTP ${activeResp.code}")
+    qLog(if (activeResp.isSuccessful) "SUCCESS" else "ERROR", "Quest", "Active quests HTTP ${activeResp.code}")
 
     if (!activeResp.isSuccessful) {
         val msg = try { JSONObject(activeBody).optString("message", "HTTP ${activeResp.code}") }
@@ -333,14 +359,14 @@ private suspend fun fetchAllQuests(token: String): QuestFetchResult = withContex
         if (item.claimedAt != null) continue
         active.add(item)
     }
-    addLog("SUCCESS", "Quest", "Active: ${active.size}")
+    qLog("SUCCESS", "Quest", "Active: ${active.size}")
 
-    addLog("INFO", "Quest", "Fetching claimed quests")
+    qLog("INFO", "Quest", "Fetching claimed quests")
     val claimedResp = questHttpClient.newCall(
         questReq("https://discord.com/api/v10/users/@me/quests?with_userquest=true&include_dismissed=true&user_quest_completions=true", token).build()
     ).execute()
     val claimedBody = claimedResp.body?.string() ?: ""
-    addLog(if (claimedResp.isSuccessful) "SUCCESS" else "WARN", "Quest", "Claimed quests HTTP ${claimedResp.code}")
+    qLog(if (claimedResp.isSuccessful) "SUCCESS" else "WARN", "Quest", "Claimed quests HTTP ${claimedResp.code}")
 
     val claimedArr = try {
         val parsed = try { JSONObject(claimedBody) } catch (_: Exception) { null }
@@ -352,27 +378,27 @@ private suspend fun fetchAllQuests(token: String): QuestFetchResult = withContex
         val item = parseQuestItem(claimedArr.getJSONObject(i)) ?: continue
         if (item.claimedAt != null) claimed.add(item)
     }
-    addLog("SUCCESS", "Quest", "Claimed: ${claimed.size}")
+    qLog("SUCCESS", "Quest", "Claimed: ${claimed.size}")
 
-    addLog("INFO", "Quest", "Fetching orb balance")
+    qLog("INFO", "Quest", "Fetching orb balance")
     val orbResp = questHttpClient.newCall(
         questReq("https://discord.com/api/v10/users/@me/quests/collectibles/balance", token).build()
     ).execute()
     val orbBody = orbResp.body?.string() ?: ""
     val orbs = try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
-    if (orbs != null) addLog("SUCCESS", "Quest", "Orbs: $orbs") else addLog("WARN", "Quest", "Orbs not available")
+    if (orbs != null) qLog("SUCCESS", "Quest", "Orbs: $orbs") else qLog("WARN", "Quest", "Orbs not available")
 
     QuestFetchResult(active, claimed, orbs)
 }
 
 private suspend fun enrollInQuest(token: String, questId: String): Boolean = withContext(Dispatchers.IO) {
-    addLog("INFO", "Quest", "Enrolling in quest $questId")
+    qLog("INFO", "Quest", "Enrolling in quest $questId")
     val body = JSONObject().apply { put("platform", 0) }.toString().toRequestBody("application/json".toMediaType())
     val resp = questHttpClient.newCall(
         questReq("https://discord.com/api/v10/quests/$questId/enroll", token).post(body).build()
     ).execute()
     val ok = resp.isSuccessful
-    addLog(if (ok) "SUCCESS" else "ERROR", "Quest", "Enroll HTTP ${resp.code}")
+    qLog(if (ok) "SUCCESS" else "ERROR", "Quest", "Enroll HTTP ${resp.code}")
     ok
 }
 
@@ -392,7 +418,7 @@ private suspend fun completeQuestTask(
 
     fun upd(log: String, prog: Long = secondsDone, rs: RunState = RunState.RUNNING) {
         cur = cur.copy(runState = rs, log = log, progress = prog)
-        addLog(when (rs) { RunState.ERROR -> "ERROR"; RunState.DONE -> "SUCCESS"; else -> "INFO" }, "Quest", log)
+        qLog(when (rs) { RunState.ERROR -> "ERROR"; RunState.DONE -> "SUCCESS"; else -> "INFO" }, "Quest", log)
     }
 
     try {
@@ -410,7 +436,7 @@ private suspend fun completeQuestTask(
                 val statusBody = statusResp.body?.string() ?: "{}"
                 enrolledAt = try { JSONObject(statusBody).optString("enrolled_at", "").takeIf { it.isNotEmpty() && it != "null" } } catch (_: Exception) { null }
                     ?: (System.currentTimeMillis() - 10_000L).toString()
-                addLog("SUCCESS", "Quest", "Enrolled at $enrolledAt")
+                qLog("SUCCESS", "Quest", "Enrolled at $enrolledAt")
             } else {
                 upd("Quest not enrolled. Open Discord → Quests → Accept quest first.", prog = 0, rs = RunState.NOT_ENROLLED)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
@@ -442,7 +468,7 @@ private suspend fun completeQuestTask(
                                 .post(body).build()
                         ).execute()
                         val respBody = resp.body?.string() ?: "{}"
-                        addLog("INFO", "Quest", "video-progress HTTP ${resp.code}")
+                        qLog("INFO", "Quest", "video-progress HTTP ${resp.code}")
 
                         completed   = try { val o = JSONObject(respBody); !o.isNull("completed_at") && o.optString("completed_at").isNotEmpty() } catch (_: Exception) { false }
                         secondsDone = min(secondsNeeded, secondsDone + step)
@@ -464,7 +490,7 @@ private suspend fun completeQuestTask(
                         questReq("https://discord.com/api/v10/quests/$questId/video-progress", token)
                             .post(finalBody).build()
                     ).execute()
-                    addLog("INFO", "Quest", "Final video flush HTTP ${finalResp.code}")
+                    qLog("INFO", "Quest", "Final video flush HTTP ${finalResp.code}")
                 }
 
                 upd("Quest completed! Claim reward in Discord.", secondsNeeded, RunState.DONE)
@@ -475,7 +501,7 @@ private suspend fun completeQuestTask(
                 val dmResp = questHttpClient.newCall(
                     questReq("https://discord.com/api/v10/users/@me/channels", token).build()
                 ).execute()
-                addLog("INFO", "Quest", "DM channels HTTP ${dmResp.code}")
+                qLog("INFO", "Quest", "DM channels HTTP ${dmResp.code}")
 
                 val channelId = try {
                     val arr = JSONArray(dmResp.body?.string() ?: "[]")
@@ -484,7 +510,7 @@ private suspend fun completeQuestTask(
                     ?: throw Exception("No DM channels found. Open at least one DM in Discord.")
 
                 val streamKey = "call:$channelId:1"
-                addLog("INFO", "Quest", "Using streamKey: $streamKey")
+                qLog("INFO", "Quest", "Using streamKey: $streamKey")
                 upd("Spoofing activity play (~${(secondsNeeded - secondsDone) / 60} min remaining)")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
@@ -499,7 +525,7 @@ private suspend fun completeQuestTask(
                             .post(reqBody).build()
                     ).execute()
                     val respStr = resp.body?.string() ?: "{}"
-                    addLog("INFO", "Quest", "heartbeat HTTP ${resp.code}")
+                    qLog("INFO", "Quest", "heartbeat HTTP ${resp.code}")
 
                     val newProgress = try {
                         JSONObject(respStr).optJSONObject("progress")
@@ -519,7 +545,7 @@ private suspend fun completeQuestTask(
                             questReq("https://discord.com/api/v10/quests/$questId/heartbeat", token)
                                 .post(termBody).build()
                         ).execute()
-                        addLog("SUCCESS", "Quest", "Terminal heartbeat HTTP ${termResp.code}")
+                        qLog("SUCCESS", "Quest", "Terminal heartbeat HTTP ${termResp.code}")
                         break
                     }
                     delay(20_000L)
@@ -540,7 +566,7 @@ private suspend fun completeQuestTask(
                     ?: throw Exception("No DM channels found. Open at least one DM in Discord.")
 
                 val streamKey = "call:$channelId:1"
-                addLog("INFO", "Quest", "PLAY_ON_DESKTOP via heartbeat, streamKey=$streamKey")
+                qLog("INFO", "Quest", "PLAY_ON_DESKTOP via heartbeat, streamKey=$streamKey")
                 upd("Spoofing game play (~${(secondsNeeded - secondsDone) / 60} min remaining)")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
@@ -555,7 +581,7 @@ private suspend fun completeQuestTask(
                             .post(reqBody).build()
                     ).execute()
                     val respStr = resp.body?.string() ?: "{}"
-                    addLog("INFO", "Quest", "heartbeat HTTP ${resp.code}")
+                    qLog("INFO", "Quest", "heartbeat HTTP ${resp.code}")
 
                     val newProgress = try {
                         val o  = JSONObject(respStr)
@@ -604,7 +630,7 @@ private suspend fun completeQuestTask(
             }
         }
     } catch (e: Exception) {
-        addLog("ERROR", "Quest", "completeQuestTask: ${e.message}")
+        qLog("ERROR", "Quest", "completeQuestTask: ${e.message}")
         upd("Error: ${e.message}", rs = RunState.ERROR)
         withContext(Dispatchers.Main) { onUpdate(cur) }
     }
@@ -629,11 +655,11 @@ class QuestActivity : ComponentActivity() {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
-                primary    = AppColors.Primary,
-                background = AppColors.Background,
-                surface    = AppColors.Surface
+                primary    = QC.Primary,
+                background = QC.Bg,
+                surface    = QC.Surface
             )) {
-                Surface(Modifier.fillMaxSize(), color = AppColors.Background) {
+                Surface(Modifier.fillMaxSize(), color = QC.Bg) {
                     QuestRoot(token = token, prefs = prefs, onBack = { finish() })
                 }
             }
@@ -660,44 +686,44 @@ private fun QuestTosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
     LaunchedEffect(Unit) { scale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy)) }
 
     Box(
-        Modifier.fillMaxSize().background(AppColors.Background.copy(0.85f)),
+        Modifier.fillMaxSize().background(QC.Bg.copy(0.85f)),
         contentAlignment = Alignment.Center
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(0.92f).scale(scale.value),
-            colors   = CardDefaults.cardColors(containerColor = AppColors.Surface),
-            shape    = RoundedCornerShape(Radius.XLarge),
-            border   = BorderStroke(1.dp, AppColors.Warning.copy(0.4f))
+            colors   = CardDefaults.cardColors(containerColor = QC.Surface),
+            shape    = RoundedCornerShape(QC.R_XLarge),
+            border   = BorderStroke(1.dp, QC.Warning.copy(0.4f))
         ) {
             Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(44.dp).background(AppColors.Warning.copy(0.15f), CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Warning, null, tint = AppColors.Warning, modifier = Modifier.size(24.dp))
+                    Box(Modifier.size(44.dp).background(QC.Warning.copy(0.15f), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.Warning, null, tint = QC.Warning, modifier = Modifier.size(24.dp))
                     }
-                    Text("Terms of Service Warning", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = AppColors.TextPrimary)
+                    Text("Terms of Service Warning", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = QC.TextPrimary)
                 }
-                HorizontalDivider(color = AppColors.Divider)
+                HorizontalDivider(color = QC.Divider)
                 Text(
                     "This tool automates Discord Quest completion via the official API.\n\n" +
                     "Using third-party automation may violate Discord's Terms of Service (Section 9). " +
                     "Your account could be suspended or permanently banned.\n\n" +
                     "This is for educational purposes only. Use at your own risk. " +
                     "Developers are not responsible for any consequences.",
-                    fontSize = 13.sp, color = AppColors.TextSecondary, lineHeight = 20.sp
+                    fontSize = 13.sp, color = QC.TextSecondary, lineHeight = 20.sp
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(
                         onClick  = onDecline,
                         modifier = Modifier.weight(1f),
-                        shape    = RoundedCornerShape(Radius.Button),
-                        border   = BorderStroke(1.dp, AppColors.Error.copy(0.6f))
-                    ) { Text("Decline", color = AppColors.Error, fontWeight = FontWeight.Bold) }
+                        shape    = RoundedCornerShape(QC.R_Button),
+                        border   = BorderStroke(1.dp, QC.Error.copy(0.6f))
+                    ) { Text("Decline", color = QC.Error, fontWeight = FontWeight.Bold) }
                     Button(
                         onClick  = onAccept,
                         modifier = Modifier.weight(1f),
-                        colors   = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
-                        shape    = RoundedCornerShape(Radius.Button)
-                    ) { Text("I Understand", fontWeight = FontWeight.ExtraBold, color = AppColors.OnPrimary) }
+                        colors   = ButtonDefaults.buttonColors(containerColor = QC.Primary),
+                        shape    = RoundedCornerShape(QC.R_Button)
+                    ) { Text("I Understand", fontWeight = FontWeight.ExtraBold, color = QC.OnPrimary) }
                 }
             }
         }
@@ -715,7 +741,7 @@ private fun QuestMainScreen(token: String, onBack: () -> Unit) {
     var logEnabled  by remember { mutableStateOf(true) }
     var footerTaps  by remember { mutableIntStateOf(0) }
 
-    logsEnabled.value = logEnabled
+    questLogEnabled.value = logEnabled
 
     val activeStates  = remember { mutableStateListOf<QuestState>() }
     val claimedStates = remember { mutableStateListOf<QuestState>() }
@@ -742,25 +768,25 @@ private fun QuestMainScreen(token: String, onBack: () -> Unit) {
         QuestLogsScreen(
             onClose    = { showLogs = false },
             logEnabled = logEnabled,
-            onToggle   = { logEnabled = it; logsEnabled.value = it }
+            onToggle   = { logEnabled = it; questLogEnabled.value = it }
         )
     }
 
-    Column(Modifier.fillMaxSize().background(AppColors.Background)) {
+    Column(Modifier.fillMaxSize().background(QC.Bg)) {
         QuestTopBar(
             orbBalance  = orbBalance,
             onBack      = onBack,
             onRefresh   = { refreshKey++ },
             onLogsClick = { footerTaps++; if (footerTaps >= 3) { showLogs = true; footerTaps = 0 } }
         )
-        HorizontalDivider(color = AppColors.Divider)
+        HorizontalDivider(color = QC.Divider)
 
         if (!loading && fetchError == null) {
             TabRow(
                 selectedTabIndex = selectedTab,
-                containerColor   = AppColors.Surface,
-                contentColor     = AppColors.Primary,
-                divider          = { HorizontalDivider(color = AppColors.Divider) }
+                containerColor   = QC.Surface,
+                contentColor     = QC.Primary,
+                divider          = { HorizontalDivider(color = QC.Divider) }
             ) {
                 listOf("Active (${activeStates.size})", "Claimed (${claimedStates.size})").forEachIndexed { idx, label ->
                     Tab(selected = selectedTab == idx, onClick = { selectedTab = idx }) {
@@ -769,7 +795,7 @@ private fun QuestMainScreen(token: String, onBack: () -> Unit) {
                             modifier   = Modifier.padding(vertical = 12.dp),
                             fontSize   = 13.sp,
                             fontWeight = if (selectedTab == idx) FontWeight.ExtraBold else FontWeight.Normal,
-                            color      = if (selectedTab == idx) AppColors.Primary else AppColors.TextMuted
+                            color      = if (selectedTab == idx) QC.Primary else QC.TextMuted
                         )
                     }
                 }
@@ -802,74 +828,74 @@ private fun QuestMainScreen(token: String, onBack: () -> Unit) {
 @Composable
 private fun QuestLogsScreen(onClose: () -> Unit, logEnabled: Boolean, onToggle: (Boolean) -> Unit) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(AppColors.Background)) {
+        Box(Modifier.fillMaxSize().background(QC.Bg)) {
             Column(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().background(AppColors.Surface).padding(horizontal = 16.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth().background(QC.Surface).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Terminal, null, tint = AppColors.Primary, modifier = Modifier.size(20.dp))
+                        Icon(Icons.Outlined.Terminal, null, tint = QC.Primary, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Quest Console", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = AppColors.TextPrimary)
+                        Text("Quest Console", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = QC.TextPrimary)
                         Spacer(Modifier.width(8.dp))
-                        Box(Modifier.background(AppColors.Primary.copy(0.15f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                            Text("${appLogs.size}", fontSize = 10.sp, color = AppColors.Primary, fontWeight = FontWeight.Bold)
+                        Box(Modifier.background(QC.Primary.copy(0.15f), RoundedCornerShape(QC.R_Badge)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                            Text("${questLogs.size}", fontSize = 10.sp, color = QC.Primary, fontWeight = FontWeight.Bold)
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Logging", fontSize = 11.sp, color = AppColors.TextMuted)
+                        Text("Logging", fontSize = 11.sp, color = QC.TextMuted)
                         Spacer(Modifier.width(6.dp))
                         Switch(
                             checked        = logEnabled,
                             onCheckedChange = onToggle,
                             modifier       = Modifier.height(24.dp),
-                            colors         = SwitchDefaults.colors(checkedThumbColor = AppColors.Primary, checkedTrackColor = AppColors.Primary.copy(0.3f))
+                            colors         = SwitchDefaults.colors(checkedThumbColor = QC.Primary, checkedTrackColor = QC.Primary.copy(0.3f))
                         )
                         Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = { appLogs.clear() }) { Text("Clear", color = AppColors.Error, fontSize = 11.sp) }
+                        TextButton(onClick = { questLogs.clear() }) { Text("Clear", color = QC.Error, fontSize = 11.sp) }
                         IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Outlined.Close, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Outlined.Close, null, tint = QC.TextMuted, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
-                if (appLogs.isEmpty()) {
+                if (questLogs.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Outlined.Terminal, null, tint = AppColors.TextMuted, modifier = Modifier.size(40.dp))
+                            Icon(Icons.Outlined.Terminal, null, tint = QC.TextMuted, modifier = Modifier.size(40.dp))
                             Spacer(Modifier.height(8.dp))
-                            Text("No logs yet", color = AppColors.TextMuted, fontSize = 14.sp)
+                            Text("No logs yet", color = QC.TextMuted, fontSize = 14.sp)
                         }
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxSize().padding(8.dp)) {
-                        items(appLogs) { log ->
+                        items(questLogs) { log ->
                             var expanded by remember { mutableStateOf(false) }
                             val levelColor = when (log.level) {
-                                "SUCCESS" -> AppColors.Success; "ERROR" -> AppColors.Error; "WARN" -> AppColors.Warning; else -> AppColors.Primary
+                                "SUCCESS" -> QC.Success; "ERROR" -> QC.Error; "WARN" -> QC.Warning; else -> QC.Primary
                             }
                             Column(
                                 Modifier.fillMaxWidth().padding(vertical = 2.dp)
-                                    .background(AppColors.Surface.copy(0.5f), RoundedCornerShape(Radius.Small))
+                                    .background(QC.Surface.copy(0.5f), RoundedCornerShape(QC.R_Small))
                                     .clickable { expanded = !expanded }
                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(log.timestamp, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
+                                    Text(log.timestamp, fontSize = 10.sp, color = QC.TextMuted, fontFamily = FontFamily.Monospace)
                                     Spacer(Modifier.width(5.dp))
                                     Box(Modifier.background(levelColor.copy(0.15f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
                                         Text(log.level, fontSize = 9.sp, color = levelColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                                     }
                                     Spacer(Modifier.width(5.dp))
-                                    Text("[${log.tag}]", fontSize = 10.sp, color = AppColors.Primary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                    Text("[${log.tag}]", fontSize = 10.sp, color = QC.Primary, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                                     Spacer(Modifier.width(4.dp))
-                                    Text(log.message, fontSize = 11.sp, color = AppColors.TextSecondary, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
-                                    Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp))
+                                    Text(log.message, fontSize = 11.sp, color = QC.TextSecondary, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
+                                    Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, tint = QC.TextMuted, modifier = Modifier.size(14.dp))
                                 }
                                 if (expanded && log.detail != null) {
                                     Spacer(Modifier.height(4.dp))
-                                    Text(log.detail, fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace, lineHeight = 14.sp, modifier = Modifier.padding(start = 4.dp))
+                                    Text(log.detail, fontSize = 10.sp, color = QC.TextMuted, fontFamily = FontFamily.Monospace, lineHeight = 14.sp, modifier = Modifier.padding(start = 4.dp))
                                 }
                             }
                         }
@@ -883,34 +909,34 @@ private fun QuestLogsScreen(onClose: () -> Unit, logEnabled: Boolean, onToggle: 
 @Composable
 private fun QuestTopBar(orbBalance: Int?, onBack: () -> Unit, onRefresh: () -> Unit, onLogsClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(AppColors.Surface).padding(horizontal = 8.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().background(QC.Surface).padding(horizontal = 8.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = AppColors.TextPrimary, modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = QC.TextPrimary, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(6.dp))
             Box(
-                Modifier.size(36.dp).background(AppColors.Primary.copy(0.15f), CircleShape),
+                Modifier.size(36.dp).background(QC.Primary.copy(0.15f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Outlined.EmojiEvents, null, tint = AppColors.Primary, modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.EmojiEvents, null, tint = QC.Primary, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(10.dp))
             Column {
-                Text("Quest Completer", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = AppColors.TextPrimary)
-                Text("Auto-complete Discord Quests", fontSize = 11.sp, color = AppColors.TextMuted)
+                Text("Quest Completer", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = QC.TextPrimary)
+                Text("Auto-complete Discord Quests", fontSize = 11.sp, color = QC.TextMuted)
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (orbBalance != null) { OrbsBadge(orbBalance, onLogsClick) }
             else { Box(Modifier.size(40.dp).clickable { onLogsClick() }, contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Terminal, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp))
+                Icon(Icons.Outlined.Terminal, null, tint = QC.TextMuted, modifier = Modifier.size(18.dp))
             }}
             IconButton(onClick = onRefresh, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Outlined.Refresh, null, tint = AppColors.Primary, modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.Refresh, null, tint = QC.Primary, modifier = Modifier.size(20.dp))
             }
         }
     }
@@ -949,11 +975,11 @@ private fun QuestListPane(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier            = Modifier.padding(32.dp)
             ) {
-                Box(Modifier.size(64.dp).background(AppColors.Success.copy(0.1f), CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.TaskAlt, null, tint = AppColors.Success, modifier = Modifier.size(32.dp))
+                Box(Modifier.size(64.dp).background(QC.Success.copy(0.1f), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.TaskAlt, null, tint = QC.Success, modifier = Modifier.size(32.dp))
                 }
-                Text(empty.first,  color = AppColors.TextPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                Text(empty.second, color = AppColors.TextMuted,    fontSize = 13.sp)
+                Text(empty.first,  color = QC.TextPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                Text(empty.second, color = QC.TextMuted,    fontSize = 13.sp)
             }
         }
     } else {
@@ -975,10 +1001,10 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
     val ctx = LocalContext.current
     val q   = state.quest
 
-    val accentColor = if (isClaimed) AppColors.Success else when (q.rewardType) {
+    val accentColor = if (isClaimed) QC.Success else when (q.rewardType) {
         "orbs"  -> Color(0xFFB675F0)
-        "decor" -> AppColors.Success
-        "nitro" -> AppColors.Primary
+        "decor" -> QC.Success
+        "nitro" -> QC.Primary
         else    -> Color(0xFFFFD700)
     }
 
@@ -1007,15 +1033,15 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
     LaunchedEffect(Unit) { cardScale.animateTo(1f, spring(Spring.DampingRatioMediumBouncy)) }
 
     Card(
-        colors   = CardDefaults.cardColors(containerColor = AppColors.SurfaceVar),
-        shape    = RoundedCornerShape(Radius.Card),
+        colors   = CardDefaults.cardColors(containerColor = QC.SurfaceVar),
+        shape    = RoundedCornerShape(QC.R_Card),
         modifier = Modifier.fillMaxWidth().scale(cardScale.value)
-            .border(1.dp, accentColor.copy(0.22f), RoundedCornerShape(Radius.Card))
+            .border(1.dp, accentColor.copy(0.22f), RoundedCornerShape(QC.R_Card))
     ) {
         Column {
             Box(
                 Modifier.fillMaxWidth().height(130.dp)
-                    .clip(RoundedCornerShape(topStart = Radius.Card, topEnd = Radius.Card))
+                    .clip(RoundedCornerShape(topStart = QC.R_Card, topEnd = QC.R_Card))
             ) {
                 if (q.bannerUrl != null) {
                     AsyncImage(
@@ -1028,13 +1054,13 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
                 } else {
                     Box(Modifier.fillMaxSize().background(
                         Brush.linearGradient(
-                            listOf(accentColor.copy(0.30f), AppColors.SurfaceVar),
+                            listOf(accentColor.copy(0.30f), QC.SurfaceVar),
                             start = Offset(0f, 0f), end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                         )
                     ))
                 }
                 Box(Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(listOf(Color.Transparent, AppColors.SurfaceVar), startY = 40f)
+                    Brush.verticalGradient(listOf(Color.Transparent, QC.SurfaceVar), startY = 40f)
                 ))
                 if (state.runState == RunState.RUNNING) {
                     Box(Modifier.fillMaxSize().background(
@@ -1054,23 +1080,23 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
             }
 
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(q.name, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = AppColors.TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(q.name, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = QC.TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
 
                 if (q.reward.isNotBlank()) {
                     Text(q.reward, fontSize = 12.sp, color = accentColor, fontWeight = FontWeight.SemiBold)
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    QuestMiniChip(questTaskIcon(q.taskName), q.taskName.replace("_", " "), AppColors.TextMuted)
-                    QuestMiniChip(Icons.Outlined.HourglassEmpty, timeLeft, if (isClaimed) AppColors.Success else AppColors.Warning)
-                    if (!q.appName.isNullOrEmpty()) QuestMiniChip(Icons.Outlined.SportsEsports, q.appName, AppColors.Primary)
-                    if (q.enrolledAt == null && !isClaimed) QuestMiniChip(Icons.Outlined.ErrorOutline, "NOT ENROLLED", AppColors.Error)
+                    QuestMiniChip(questTaskIcon(q.taskName), q.taskName.replace("_", " "), QC.TextMuted)
+                    QuestMiniChip(Icons.Outlined.HourglassEmpty, timeLeft, if (isClaimed) QC.Success else QC.Warning)
+                    if (!q.appName.isNullOrEmpty()) QuestMiniChip(Icons.Outlined.SportsEsports, q.appName, QC.Primary)
+                    if (q.enrolledAt == null && !isClaimed) QuestMiniChip(Icons.Outlined.ErrorOutline, "NOT ENROLLED", QC.Error)
                 }
 
                 if (isClaimed && q.claimedAt != null) {
                     val fmtd = fmtQuestDate(q.claimedAt)
                     if (fmtd.isNotEmpty())
-                        Text("Claimed $fmtd", fontSize = 10.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
+                        Text("Claimed $fmtd", fontSize = 10.sp, color = QC.TextMuted, fontFamily = FontFamily.Monospace)
                 }
 
                 val curProgress = state.progress.coerceAtLeast(q.secondsDone)
@@ -1078,37 +1104,37 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
                     val frac = (curProgress.toFloat() / q.secondsNeeded).coerceIn(0f, 1f)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Progress", fontSize = 10.sp, color = AppColors.TextMuted, fontWeight = FontWeight.SemiBold)
+                            Text("Progress", fontSize = 10.sp, color = QC.TextMuted, fontWeight = FontWeight.SemiBold)
                             Text("${(frac * 100).toInt()}%", fontSize = 10.sp, color = accentColor, fontWeight = FontWeight.ExtraBold)
                         }
                         LinearProgressIndicator(
                             progress   = { frac },
                             modifier   = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
                             color      = accentColor,
-                            trackColor = AppColors.Divider,
-                            strokeCap  = StrokeCap.Round
+                            trackColor = QC.Divider,
+                            strokeCap  = androidx.compose.material3.StrokeCap.Round
                         )
-                        Text("${curProgress}s / ${q.secondsNeeded}s", fontSize = 9.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace)
+                        Text("${curProgress}s / ${q.secondsNeeded}s", fontSize = 9.sp, color = QC.TextMuted, fontFamily = FontFamily.Monospace)
                     }
                 }
 
                 if (!isClaimed && state.log.isNotBlank()) {
                     val logBg    = when (state.runState) {
-                        RunState.ERROR        -> AppColors.Error.copy(0.08f)
-                        RunState.DONE         -> AppColors.Success.copy(0.08f)
-                        RunState.NOT_ENROLLED -> AppColors.Warning.copy(0.08f)
-                        else                  -> AppColors.Divider.copy(0.4f)
+                        RunState.ERROR        -> QC.Error.copy(0.08f)
+                        RunState.DONE         -> QC.Success.copy(0.08f)
+                        RunState.NOT_ENROLLED -> QC.Warning.copy(0.08f)
+                        else                  -> QC.Divider.copy(0.4f)
                     }
                     val logColor = when (state.runState) {
-                        RunState.ERROR        -> AppColors.Error
-                        RunState.DONE         -> AppColors.Success
-                        RunState.NOT_ENROLLED -> AppColors.Warning
-                        else                  -> AppColors.TextMuted
+                        RunState.ERROR        -> QC.Error
+                        RunState.DONE         -> QC.Success
+                        RunState.NOT_ENROLLED -> QC.Warning
+                        else                  -> QC.TextMuted
                     }
                     Box(
                         Modifier.fillMaxWidth()
-                            .background(logBg, RoundedCornerShape(Radius.Medium))
-                            .border(1.dp, logColor.copy(0.2f), RoundedCornerShape(Radius.Medium))
+                            .background(logBg, RoundedCornerShape(QC.R_Medium))
+                            .border(1.dp, logColor.copy(0.2f), RoundedCornerShape(QC.R_Medium))
                             .padding(horizontal = 12.dp, vertical = 10.dp)
                     ) {
                         Text(state.log, fontSize = 11.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 16.sp)
@@ -1186,12 +1212,12 @@ private fun QuestAutoCompleteButton(color: Color, shimmerX: Float, onClick: () -
     ) {
         Box(
             Modifier.fillMaxWidth().height(56.dp)
-                .graphicsLayer { shadowElevation = 24f; shape = RoundedCornerShape(Radius.Button); clip = false }
-                .background(color.copy(0.35f), RoundedCornerShape(Radius.Button + 2.dp))
+                .graphicsLayer { shadowElevation = 24f; shape = RoundedCornerShape(QC.R_Button); clip = false }
+                .background(color.copy(0.35f), RoundedCornerShape(QC.R_Button + 2.dp))
         )
         Box(
             Modifier.fillMaxWidth().height(52.dp)
-                .clip(RoundedCornerShape(Radius.Button))
+                .clip(RoundedCornerShape(QC.R_Button))
                 .background(Brush.verticalGradient(listOf(color.copy(1f), color.copy(0.82f))))
                 .drawWithContent {
                     drawContent()
@@ -1222,13 +1248,13 @@ private fun QuestNotEnrolledButton(color: Color, onClick: () -> Unit) {
     ) {
         Box(
             Modifier.fillMaxWidth().height(56.dp)
-                .graphicsLayer { shadowElevation = 18f; shape = RoundedCornerShape(Radius.Button); clip = false }
-                .background(AppColors.Warning.copy(0.28f), RoundedCornerShape(Radius.Button + 2.dp))
+                .graphicsLayer { shadowElevation = 18f; shape = RoundedCornerShape(QC.R_Button); clip = false }
+                .background(QC.Warning.copy(0.28f), RoundedCornerShape(QC.R_Button + 2.dp))
         )
         Box(
             Modifier.fillMaxWidth().height(52.dp)
-                .clip(RoundedCornerShape(Radius.Button))
-                .background(Brush.verticalGradient(listOf(AppColors.Warning, AppColors.Warning.copy(0.85f))))
+                .clip(RoundedCornerShape(QC.R_Button))
+                .background(Brush.verticalGradient(listOf(QC.Warning, QC.Warning.copy(0.85f))))
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) {
@@ -1246,9 +1272,9 @@ private fun QuestRunningRow(color: Color, shimmerX: Float) {
     val alpha  by pulseT.animateFloat(0.6f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pa")
     Box(
         Modifier.fillMaxWidth().height(52.dp)
-            .clip(RoundedCornerShape(Radius.Button))
+            .clip(RoundedCornerShape(QC.R_Button))
             .background(color.copy(0.14f))
-            .border(1.dp, color.copy(alpha), RoundedCornerShape(Radius.Button))
+            .border(1.dp, color.copy(alpha), RoundedCornerShape(QC.R_Button))
             .drawWithContent {
                 drawContent()
                 drawRect(
@@ -1272,15 +1298,15 @@ private fun QuestRunningRow(color: Color, shimmerX: Float) {
 private fun QuestDoneRow() {
     Row(
         Modifier.fillMaxWidth().height(52.dp)
-            .clip(RoundedCornerShape(Radius.Button))
-            .background(AppColors.Success.copy(0.12f))
-            .border(1.dp, AppColors.Success.copy(0.35f), RoundedCornerShape(Radius.Button)),
+            .clip(RoundedCornerShape(QC.R_Button))
+            .background(QC.Success.copy(0.12f))
+            .border(1.dp, QC.Success.copy(0.35f), RoundedCornerShape(QC.R_Button)),
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Outlined.CheckCircle, null, tint = AppColors.Success, modifier = Modifier.size(20.dp))
+        Icon(Icons.Outlined.CheckCircle, null, tint = QC.Success, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text("Quest Completed! Claim in Discord.", fontWeight = FontWeight.ExtraBold, color = AppColors.Success, fontSize = 14.sp)
+        Text("Quest Completed! Claim in Discord.", fontWeight = FontWeight.ExtraBold, color = QC.Success, fontSize = 14.sp)
     }
 }
 
@@ -1288,15 +1314,15 @@ private fun QuestDoneRow() {
 private fun QuestClaimedRow() {
     Row(
         Modifier.fillMaxWidth().height(52.dp)
-            .clip(RoundedCornerShape(Radius.Button))
-            .background(AppColors.Success.copy(0.08f))
-            .border(1.dp, AppColors.Success.copy(0.22f), RoundedCornerShape(Radius.Button)),
+            .clip(RoundedCornerShape(QC.R_Button))
+            .background(QC.Success.copy(0.08f))
+            .border(1.dp, QC.Success.copy(0.22f), RoundedCornerShape(QC.R_Button)),
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Outlined.CheckCircle, null, tint = AppColors.Success, modifier = Modifier.size(18.dp))
+        Icon(Icons.Outlined.CheckCircle, null, tint = QC.Success, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text("Reward already claimed", fontSize = 13.sp, color = AppColors.Success, fontWeight = FontWeight.SemiBold)
+        Text("Reward already claimed", fontSize = 13.sp, color = QC.Success, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -1304,8 +1330,8 @@ private fun QuestClaimedRow() {
 private fun QuestSpinner() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            CircularProgressIndicator(color = AppColors.Primary, strokeWidth = 3.dp, modifier = Modifier.size(48.dp))
-            Text("Loading quests...", color = AppColors.TextMuted, fontSize = 14.sp)
+            CircularProgressIndicator(color = QC.Primary, strokeWidth = 3.dp, modifier = Modifier.size(48.dp))
+            Text("Loading quests...", color = QC.TextMuted, fontSize = 14.sp)
         }
     }
 }
@@ -1318,15 +1344,15 @@ private fun QuestErrorPane(msg: String, onRetry: () -> Unit) {
             modifier            = Modifier.padding(32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Box(Modifier.size(64.dp).background(AppColors.Error.copy(0.12f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.ErrorOutline, null, tint = AppColors.Error, modifier = Modifier.size(32.dp))
+            Box(Modifier.size(64.dp).background(QC.Error.copy(0.12f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.ErrorOutline, null, tint = QC.Error, modifier = Modifier.size(32.dp))
             }
-            Text("Failed to load quests", color = AppColors.TextPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-            Text(msg, color = AppColors.TextMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            Text("Failed to load quests", color = QC.TextPrimary, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+            Text(msg, color = QC.TextMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
             Button(
                 onClick = onRetry,
-                colors  = ButtonDefaults.buttonColors(containerColor = AppColors.Primary),
-                shape   = RoundedCornerShape(Radius.Button)
+                colors  = ButtonDefaults.buttonColors(containerColor = QC.Primary),
+                shape   = RoundedCornerShape(QC.R_Button)
             ) {
                 Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(8.dp))
