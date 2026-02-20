@@ -647,7 +647,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                     if (!loading && fetchError == null && selectedTab == 0) {
                         val anyIdle = activeStates.any { it.runState == RunState.IDLE || it.runState == RunState.NOT_ENROLLED }
                         if (anyIdle && !completing) {
-                            FilledTonalButton(
+                            Button(
                                 onClick = {
                                     completing = true
                                     CoroutineScope(Dispatchers.IO).launch {
@@ -661,7 +661,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                                         withContext(Dispatchers.Main) { completing = false }
                                     }
                                 },
-                                colors = FilledTonalButtonDefaults.filledTonalButtonColors(containerColor = DC.Primary.copy(0.2f)),
+                                colors = ButtonDefaults.buttonColors(containerColor = DC.Primary.copy(0.2f)),
                                 shape = RoundedCornerShape(10.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                 modifier = Modifier.height(34.dp)
