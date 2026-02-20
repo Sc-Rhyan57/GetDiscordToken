@@ -8,6 +8,9 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
@@ -31,7 +34,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import android.media.MediaPlayer
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.*
@@ -41,6 +46,7 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.*
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -68,6 +74,9 @@ private object DC {
     val OrbViolet   = Color(0xFFB675F0)
     val Gold        = Color(0xFFFFD700)
     val Teal        = Color(0xFF43B581)
+    val GradTop     = Color(0xFF1A1040)
+    val GradMid     = Color(0xFF0F1B3D)
+    val GradBot     = Color(0xFF0E0F13)
 }
 
 private val SUPER_PROPS =
@@ -129,7 +138,8 @@ data class QuestItem(
     val enrolledAt: String?,
     val completedAt: String?,
     val claimedAt: String?,
-    val configVersion: Int
+    val configVersion: Int,
+    val questLink: String?
 )
 
 enum class RunState { IDLE, RUNNING, DONE, ERROR, NOT_ENROLLED }
@@ -158,14 +168,16 @@ private fun parseQuest(q: JSONObject): QuestItem? {
     val tasks = taskConfig.optJSONObject("tasks") ?: return null
 
     val SUPPORTED = listOf("WATCH_VIDEO_ON_MOBILE","WATCH_VIDEO","PLAY_ON_DESKTOP","PLAY_ACTIVITY","STREAM_ON_DESKTOP")
-    val taskName     = SUPPORTED.firstOrNull { tasks.has(it) } ?: return null
-    val taskObj      = tasks.optJSONObject(taskName) ?: return null
+    val taskName      = SUPPORTED.firstOrNull { tasks.has(it) } ?: return null
+    val taskObj       = tasks.optJSONObject(taskName) ?: return null
     val secondsNeeded = taskObj.optLong("target", 0L)
     val secondsDone   = us?.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", 0L) ?: 0L
 
     val app     = config.optJSONObject("application")
     val appId   = app?.optString("id")?.takeIf  { it.isNotEmpty() && it != "null" }
     val appName = app?.optString("name")?.takeIf { it.isNotEmpty() && it != "null" }
+    val appLink = app?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" }
+        ?: config.optJSONObject("cta_config")?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" }
 
     val rewardsConfig = config.optJSONObject("rewards_config")
     val rewardsArr    = rewardsConfig?.optJSONArray("rewards") ?: config.optJSONArray("rewards")
@@ -173,30 +185,43 @@ private fun parseQuest(q: JSONObject): QuestItem? {
     if (rewardsArr != null && rewardsArr.length() > 0) {
         val r = rewardsArr.optJSONObject(0)
         if (r != null) {
-            rewardType = r.optString("type", "prize").lowercase()
+            val typeRaw = r.optString("type", "0")
+            rewardType = when (typeRaw) {
+                "4", "orbs"  -> "orbs"
+                "3", "decor" -> "decor"
+                "2", "nitro" -> "nitro"
+                else -> "prize"
+            }
             reward = when (rewardType) {
-                "orbs"  -> { val amt = r.optJSONObject("orbs")?.optInt("amount") ?: r.optInt("amount", 0); if (amt > 0) "$amt Orbs" else "Orbs" }
-                "decor" -> r.optJSONObject("avatar_decoration")?.optString("name") ?: "Avatar Decoration"
+                "orbs"  -> {
+                    val qty = r.optInt("orb_quantity", 0).takeIf { it > 0 }
+                        ?: r.optJSONObject("orbs")?.optInt("amount", 0) ?: 0
+                    if (qty > 0) "$qty Orbs" else
+                        r.optJSONObject("messages")?.optString("name","")?.takeIf { it.isNotEmpty() } ?: "Orbs"
+                }
+                "decor" -> r.optString("name","").takeIf { it.isNotEmpty() } ?: "Avatar Decoration"
                 "nitro" -> "Nitro Boost"
-                else    -> r.optString("name", "Prize").takeIf { it.isNotEmpty() } ?: "Prize"
+                else    -> r.optString("name","Prize").takeIf { it.isNotEmpty() } ?: "Prize"
             }
         }
     }
 
-    val completedAt = us?.optString("completed_at")?.takeIf { it != "null" && it.isNotEmpty() }
-    val claimedAt   = us?.optString("claimed_at")?.takeIf  { it != "null" && it.isNotEmpty() }
-    val enrolledAt  = us?.optString("enrolled_at")?.takeIf { it != "null" && it.isNotEmpty() }
-    val configVersion = config.optInt("config_version", config.optInt("configVersion", 2))
+    val completedAt   = us?.optString("completed_at")?.takeIf { it != "null" && it.isNotEmpty() }
+    val claimedAt     = us?.optString("claimed_at")?.takeIf  { it != "null" && it.isNotEmpty() }
+    val enrolledAt    = us?.optString("enrolled_at")?.takeIf { it != "null" && it.isNotEmpty() }
+    val configVersion = config.optInt("config_version", config.optInt("configVersion", q.optInt("config_version", 2)))
+    val questName     = config.optJSONObject("messages")?.let {
+        it.optString("quest_name","").takeIf { s -> s.isNotEmpty() }
+            ?: it.optString("questName","").takeIf { s -> s.isNotEmpty() }
+    } ?: appName ?: id
 
     return QuestItem(
-        id = id, name = config.optJSONObject("messages")?.optString("questName","")?.takeIf { it.isNotEmpty() } ?: appName ?: id,
-        reward = reward, rewardType = rewardType,
+        id = id, name = questName, reward = reward, rewardType = rewardType,
         expiresDisplay = expiresDisplay, expiresMs = expiresMs,
         taskName = taskName, secondsNeeded = secondsNeeded, secondsDone = secondsDone,
-        appName = appName, appId = appId,
-        bannerUrl = buildBannerUrl(id, config),
+        appName = appName, appId = appId, bannerUrl = buildBannerUrl(id, config),
         enrolledAt = enrolledAt, completedAt = completedAt, claimedAt = claimedAt,
-        configVersion = configVersion
+        configVersion = configVersion, questLink = appLink
     )
 }
 
@@ -258,21 +283,21 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
     try {
         var enrolledAt = q.enrolledAt
         if (enrolledAt == null) {
-            upd("Not enrolled yet, attempting to enroll...")
+            upd("Enrolling...")
             withContext(Dispatchers.Main) { onUpdate(cur) }
             val ok = enrollQuest(token, questId)
             if (!ok) {
-                val statusBody = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/quests/$questId", token).build()).execute().body?.string() ?: "{}"
-                enrolledAt = try { JSONObject(statusBody).optString("enrolled_at","").takeIf { it.isNotEmpty() && it != "null" } } catch (_: Exception) { null }
+                val sb = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/quests/$questId", token).build()).execute().body?.string() ?: "{}"
+                enrolledAt = try { JSONObject(sb).optString("enrolled_at","").takeIf { it.isNotEmpty() && it != "null" } } catch (_: Exception) { null }
                 if (enrolledAt == null) {
-                    upd("⚠ Not enrolled. Open Discord and accept this quest first.", prog = 0, rs = RunState.NOT_ENROLLED)
+                    upd("Not enrolled. Accept quest in Discord first.", prog = 0, rs = RunState.NOT_ENROLLED)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
                     return
                 }
             } else {
                 delay(800)
-                val statusBody = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/quests/$questId", token).build()).execute().body?.string() ?: "{}"
-                enrolledAt = try { JSONObject(statusBody).optString("enrolled_at","").takeIf { it.isNotEmpty() && it != "null" } } catch (_: Exception) { null }
+                val sb = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/quests/$questId", token).build()).execute().body?.string() ?: "{}"
+                enrolledAt = try { JSONObject(sb).optString("enrolled_at","").takeIf { it.isNotEmpty() && it != "null" } } catch (_: Exception) { null }
                     ?: (System.currentTimeMillis() - 10_000L).toString()
             }
         }
@@ -284,7 +309,7 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
                 val speed     = 7
                 val interval  = 1
 
-                upd("📺 Spoofing video: ${q.name}")
+                upd("Spoofing video: ${q.name}")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
                 var completed = false
@@ -300,7 +325,7 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
                         val rb     = resp.body?.string() ?: "{}"
                         completed  = try { JSONObject(rb).optString("completed_at","").isNotEmpty() } catch (_: Exception) { false }
                         secondsDone = minOf(secondsNeeded, timestamp)
-                        upd("📺 Video progress: ${secondsDone}s / ${secondsNeeded}s", secondsDone)
+                        upd("Video: ${secondsDone}s / ${secondsNeeded}s", secondsDone)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
                     }
 
@@ -312,45 +337,90 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
                     val fb = JSONObject().apply { put("timestamp", secondsNeeded.toDouble()) }.toString().toRequestBody("application/json".toMediaType())
                     httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/video-progress", token).post(fb).build()).execute()
                 }
-                upd("✅ Quest completed! Claim the reward in Discord.", secondsNeeded, RunState.DONE)
+                upd("Completed! Claim the reward in Discord.", secondsNeeded, RunState.DONE)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
             "PLAY_ON_DESKTOP" -> {
-                val dmBody  = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/channels", token).build()).execute().body?.string() ?: "[]"
-                val channelId = try { val a = JSONArray(dmBody); if (a.length() > 0) a.getJSONObject(0).optString("id") else null } catch (_: Exception) { null }
-                    ?: throw Exception("No DM channel found. Open at least one DM in Discord.")
+                val pid = (Math.random() * 30000 + 1000).toInt()
+                var appExeName = "game.exe"
+                var appNameStr = q.appName ?: "Game"
+
+                if (q.appId != null) {
+                    try {
+                        val appResp = httpClient.newCall(
+                            buildReq("https://discord.com/api/v9/applications/public?application_ids=${q.appId}", token).build()
+                        ).execute()
+                        val appBody = appResp.body?.string() ?: "[]"
+                        val appArr  = JSONArray(appBody)
+                        if (appArr.length() > 0) {
+                            val appData = appArr.getJSONObject(0)
+                            appNameStr  = appData.optString("name", appNameStr)
+                            val exes    = appData.optJSONArray("executables")
+                            if (exes != null) {
+                                for (ei in 0 until exes.length()) {
+                                    val ex = exes.getJSONObject(ei)
+                                    if (ex.optString("os") == "win32") {
+                                        appExeName = ex.optString("name","game.exe").replace(">","")
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                val dmResp    = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/channels", token).build()).execute()
+                val channelId = try {
+                    val arr = JSONArray(dmResp.body?.string() ?: "[]")
+                    if (arr.length() > 0) arr.getJSONObject(0).optString("id") else null
+                } catch (_: Exception) { null } ?: throw Exception("No DM channel found. Open a DM in Discord.")
                 val streamKey = "call:$channelId:1"
-                upd("🎮 Spoofing game play... (~${(secondsNeeded - secondsDone) / 60} min remaining)")
+
+                upd("Spoofing game: $appNameStr (~${(secondsNeeded - secondsDone) / 60} min)")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
                 while (secondsDone < secondsNeeded) {
-                    val rb = JSONObject().apply { put("stream_key", streamKey); put("terminal", false) }.toString().toRequestBody("application/json".toMediaType())
-                    val rs = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token).post(rb).build()).execute().body?.string() ?: "{}"
+                    val rb = JSONObject().apply {
+                        put("stream_key", streamKey)
+                        put("terminal", false)
+                    }.toString().toRequestBody("application/json".toMediaType())
+
+                    val rs = httpClient.newCall(
+                        buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token).post(rb).build()
+                    ).execute().body?.string() ?: "{}"
+
                     val newP = try {
-                        val o = JSONObject(rs); val pr = o.optJSONObject("progress")
-                        when { q.configVersion == 1 -> o.optLong("stream_progress_seconds", secondsDone)
-                               pr != null -> pr.optJSONObject(taskName)?.optLong("value", secondsDone) ?: secondsDone
-                               else -> secondsDone }
+                        val o = JSONObject(rs)
+                        val pr = o.optJSONObject("progress")
+                        when {
+                            q.configVersion == 1 -> o.optLong("stream_progress_seconds", secondsDone)
+                            pr != null           -> pr.optJSONObject(taskName)?.optLong("value", secondsDone) ?: secondsDone
+                            else                 -> secondsDone
+                        }
                     } catch (_: Exception) { secondsDone }
+
                     secondsDone = newP
-                    upd("🎮 Game: ${secondsDone}s / ${secondsNeeded}s (~${maxOf(0L,(secondsNeeded-secondsDone)/60)} min left)", secondsDone)
+                    upd("Game: ${secondsDone}s / ${secondsNeeded}s (~${maxOf(0L,(secondsNeeded-secondsDone)/60)} min left)", secondsDone)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
                     if (secondsDone >= secondsNeeded) break
                     delay(20_000L)
                 }
+
                 val tb = JSONObject().apply { put("stream_key", streamKey); put("terminal", true) }.toString().toRequestBody("application/json".toMediaType())
                 httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token).post(tb).build()).execute()
-                upd("✅ Quest completed! Claim the reward in Discord.", secondsNeeded, RunState.DONE)
+                upd("Completed! Claim the reward in Discord.", secondsNeeded, RunState.DONE)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
             "PLAY_ACTIVITY" -> {
-                val dmBody    = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/channels", token).build()).execute().body?.string() ?: "[]"
-                val channelId = try { val a = JSONArray(dmBody); if (a.length() > 0) a.getJSONObject(0).optString("id") else null } catch (_: Exception) { null }
-                    ?: throw Exception("No DM channel found. Open at least one DM in Discord.")
+                val dmResp    = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/channels", token).build()).execute()
+                val channelId = try {
+                    val arr = JSONArray(dmResp.body?.string() ?: "[]")
+                    if (arr.length() > 0) arr.getJSONObject(0).optString("id") else null
+                } catch (_: Exception) { null } ?: throw Exception("No DM channel found. Open a DM in Discord.")
                 val streamKey = "call:$channelId:1"
-                upd("🕹️ Spoofing activity... (~${(secondsNeeded - secondsDone) / 60} min remaining)")
+                upd("Spoofing activity (~${(secondsNeeded - secondsDone) / 60} min)")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
                 while (true) {
@@ -358,7 +428,7 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
                     val rs = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token).post(rb).build()).execute().body?.string() ?: "{}"
                     val newP = try { JSONObject(rs).optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", secondsDone) ?: secondsDone } catch (_: Exception) { secondsDone }
                     secondsDone = newP
-                    upd("🕹️ Activity: ${secondsDone}s / ${secondsNeeded}s", secondsDone)
+                    upd("Activity: ${secondsDone}s / ${secondsNeeded}s", secondsDone)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
                     if (secondsDone >= secondsNeeded) {
                         val tb = JSONObject().apply { put("stream_key", streamKey); put("terminal", true) }.toString().toRequestBody("application/json".toMediaType())
@@ -367,22 +437,22 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
                     }
                     delay(20_000L)
                 }
-                upd("✅ Quest completed! Claim the reward in Discord.", secondsNeeded, RunState.DONE)
+                upd("Completed! Claim the reward in Discord.", secondsNeeded, RunState.DONE)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
             "STREAM_ON_DESKTOP" -> {
-                upd("⚠ STREAM_ON_DESKTOP requires the Discord desktop app.\nCannot be completed via API.", prog = 0, rs = RunState.ERROR)
+                upd("STREAM_ON_DESKTOP requires Discord desktop app.", prog = 0, rs = RunState.ERROR)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
             else -> {
-                upd("⚠ Task '$taskName' not supported.", prog = 0, rs = RunState.ERROR)
+                upd("Task '$taskName' not supported.", prog = 0, rs = RunState.ERROR)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
         }
     } catch (e: Exception) {
-        upd("❌ Error: ${e.message}", rs = RunState.ERROR)
+        upd("Error: ${e.message}", rs = RunState.ERROR)
         withContext(Dispatchers.Main) { onUpdate(cur) }
     }
 }
@@ -435,10 +505,10 @@ private fun TosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
                 }
                 HorizontalDivider(color = DC.Border)
                 Text(
-                    "⚠️ This tool automates Discord Quest completion via the official API.\n\n" +
-                    "Using third-party automation tools may violate Discord's Terms of Service. " +
-                    "Your account could potentially be suspended or banned.\n\n" +
-                    "Provided for educational purposes only. Use at your own risk.",
+                    "This tool automates Discord Quest completion via the official API.\n\n" +
+                    "Using automation tools may violate Discord's Terms of Service. " +
+                    "Your account could be suspended or banned.\n\n" +
+                    "Educational purposes only. Use at your own risk.",
                     fontSize = 13.sp, color = DC.White.copy(0.85f), lineHeight = 20.sp
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -455,12 +525,82 @@ private fun TosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
 }
 
 @Composable
+private fun QuestVideoHeader(ctx: Context) {
+    val videoUrl = "https://cdn.discordapp.com/assets/content/fbd6cf99b9be35ba1d953fd30b81a35c9bd8edf7808b576ef6fc7c65cbc1d9a6.webm"
+    val cacheFile = remember { File(ctx.cacheDir, "quest_bg.webm") }
+
+    Box(
+        Modifier.fillMaxWidth().height(174.dp)
+    ) {
+        AndroidView(
+            factory = { context ->
+                SurfaceView(context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    holder.addCallback(object : SurfaceHolder.Callback {
+                        private var mp: MediaPlayer? = null
+                        override fun surfaceCreated(h: SurfaceHolder) {
+                            val player = MediaPlayer()
+                            mp = player
+                            try {
+                                if (cacheFile.exists() && cacheFile.length() > 0) {
+                                    player.setDataSource(cacheFile.absolutePath)
+                                } else {
+                                    player.setDataSource(videoUrl)
+                                }
+                                player.setDisplay(h)
+                                player.isLooping = true
+                                player.setVolume(0f, 0f)
+                                player.setOnPreparedListener { p ->
+                                    p.start()
+                                    if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            try {
+                                                val resp = okhttp3.OkHttpClient().newCall(
+                                                    okhttp3.Request.Builder().url(videoUrl).build()
+                                                ).execute()
+                                                resp.body?.byteStream()?.use { input ->
+                                                    cacheFile.outputStream().use { output -> input.copyTo(output) }
+                                                }
+                                            } catch (_: Exception) {}
+                                        }
+                                    }
+                                }
+                                player.prepareAsync()
+                            } catch (_: Exception) {}
+                        }
+                        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hi: Int) {}
+                        override fun surfaceDestroyed(h: SurfaceHolder) { mp?.release(); mp = null }
+                    })
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0.0f to Color.Transparent,
+                        0.55f to DC.GradTop.copy(alpha = 0.6f),
+                        1.0f to DC.Bg
+                    )
+                )
+            )
+        )
+    }
+}
+
+@Composable
 private fun QuestScreen(token: String, onBack: () -> Unit) {
+    val ctx = LocalContext.current
     var loading     by remember { mutableStateOf(true) }
     var fetchError  by remember { mutableStateOf<String?>(null) }
     var orbBalance  by remember { mutableStateOf<Int?>(null) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var refreshKey  by remember { mutableIntStateOf(0) }
+    var completing  by remember { mutableStateOf(false) }
 
     val activeStates  = remember { mutableStateListOf<QuestState>() }
     val claimedStates = remember { mutableStateListOf<QuestState>() }
@@ -470,118 +610,114 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
         activeStates.clear(); claimedStates.clear(); orbBalance = null
         try {
             val res = fetchAll(token)
-            activeStates.addAll(res.active.map { q -> QuestState(quest = q, runState = if (q.enrolledAt == null) RunState.NOT_ENROLLED else RunState.IDLE, progress = q.secondsDone) })
+            activeStates.addAll(res.active.map { q ->
+                QuestState(quest = q, runState = if (q.enrolledAt == null) RunState.NOT_ENROLLED else RunState.IDLE, progress = q.secondsDone)
+            })
             claimedStates.addAll(res.claimed.map { QuestState(it, RunState.DONE) })
             orbBalance = res.orbs
         } catch (e: Exception) { fetchError = e.message }
         loading = false
     }
 
-    Column(Modifier.fillMaxSize().background(DC.Bg)) {
-        QuestTopBar(token = token, orbBalance = orbBalance, onBack = onBack, onRefresh = { refreshKey++ })
-        HorizontalDivider(color = DC.Border)
+    Box(Modifier.fillMaxSize().background(
+        Brush.verticalGradient(listOf(DC.GradTop, DC.GradMid, DC.GradBot))
+    )) {
+        Column(Modifier.fillMaxSize()) {
+            QuestVideoHeader(ctx)
 
-        if (!loading && fetchError == null) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor   = DC.Surface,
-                contentColor     = DC.Primary,
-                divider = { HorizontalDivider(color = DC.Border) }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 0.dp).offset(y = (-20).dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                listOf(
-                    "⚔️  Active (${activeStates.size})",
-                    "✅  Claimed (${claimedStates.size})"
-                ).forEachIndexed { idx, label ->
-                    Tab(selected = selectedTab == idx, onClick = { selectedTab = idx }) {
-                        Text(
-                            label,
-                            modifier   = Modifier.padding(vertical = 13.dp),
-                            fontSize   = 13.sp,
-                            fontWeight = if (selectedTab == idx) FontWeight.ExtraBold else FontWeight.Medium,
-                            color      = if (selectedTab == idx) DC.Primary else DC.Muted
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(38.dp).background(DC.Card.copy(0.9f), CircleShape)
+                    ) {
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White, modifier = Modifier.size(18.dp))
+                    }
+                    Column {
+                        Text("Discord Quests", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = DC.White)
+                        if (orbBalance != null && orbBalance!! > 0)
+                            Text("${orbBalance} orbs", fontSize = 11.sp, color = DC.OrbViolet, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (!loading && fetchError == null && selectedTab == 0) {
+                        val anyIdle = activeStates.any { it.runState == RunState.IDLE || it.runState == RunState.NOT_ENROLLED }
+                        if (anyIdle && !completing) {
+                            FilledTonalButton(
+                                onClick = {
+                                    completing = true
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        activeStates.forEachIndexed { idx, st ->
+                                            if (st.runState == RunState.IDLE || st.runState == RunState.NOT_ENROLLED) {
+                                                completeQuest(token, st) { updated ->
+                                                    if (idx < activeStates.size) activeStates[idx] = updated
+                                                }
+                                            }
+                                        }
+                                        withContext(Dispatchers.Main) { completing = false }
+                                    }
+                                },
+                                colors = FilledTonalButtonDefaults.filledTonalButtonColors(containerColor = DC.Primary.copy(0.2f)),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Icon(Icons.Outlined.DoneAll, null, modifier = Modifier.size(14.dp), tint = DC.PrimaryGlow)
+                                Spacer(Modifier.width(5.dp))
+                                Text("Complete All", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = DC.PrimaryGlow)
+                            }
+                        }
+                    }
+                    IconButton(
+                        onClick = { refreshKey++ },
+                        modifier = Modifier.size(34.dp).background(DC.Card.copy(0.9f), RoundedCornerShape(10.dp))
+                    ) {
+                        Icon(Icons.Outlined.Refresh, null, tint = DC.Primary, modifier = Modifier.size(16.dp))
                     }
                 }
             }
-        }
 
-        when {
-            loading        -> CenteredSpinner()
-            fetchError != null -> ErrorPane(fetchError!!) { refreshKey++ }
-            selectedTab == 0 -> QuestListPane(
-                states    = activeStates,
-                isClaimed = false,
-                empty     = "No active quests" to "You have no incomplete quests right now.",
-                token     = token
-            ) { updated ->
-                val i = activeStates.indexOfFirst { it.quest.id == updated.quest.id }
-                if (i >= 0) activeStates[i] = updated
-            }
-            else -> QuestListPane(
-                states    = claimedStates,
-                isClaimed = true,
-                empty     = "No claimed quests" to "Completed quests will appear here.",
-                token     = token,
-                onUpdate  = {}
-            )
-        }
-    }
-}
-
-@Composable
-private fun QuestTopBar(token: String, orbBalance: Int?, onBack: () -> Unit, onRefresh: () -> Unit) {
-    val ctx = LocalContext.current
-    Row(
-        Modifier.fillMaxWidth().background(DC.Surface).padding(horizontal = 6.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(4.dp))
-            Column {
-                Text("Discord Quests", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = DC.White)
-                Text("Auto Completion", fontSize = 10.sp, color = DC.Muted)
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (orbBalance != null && orbBalance > 0) {
-                Box(
-                    Modifier.background(DC.OrbViolet.copy(0.15f), RoundedCornerShape(20.dp))
-                        .border(1.dp, DC.OrbViolet.copy(0.35f), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+            if (!loading && fetchError == null) {
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor   = Color.Transparent,
+                    contentColor     = DC.Primary,
+                    divider          = { HorizontalDivider(color = DC.Border.copy(0.5f)) }
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("⭐", fontSize = 11.sp)
-                        Text("$orbBalance orbs", fontSize = 11.sp, color = DC.OrbViolet, fontWeight = FontWeight.ExtraBold)
+                    listOf("Active (${activeStates.size})", "Claimed (${claimedStates.size})").forEachIndexed { idx, label ->
+                        Tab(selected = selectedTab == idx, onClick = { selectedTab = idx }, modifier = Modifier.offset(y = (-10).dp)) {
+                            Text(
+                                label,
+                                modifier   = Modifier.padding(vertical = 10.dp),
+                                fontSize   = 13.sp,
+                                fontWeight = if (selectedTab == idx) FontWeight.ExtraBold else FontWeight.Medium,
+                                color      = if (selectedTab == idx) DC.Primary else DC.Muted
+                            )
+                        }
                     }
                 }
             }
-            IconButton(
-                onClick = {
-                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Discord Token", token))
-                },
-                modifier = Modifier.size(36.dp).background(DC.Card, RoundedCornerShape(10.dp))
-            ) {
-                Icon(Icons.Outlined.ContentCopy, null, tint = DC.Muted, modifier = Modifier.size(17.dp))
-            }
-            IconButton(
-                onClick = {
-                    try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://discord.com/channels/@me")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) }
-                    catch (_: Exception) {}
-                },
-                modifier = Modifier.size(36.dp).background(DC.Card, RoundedCornerShape(10.dp))
-            ) {
-                Icon(Icons.Outlined.OpenInBrowser, null, tint = DC.Muted, modifier = Modifier.size(17.dp))
-            }
-            IconButton(
-                onClick = onRefresh,
-                modifier = Modifier.size(36.dp).background(DC.Primary.copy(0.15f), RoundedCornerShape(10.dp))
-            ) {
-                Icon(Icons.Outlined.Refresh, null, tint = DC.Primary, modifier = Modifier.size(17.dp))
+
+            when {
+                loading        -> CenteredSpinner()
+                fetchError != null -> ErrorPane(fetchError!!) { refreshKey++ }
+                selectedTab == 0 -> QuestListPane(
+                    states = activeStates, isClaimed = false,
+                    empty  = "No active quests" to "No incomplete quests right now.",
+                    token  = token
+                ) { updated ->
+                    val i = activeStates.indexOfFirst { it.quest.id == updated.quest.id }
+                    if (i >= 0) activeStates[i] = updated
+                }
+                else -> QuestListPane(
+                    states = claimedStates, isClaimed = true,
+                    empty  = "No claimed quests" to "Completed quests appear here.",
+                    token  = token, onUpdate = {}
+                )
             }
         }
     }
@@ -601,8 +737,8 @@ private fun QuestListPane(states: List<QuestState>, isClaimed: Boolean, empty: P
             }
         }
     } else {
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            item { Spacer(Modifier.height(8.dp)) }
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { Spacer(Modifier.height(4.dp)) }
             items(states, key = { it.quest.id }) { state ->
                 QuestCard(state, isClaimed, token, onUpdate)
             }
@@ -640,16 +776,16 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
     val shimmerX by shimmerT.animateFloat(-300f, 1200f, infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart), label = "sx")
 
     val pulseT = rememberInfiniteTransition(label = "pulse")
-    val pulseA by pulseT.animateFloat(0.2f, 0.6f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pa")
-    val borderAlpha = if (state.runState == RunState.RUNNING) pulseA else if (isClaimed) 0.35f else 0.2f
+    val pulseA by pulseT.animateFloat(0.15f, 0.55f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pa")
+    val borderAlpha = if (state.runState == RunState.RUNNING) pulseA else 0.18f
 
     Card(
         colors   = CardDefaults.cardColors(containerColor = DC.Card),
-        shape    = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth().border(1.5.dp, accentColor.copy(borderAlpha), RoundedCornerShape(20.dp))
+        shape    = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth().border(1.dp, accentColor.copy(borderAlpha), RoundedCornerShape(18.dp))
     ) {
         Column {
-            Box(Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))) {
+            Box(Modifier.fillMaxWidth().height(130.dp).clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))) {
                 if (q.bannerUrl != null) {
                     AsyncImage(
                         model = ImageRequest.Builder(ctx).data(q.bannerUrl).crossfade(true).build(),
@@ -664,39 +800,57 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
                         start = Offset(0f, 0f), end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                     )))
                 }
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, DC.Card), startY = 50f)))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, DC.Card), startY = 40f)))
                 if (state.runState == RunState.RUNNING) {
                     Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(
-                        colors = listOf(Color.Transparent, accentColor.copy(0.35f), Color.Transparent),
+                        colors = listOf(Color.Transparent, accentColor.copy(0.3f), Color.Transparent),
                         startX = shimmerX, endX = shimmerX + 350f
                     )))
                 }
-                Box(Modifier.align(Alignment.TopEnd).padding(12.dp)
-                    .background(accentColor.copy(0.85f), RoundedCornerShape(20.dp))
-                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                Box(
+                    Modifier.align(Alignment.TopEnd).padding(10.dp)
+                        .background(accentColor.copy(0.9f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
                 ) {
-                    val label = when { isClaimed -> "✓ CLAIMED"; q.rewardType == "orbs" -> "⭐ ORBS"; q.rewardType == "decor" -> "🎨 DECOR"; q.rewardType == "nitro" -> "💜 NITRO"; else -> q.reward.take(14).uppercase() }
-                    Text(label, fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.ExtraBold)
+                    val rIcon: ImageVector = when (q.rewardType) {
+                        "orbs"  -> Icons.Outlined.Stars
+                        "decor" -> Icons.Outlined.Palette
+                        "nitro" -> Icons.Outlined.Diamond
+                        else    -> Icons.Outlined.CardGiftcard
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(if (isClaimed) Icons.Outlined.CheckCircle else rIcon, null, tint = Color.White, modifier = Modifier.size(9.dp))
+                        Text(
+                            if (isClaimed) "CLAIMED" else q.reward.take(16).uppercase(),
+                            fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.ExtraBold
+                        )
+                    }
                 }
                 if (!q.appName.isNullOrEmpty()) {
-                    Box(Modifier.align(Alignment.BottomStart).padding(12.dp)
-                        .background(Color.Black.copy(0.55f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                    Box(
+                        Modifier.align(Alignment.BottomStart).padding(10.dp)
+                            .background(Color.Black.copy(0.6f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
                     ) {
-                        Text(q.appName, fontSize = 10.sp, color = DC.White, fontWeight = FontWeight.SemiBold)
+                        Text(q.appName, fontSize = 9.sp, color = DC.White.copy(0.9f), fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
 
-            Column(Modifier.padding(14.dp, 12.dp, 14.dp, 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(q.name, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = DC.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.padding(14.dp, 10.dp, 14.dp, 12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text(q.name, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = DC.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
 
                 if (q.reward.isNotBlank()) {
-                    Text(q.reward, fontSize = 12.sp, color = accentColor, fontWeight = FontWeight.Bold)
+                    Text(q.reward, fontSize = 11.sp, color = accentColor, fontWeight = FontWeight.Bold)
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    val tIcon = when { q.taskName.contains("WATCH") -> Icons.Outlined.Videocam; q.taskName.contains("PLAY") -> Icons.Outlined.SportsEsports; q.taskName.contains("STREAM") -> Icons.Outlined.Cast; else -> Icons.Outlined.Schedule }
+                Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    val tIcon: ImageVector = when {
+                        q.taskName.contains("WATCH")  -> Icons.Outlined.Videocam
+                        q.taskName.contains("PLAY")   -> Icons.Outlined.SportsEsports
+                        q.taskName.contains("STREAM") -> Icons.Outlined.Cast
+                        else                          -> Icons.Outlined.Schedule
+                    }
                     MiniChip(tIcon, q.taskName.replace("_"," "), DC.Muted)
                     MiniChip(Icons.Outlined.HourglassEmpty, timeLeft, if (isClaimed) DC.Teal else DC.Warning)
                     if (q.enrolledAt == null && !isClaimed) MiniChip(Icons.Outlined.ErrorOutline, "NOT ENROLLED", DC.Error)
@@ -704,33 +858,31 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
 
                 if (isClaimed && q.claimedAt != null) {
                     val fmtd = fmtDate(q.claimedAt)
-                    if (fmtd.isNotEmpty()) Text("Claimed $fmtd", fontSize = 10.sp, color = DC.Muted, fontFamily = FontFamily.Monospace)
+                    if (fmtd.isNotEmpty()) Text("Claimed $fmtd", fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace)
                 }
 
                 val curProgress = state.progress.coerceAtLeast(q.secondsDone)
                 if (!isClaimed && q.secondsNeeded > 0) {
                     val frac = (curProgress.toFloat() / q.secondsNeeded).coerceIn(0f, 1f)
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Progress", fontSize = 10.sp, color = DC.Muted, fontWeight = FontWeight.SemiBold)
-                            Text("${(frac * 100).toInt()}%", fontSize = 10.sp, color = accentColor, fontWeight = FontWeight.ExtraBold)
+                            Text("Progress", fontSize = 9.sp, color = DC.Muted, fontWeight = FontWeight.SemiBold)
+                            Text("${(frac * 100).toInt()}%", fontSize = 9.sp, color = accentColor, fontWeight = FontWeight.ExtraBold)
                         }
-                        Box(Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)).background(DC.Border)) {
+                        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(DC.Border)) {
                             Box(Modifier.fillMaxHeight().fillMaxWidth(frac).background(
-                                Brush.horizontalGradient(listOf(accentColor.copy(0.7f), accentColor)),
-                                RoundedCornerShape(4.dp)
+                                Brush.horizontalGradient(listOf(accentColor.copy(0.6f), accentColor)), RoundedCornerShape(3.dp)
                             ))
                         }
-                        Text("${curProgress}s / ${q.secondsNeeded}s", fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace)
+                        Text("${curProgress}s / ${q.secondsNeeded}s", fontSize = 8.sp, color = DC.Muted.copy(0.7f), fontFamily = FontFamily.Monospace)
                     }
                 }
 
                 if (!isClaimed && state.log.isNotBlank()) {
-                    val logBg    = when (state.runState) { RunState.ERROR -> DC.Error.copy(0.08f); RunState.DONE -> DC.Success.copy(0.08f); RunState.NOT_ENROLLED -> DC.Warning.copy(0.08f); else -> DC.CardAlt }
+                    val logBg    = when (state.runState) { RunState.ERROR -> DC.Error.copy(0.1f); RunState.DONE -> DC.Success.copy(0.1f); RunState.NOT_ENROLLED -> DC.Warning.copy(0.1f); else -> DC.CardAlt }
                     val logColor = when (state.runState) { RunState.ERROR -> DC.Error; RunState.DONE -> DC.Success; RunState.NOT_ENROLLED -> DC.Warning; else -> DC.Muted }
-                    Box(Modifier.fillMaxWidth().background(logBg, RoundedCornerShape(10.dp)).padding(10.dp, 8.dp)) {
-                        Text(state.log, fontSize = 11.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 16.sp)
-                    }
+                    Text(state.log, fontSize = 10.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
+                        modifier = Modifier.fillMaxWidth().background(logBg, RoundedCornerShape(8.dp)).padding(9.dp, 7.dp))
                 }
 
                 when {
@@ -738,9 +890,24 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
                     state.runState == RunState.DONE -> DoneActionRow(q, ctx)
                     state.runState == RunState.RUNNING -> RunningRow(accentColor, shimmerX, state.log)
                     state.runState == RunState.NOT_ENROLLED ->
-                        NotEnrolledButton { CoroutineScope(Dispatchers.IO).launch { completeQuest(token, state.copy(runState = RunState.IDLE, log = ""), onStateChange) } }
+                        QuestActionRow(
+                            mainLabel = "Enroll & Complete",
+                            mainIcon  = Icons.Outlined.AddCircleOutline,
+                            mainColor = DC.Warning,
+                            quest     = q,
+                            ctx       = ctx,
+                            onMain    = { CoroutineScope(Dispatchers.IO).launch { completeQuest(token, state.copy(runState = RunState.IDLE, log = ""), onStateChange) } }
+                        )
                     else ->
-                        AutoCompleteButton(accentColor, shimmerX) { CoroutineScope(Dispatchers.IO).launch { completeQuest(token, state, onStateChange) } }
+                        QuestActionRow(
+                            mainLabel = "Auto Complete",
+                            mainIcon  = Icons.Outlined.PlayArrow,
+                            mainColor = accentColor,
+                            quest     = q,
+                            ctx       = ctx,
+                            shimmerX  = shimmerX,
+                            onMain    = { CoroutineScope(Dispatchers.IO).launch { completeQuest(token, state, onStateChange) } }
+                        )
                 }
             }
         }
@@ -748,115 +915,135 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
 }
 
 @Composable
-private fun AutoCompleteButton(color: Color, shimmerX: Float, onClick: () -> Unit) {
-    Box(
-        Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp))
-            .background(Brush.horizontalGradient(listOf(color, color.copy(0.75f))))
-            .drawWithContent {
-                drawContent()
-                drawRect(brush = Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(0.2f), Color.Transparent), startX = shimmerX, endX = shimmerX + 280f), size = size)
-            }
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(Icons.Outlined.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
-            Text("Auto Complete", fontWeight = FontWeight.ExtraBold, color = Color.White, fontSize = 15.sp)
-        }
-    }
-}
+private fun QuestActionRow(
+    mainLabel: String,
+    mainIcon: ImageVector,
+    mainColor: Color,
+    quest: QuestItem,
+    ctx: Context,
+    shimmerX: Float = 0f,
+    onMain: () -> Unit
+) {
+    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
-@Composable
-private fun NotEnrolledButton(onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(52.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = DC.Warning),
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        Icon(Icons.Outlined.AddCircleOutline, null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text("Enroll & Complete", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(
+            Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp))
+                .background(Brush.horizontalGradient(listOf(mainColor, mainColor.copy(0.8f))))
+                .drawWithContent {
+                    drawContent()
+                    drawRect(brush = Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(0.18f), Color.Transparent), startX = shimmerX, endX = shimmerX + 240f), size = size)
+                }
+                .clickable(onClick = onMain),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(mainIcon, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Text(mainLabel, fontWeight = FontWeight.ExtraBold, color = Color.White, fontSize = 13.sp)
+            }
+        }
+
+        IconButton(
+            onClick = { clipboard.setPrimaryClip(ClipData.newPlainText("quest", quest.name)) },
+            modifier = Modifier.size(46.dp).background(DC.CardAlt, RoundedCornerShape(12.dp)).border(1.dp, DC.Border, RoundedCornerShape(12.dp))
+        ) {
+            Icon(Icons.Outlined.ContentCopy, null, tint = DC.Muted, modifier = Modifier.size(16.dp))
+        }
+
+        if (quest.questLink != null) {
+            IconButton(
+                onClick = {
+                    try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(quest.questLink)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {}
+                },
+                modifier = Modifier.size(46.dp).background(DC.CardAlt, RoundedCornerShape(12.dp)).border(1.dp, DC.Border, RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Outlined.OpenInBrowser, null, tint = DC.Muted, modifier = Modifier.size(16.dp))
+            }
+        }
     }
 }
 
 @Composable
 private fun RunningRow(color: Color, shimmerX: Float, log: String) {
     val pulseT = rememberInfiniteTransition(label = "rp")
-    val alpha  by pulseT.animateFloat(0.5f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "rpa")
+    val alpha  by pulseT.animateFloat(0.4f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "rpa")
     Box(
-        Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp))
-            .background(color.copy(0.12f))
-            .border(1.5.dp, color.copy(alpha), RoundedCornerShape(14.dp))
+        Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(12.dp))
+            .background(color.copy(0.1f))
+            .border(1.dp, color.copy(alpha), RoundedCornerShape(12.dp))
             .drawWithContent {
                 drawContent()
-                drawRect(brush = Brush.horizontalGradient(listOf(Color.Transparent, color.copy(0.3f), Color.Transparent), startX = shimmerX, endX = shimmerX + 280f), size = size)
+                drawRect(brush = Brush.horizontalGradient(listOf(Color.Transparent, color.copy(0.25f), Color.Transparent), startX = shimmerX, endX = shimmerX + 240f), size = size)
             },
         contentAlignment = Alignment.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = color, strokeWidth = 2.5.dp)
-            Text(
-                if (log.contains("s /")) log.substringAfterLast("📺 ").substringAfterLast("🎮 ").substringAfterLast("🕹️ ").take(32)
-                else "Running...",
-                fontWeight = FontWeight.ExtraBold, color = color, fontSize = 13.sp, maxLines = 1
-            )
+            CircularProgressIndicator(modifier = Modifier.size(15.dp), color = color, strokeWidth = 2.dp)
+            val display = log.trim().lines().lastOrNull()?.take(36) ?: "Running..."
+            Text(display, fontWeight = FontWeight.Bold, color = color, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
 private fun DoneActionRow(q: QuestItem, ctx: Context) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
-            Modifier.weight(1f).height(52.dp).clip(RoundedCornerShape(14.dp))
-                .background(DC.Success.copy(0.12f)).border(1.dp, DC.Success.copy(0.35f), RoundedCornerShape(14.dp)),
+            Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp))
+                .background(DC.Success.copy(0.12f)).border(1.dp, DC.Success.copy(0.3f), RoundedCornerShape(12.dp)),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Icon(Icons.Outlined.CheckCircle, null, tint = DC.Success, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Completed!", fontWeight = FontWeight.ExtraBold, color = DC.Success, fontSize = 14.sp)
+            Icon(Icons.Outlined.CheckCircle, null, tint = DC.Success, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Completed!", fontWeight = FontWeight.ExtraBold, color = DC.Success, fontSize = 13.sp)
+        }
+        IconButton(
+            onClick = { clipboard.setPrimaryClip(ClipData.newPlainText("quest", q.name)) },
+            modifier = Modifier.size(46.dp).background(DC.CardAlt, RoundedCornerShape(12.dp)).border(1.dp, DC.Border, RoundedCornerShape(12.dp))
+        ) {
+            Icon(Icons.Outlined.ContentCopy, null, tint = DC.Muted, modifier = Modifier.size(16.dp))
         }
         IconButton(
             onClick = {
                 try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://discord.com/channels/@me")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {}
             },
-            modifier = Modifier.size(52.dp).background(DC.Primary.copy(0.15f), RoundedCornerShape(14.dp)).border(1.dp, DC.Primary.copy(0.3f), RoundedCornerShape(14.dp))
+            modifier = Modifier.size(46.dp).background(DC.Primary.copy(0.15f), RoundedCornerShape(12.dp)).border(1.dp, DC.Primary.copy(0.3f), RoundedCornerShape(12.dp))
         ) {
-            Icon(Icons.Outlined.OpenInBrowser, null, tint = DC.Primary, modifier = Modifier.size(20.dp))
+            Icon(Icons.Outlined.OpenInBrowser, null, tint = DC.Primary, modifier = Modifier.size(16.dp))
         }
     }
 }
 
 @Composable
 private fun ClaimedActionRow(q: QuestItem, ctx: Context) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
-            Modifier.weight(1f).height(50.dp).clip(RoundedCornerShape(14.dp))
-                .background(DC.Teal.copy(0.1f)).border(1.dp, DC.Teal.copy(0.25f), RoundedCornerShape(14.dp)),
+            Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp))
+                .background(DC.Teal.copy(0.1f)).border(1.dp, DC.Teal.copy(0.2f), RoundedCornerShape(12.dp)),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center
         ) {
-            Icon(Icons.Outlined.CheckCircle, null, tint = DC.Teal, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(7.dp))
-            Text("Reward Claimed", fontSize = 13.sp, color = DC.Teal, fontWeight = FontWeight.SemiBold)
+            Icon(Icons.Outlined.CheckCircle, null, tint = DC.Teal, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Reward Claimed", fontSize = 12.sp, color = DC.Teal, fontWeight = FontWeight.SemiBold)
         }
-        val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         IconButton(
             onClick = { clipboard.setPrimaryClip(ClipData.newPlainText("quest", q.name)) },
-            modifier = Modifier.size(50.dp).background(DC.CardAlt, RoundedCornerShape(14.dp)).border(1.dp, DC.Border, RoundedCornerShape(14.dp))
+            modifier = Modifier.size(46.dp).background(DC.CardAlt, RoundedCornerShape(12.dp)).border(1.dp, DC.Border, RoundedCornerShape(12.dp))
         ) {
-            Icon(Icons.Outlined.ContentCopy, null, tint = DC.Muted, modifier = Modifier.size(17.dp))
+            Icon(Icons.Outlined.ContentCopy, null, tint = DC.Muted, modifier = Modifier.size(16.dp))
         }
-        if (q.appId != null) {
+        if (q.questLink != null) {
             IconButton(
                 onClick = {
-                    try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://discord.com/discovery/quests")).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {}
+                    try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(q.questLink)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {}
                 },
-                modifier = Modifier.size(50.dp).background(DC.CardAlt, RoundedCornerShape(14.dp)).border(1.dp, DC.Border, RoundedCornerShape(14.dp))
+                modifier = Modifier.size(46.dp).background(DC.CardAlt, RoundedCornerShape(12.dp)).border(1.dp, DC.Border, RoundedCornerShape(12.dp))
             ) {
-                Icon(Icons.Outlined.OpenInBrowser, null, tint = DC.Muted, modifier = Modifier.size(17.dp))
+                Icon(Icons.Outlined.OpenInBrowser, null, tint = DC.Muted, modifier = Modifier.size(16.dp))
             }
         }
     }
@@ -866,13 +1053,13 @@ private fun ClaimedActionRow(q: QuestItem, ctx: Context) {
 private fun MiniChip(icon: ImageVector, text: String, color: Color) {
     Row(
         Modifier.background(color.copy(0.1f), RoundedCornerShape(20.dp))
-            .border(1.dp, color.copy(0.25f), RoundedCornerShape(20.dp))
-            .padding(horizontal = 9.dp, vertical = 4.dp),
+            .border(1.dp, color.copy(0.2f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Icon(icon, null, tint = color, modifier = Modifier.size(11.dp))
-        Text(text, fontSize = 9.sp, color = color, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(icon, null, tint = color, modifier = Modifier.size(10.dp))
+        Text(text, fontSize = 8.sp, color = color, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -881,9 +1068,9 @@ private fun CenteredSpinner() {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
             val inf = rememberInfiniteTransition(label = "si")
-            val rot by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "sr")
-            Box(Modifier.size(56.dp).rotate(rot).border(3.dp, Brush.sweepGradient(listOf(DC.Primary, Color.Transparent)), CircleShape))
-            Text("Loading quests...", color = DC.Muted, fontSize = 14.sp)
+            val rot by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "sr")
+            Box(Modifier.size(48.dp).rotate(rot).border(2.5.dp, Brush.sweepGradient(listOf(DC.Primary, Color.Transparent)), CircleShape))
+            Text("Loading quests...", color = DC.Muted, fontSize = 13.sp)
         }
     }
 }
@@ -892,15 +1079,15 @@ private fun CenteredSpinner() {
 private fun ErrorPane(msg: String, onRetry: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(Modifier.size(72.dp).background(DC.Error.copy(0.12f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.ErrorOutline, null, tint = DC.Error, modifier = Modifier.size(36.dp))
+            Box(Modifier.size(64.dp).background(DC.Error.copy(0.1f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.ErrorOutline, null, tint = DC.Error, modifier = Modifier.size(32.dp))
             }
-            Text("Failed to load quests", color = DC.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+            Text("Failed to load quests", color = DC.White, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
             Text(msg, color = DC.Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
             Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary), shape = RoundedCornerShape(12.dp)) {
-                Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Try Again", fontWeight = FontWeight.ExtraBold)
+                Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(7.dp))
+                Text("Try Again", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
             }
         }
     }
