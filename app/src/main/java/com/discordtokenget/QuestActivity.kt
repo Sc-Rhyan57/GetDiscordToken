@@ -335,7 +335,7 @@ private suspend fun fetchAllQuests(token: String): QuestFetchResult = withContex
     qLog("INFO", "Quest", "Fetching active quests")
 
     val activeResp = questHttpClient.newCall(
-        questReq("https://discord.com/api/v10/users/@me/quests?with_userquest=true&include_dismissed=false&user_quest_completions=false", token).build()
+        questReq("https://discord.com/api/v9/quests/@me", token).build()
     ).execute()
     val activeBody = activeResp.body?.string() ?: ""
 
@@ -347,10 +347,8 @@ private suspend fun fetchAllQuests(token: String): QuestFetchResult = withContex
         throw Exception(msg)
     }
 
-    val activeArr = try {
-        val parsed = try { JSONObject(activeBody) } catch (_: Exception) { null }
-        parsed?.optJSONArray("quests") ?: JSONArray(activeBody)
-    } catch (_: Exception) { JSONArray() }
+    val activeArr = try { JSONObject(activeBody).optJSONArray("quests") ?: JSONArray() }
+                   catch (_: Exception) { JSONArray() }
 
     val active = mutableListOf<QuestItem>()
     for (i in 0 until activeArr.length()) {
@@ -363,26 +361,25 @@ private suspend fun fetchAllQuests(token: String): QuestFetchResult = withContex
 
     qLog("INFO", "Quest", "Fetching claimed quests")
     val claimedResp = questHttpClient.newCall(
-        questReq("https://discord.com/api/v10/users/@me/quests?with_userquest=true&include_dismissed=true&user_quest_completions=true", token).build()
+        questReq("https://discord.com/api/v9/quests/@me/claimed", token).build()
     ).execute()
     val claimedBody = claimedResp.body?.string() ?: ""
     qLog(if (claimedResp.isSuccessful) "SUCCESS" else "WARN", "Quest", "Claimed quests HTTP ${claimedResp.code}")
 
     val claimedArr = try {
-        val parsed = try { JSONObject(claimedBody) } catch (_: Exception) { null }
-        parsed?.optJSONArray("quests") ?: if (claimedResp.isSuccessful) JSONArray(claimedBody) else JSONArray()
+        JSONObject(claimedBody).optJSONArray("quests") ?: JSONArray()
     } catch (_: Exception) { JSONArray() }
 
     val claimed = mutableListOf<QuestItem>()
     for (i in 0 until claimedArr.length()) {
         val item = parseQuestItem(claimedArr.getJSONObject(i)) ?: continue
-        if (item.claimedAt != null) claimed.add(item)
+        claimed.add(item)
     }
     qLog("SUCCESS", "Quest", "Claimed: ${claimed.size}")
 
     qLog("INFO", "Quest", "Fetching orb balance")
     val orbResp = questHttpClient.newCall(
-        questReq("https://discord.com/api/v10/users/@me/quests/collectibles/balance", token).build()
+        questReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token).build()
     ).execute()
     val orbBody = orbResp.body?.string() ?: ""
     val orbs = try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
@@ -395,7 +392,7 @@ private suspend fun enrollInQuest(token: String, questId: String): Boolean = wit
     qLog("INFO", "Quest", "Enrolling in quest $questId")
     val body = JSONObject().apply { put("platform", 0) }.toString().toRequestBody("application/json".toMediaType())
     val resp = questHttpClient.newCall(
-        questReq("https://discord.com/api/v10/quests/$questId/enroll", token).post(body).build()
+        questReq("https://discord.com/api/v9/quests/$questId/enroll", token).post(body).build()
     ).execute()
     val ok = resp.isSuccessful
     qLog(if (ok) "SUCCESS" else "ERROR", "Quest", "Enroll HTTP ${resp.code}")
@@ -431,7 +428,7 @@ private suspend fun completeQuestTask(
             if (ok) {
                 delay(800)
                 val statusResp = questHttpClient.newCall(
-                    questReq("https://discord.com/api/v10/users/@me/quests/$questId", token).build()
+                    questReq("https://discord.com/api/v9/users/@me/quests/$questId", token).build()
                 ).execute()
                 val statusBody = statusResp.body?.string() ?: "{}"
                 enrolledAt = try { JSONObject(statusBody).optString("enrolled_at", "").takeIf { it.isNotEmpty() && it != "null" } } catch (_: Exception) { null }
@@ -464,7 +461,7 @@ private suspend fun completeQuestTask(
                             .toRequestBody("application/json".toMediaType())
 
                         val resp     = questHttpClient.newCall(
-                            questReq("https://discord.com/api/v10/quests/$questId/video-progress", token)
+                            questReq("https://discord.com/api/v9/quests/$questId/video-progress", token)
                                 .post(body).build()
                         ).execute()
                         val respBody = resp.body?.string() ?: "{}"
@@ -487,7 +484,7 @@ private suspend fun completeQuestTask(
                     val finalBody = JSONObject().apply { put("timestamp", secondsNeeded.toDouble()) }.toString()
                         .toRequestBody("application/json".toMediaType())
                     val finalResp = questHttpClient.newCall(
-                        questReq("https://discord.com/api/v10/quests/$questId/video-progress", token)
+                        questReq("https://discord.com/api/v9/quests/$questId/video-progress", token)
                             .post(finalBody).build()
                     ).execute()
                     qLog("INFO", "Quest", "Final video flush HTTP ${finalResp.code}")
@@ -499,7 +496,7 @@ private suspend fun completeQuestTask(
 
             "PLAY_ACTIVITY" -> {
                 val dmResp = questHttpClient.newCall(
-                    questReq("https://discord.com/api/v10/users/@me/channels", token).build()
+                    questReq("https://discord.com/api/v9/users/@me/channels", token).build()
                 ).execute()
                 qLog("INFO", "Quest", "DM channels HTTP ${dmResp.code}")
 
@@ -521,7 +518,7 @@ private suspend fun completeQuestTask(
                     }.toString().toRequestBody("application/json".toMediaType())
 
                     val resp    = questHttpClient.newCall(
-                        questReq("https://discord.com/api/v10/quests/$questId/heartbeat", token)
+                        questReq("https://discord.com/api/v9/quests/$questId/heartbeat", token)
                             .post(reqBody).build()
                     ).execute()
                     val respStr = resp.body?.string() ?: "{}"
@@ -542,7 +539,7 @@ private suspend fun completeQuestTask(
                             put("terminal", true)
                         }.toString().toRequestBody("application/json".toMediaType())
                         val termResp = questHttpClient.newCall(
-                            questReq("https://discord.com/api/v10/quests/$questId/heartbeat", token)
+                            questReq("https://discord.com/api/v9/quests/$questId/heartbeat", token)
                                 .post(termBody).build()
                         ).execute()
                         qLog("SUCCESS", "Quest", "Terminal heartbeat HTTP ${termResp.code}")
@@ -557,7 +554,7 @@ private suspend fun completeQuestTask(
 
             "PLAY_ON_DESKTOP" -> {
                 val dmResp = questHttpClient.newCall(
-                    questReq("https://discord.com/api/v10/users/@me/channels", token).build()
+                    questReq("https://discord.com/api/v9/users/@me/channels", token).build()
                 ).execute()
                 val channelId = try {
                     val arr = JSONArray(dmResp.body?.string() ?: "[]")
@@ -577,7 +574,7 @@ private suspend fun completeQuestTask(
                     }.toString().toRequestBody("application/json".toMediaType())
 
                     val resp    = questHttpClient.newCall(
-                        questReq("https://discord.com/api/v10/quests/$questId/heartbeat", token)
+                        questReq("https://discord.com/api/v9/quests/$questId/heartbeat", token)
                             .post(reqBody).build()
                     ).execute()
                     val respStr = resp.body?.string() ?: "{}"
@@ -606,7 +603,7 @@ private suspend fun completeQuestTask(
                     put("terminal", true)
                 }.toString().toRequestBody("application/json".toMediaType())
                 questHttpClient.newCall(
-                    questReq("https://discord.com/api/v10/quests/$questId/heartbeat", token)
+                    questReq("https://discord.com/api/v9/quests/$questId/heartbeat", token)
                         .post(termBody).build()
                 ).execute()
 
