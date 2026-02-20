@@ -99,12 +99,8 @@ private fun fmtDate(s: String?): String {
     return try { SimpleDateFormat("MMM dd, HH:mm", Locale.US).format(Date(ms)) } catch (_: Exception) { "" }
 }
 
-// ─────────────────── BANNER URL BUILDER ───────────────────
-// Discord CDN for quest assets: https://cdn.discordapp.com/quests/{questId}/{hash}.ext
-// For app assets: https://cdn.discordapp.com/app-assets/{appId}/store/header.jpg
 private fun buildBannerUrl(questId: String, config: JSONObject): String? {
     val assets = config.optJSONObject("assets") ?: return null
-    // Prefer quest_bar_hero (small), then hero, then logotype
     val candidates = listOf("quest_bar_hero", "hero", "logotype", "game_tile")
     for (key in candidates) {
         val v = assets.optString(key, "").takeIf { it.isNotEmpty() && it != "null" } ?: continue
@@ -112,7 +108,6 @@ private fun buildBannerUrl(questId: String, config: JSONObject): String? {
             v.startsWith("http")   -> v
             v.startsWith("quests/") -> "https://cdn.discordapp.com/$v"
             v.contains("/")        -> "https://cdn.discordapp.com/quests/$v"
-            // bare hash — build full path
             else -> "https://cdn.discordapp.com/quests/$questId/$v"
         }
     }
@@ -163,7 +158,6 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         SimpleDateFormat("MMM dd", Locale.US).format(Date(expiresMs))
     } catch (_: Exception) { "?" }
 
-    // Task resolution — try both taskConfig and task_config and taskConfigV2 and task_config_v2
     val taskConfig = config.optJSONObject("task_config")
         ?: config.optJSONObject("taskConfig")
         ?: config.optJSONObject("task_config_v2")
