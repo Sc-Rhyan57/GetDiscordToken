@@ -1112,7 +1112,7 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
                             modifier   = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
                             color      = accentColor,
                             trackColor = QC.Divider,
-                            strokeCap  = androidx.compose.material3.StrokeCap.Round
+                            strokeCap  = androidx.compose.ui.graphics.StrokeCap.Round
                         )
                         Text("${curProgress}s / ${q.secondsNeeded}s", fontSize = 9.sp, color = QC.TextMuted, fontFamily = FontFamily.Monospace)
                     }
