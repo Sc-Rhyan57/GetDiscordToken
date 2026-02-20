@@ -54,11 +54,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +72,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -92,6 +96,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 private val questHttpClient = OkHttpClient.Builder()
@@ -108,47 +115,64 @@ private val QC = object {
     val Warning       = Color(0xFFFAA61A)
     val Error         = Color(0xFFED4245)
     val TextPrimary   = Color(0xFFF2F3F5)
-    val TextSecondary = Color(0xFFB5BAC1)
     val TextMuted     = Color(0xFF80848E)
     val Divider       = Color(0xFF3F4147)
     val Orbs          = Color(0xFF7C43E0)
     val Decor         = Color(0xFF57F287)
-    val Nitro         = Color(0xFF5865F2)
+    val Claimed       = Color(0xFF4E5058)
 }
 
-private val SUPER_PROPERTIES = "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTI7IE1vYmlsZTsgcnY6MTQ3LjApIEdlY2tvLzE0Ny4wIEZpcmVmb3gvMTQ3LjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNDcuMCIsIm9zX3ZlcnNpb24iOiIxMiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiJodHRwczovL2Rpc2NvcmQuY29tL2xvZ2luP3JlZGlyZWN0X3RvPSUyRnF1ZXN0LWhvbWUiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiJkaXNjb3JkLmNvbSIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjQ5OTEyMywiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0="
+private val SUPER_PROPERTIES =
+    "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTI7IE1vYmlsZTsgcnY6MTQ3LjApIEdlY2tvLzE0Ny4wIEZpcmVmb3gvMTQ3LjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNDcuMCIsIm9zX3ZlcnNpb24iOiIxMiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiJodHRwczovL2Rpc2NvcmQuY29tL2xvZ2luP3JlZGlyZWN0X3RvPSUyRnF1ZXN0LWhvbWUiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiJkaXNjb3JkLmNvbSIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjQ5OTEyMywiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0="
+
 private val DISCORD_HEADERS = mapOf(
-    "Content-Type" to "application/json",
-    "User-Agent" to "Mozilla/5.0 (Android 12; Mobile; rv:147.0) Gecko/147.0 Firefox/147.0",
+    "Content-Type"       to "application/json",
+    "User-Agent"         to "Mozilla/5.0 (Android 12; Mobile; rv:147.0) Gecko/147.0 Firefox/147.0",
     "X-Super-Properties" to SUPER_PROPERTIES,
-    "X-Discord-Locale" to "pt-BR",
+    "X-Discord-Locale"   to "pt-BR",
     "X-Discord-Timezone" to "America/Sao_Paulo",
-    "X-Debug-Options" to "bugReporterEnabled",
-    "Referer" to "https://discord.com/quest-home"
+    "X-Debug-Options"    to "bugReporterEnabled",
+    "Referer"            to "https://discord.com/quest-home"
 )
+
+private val UTC_SDF = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).also {
+    it.timeZone = TimeZone.getTimeZone("UTC")
+}
+
+private val DISPLAY_SDF = SimpleDateFormat("MMM dd, HH:mm", Locale.US)
+
+private fun parseTs(iso: String?): Long {
+    if (iso.isNullOrEmpty() || iso == "null") return 0L
+    return try { UTC_SDF.parse(iso.substringBefore('.'))?.time ?: 0L } catch (_: Exception) { 0L }
+}
+
+private fun formatTs(iso: String?): String {
+    if (iso.isNullOrEmpty() || iso == "null") return ""
+    return try { DISPLAY_SDF.format(UTC_SDF.parse(iso.substringBefore('.'))!!) } catch (_: Exception) { "" }
+}
 
 data class QuestItem(
     val id: String,
     val name: String,
-    val description: String,
     val reward: String,
     val rewardType: String,
-    val expiresAt: String,
+    val expiresDisplay: String,
     val expiresMs: Long,
     val taskName: String,
     val secondsNeeded: Long,
     val secondsDone: Long,
-    val applicationId: String?,
     val applicationName: String?,
     val bannerUrl: String?,
-    val thumbnailUrl: String?
+    val enrolledAt: String?,
+    val completedAt: String?,
+    val claimedAt: String?
 )
 
-enum class QuestStatus { IDLE, RUNNING, DONE, ERROR }
+enum class CompletionStatus { IDLE, RUNNING, DONE, ERROR }
 
 data class QuestState(
     val quest: QuestItem,
-    var status: QuestStatus = QuestStatus.IDLE,
+    var status: CompletionStatus = CompletionStatus.IDLE,
     var progress: Long = 0L,
     var log: String = ""
 )
@@ -169,11 +193,11 @@ class QuestActivity : ComponentActivity() {
         val token = intent.getStringExtra(EXTRA_TOKEN) ?: run { finish(); return }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
-                primary = QC.Primary,
+                primary    = QC.Primary,
                 background = QC.Background,
-                surface = QC.Surface
+                surface    = QC.Surface
             )) {
-                Surface(modifier = Modifier.fillMaxSize(), color = QC.Background) {
+                Surface(Modifier.fillMaxSize(), color = QC.Background) {
                     QuestScreen(token = token, onBack = { finish() })
                 }
             }
@@ -181,124 +205,229 @@ class QuestActivity : ComponentActivity() {
     }
 
     @Composable
-    fun QuestScreen(token: String, onBack: () -> Unit) {
-        var loading by remember { mutableStateOf(true) }
-        var fetchError by remember { mutableStateOf<String?>(null) }
-        val questStates = remember { mutableStateListOf<QuestState>() }
-        var refreshKey by remember { mutableStateOf(0) }
+    private fun QuestScreen(token: String, onBack: () -> Unit) {
+        var loading    by remember { mutableStateOf(true) }
+        var error      by remember { mutableStateOf<String?>(null) }
+        var orbBalance by remember { mutableStateOf<Int?>(null) }
+        var selectedTab by remember { mutableIntStateOf(0) }
+        var refreshKey  by remember { mutableIntStateOf(0) }
+
+        val activeStates  = remember { mutableStateListOf<QuestState>() }
+        val claimedStates = remember { mutableStateListOf<QuestState>() }
 
         LaunchedEffect(refreshKey) {
             loading = true
-            fetchError = null
-            questStates.clear()
+            error   = null
+            activeStates.clear()
+            claimedStates.clear()
+            orbBalance = null
             try {
-                val quests = fetchQuests(token)
-                questStates.addAll(quests.map { QuestState(it) })
+                val result = fetchAll(token)
+                activeStates.addAll(result.active.map { QuestState(it) })
+                claimedStates.addAll(result.claimed.map { QuestState(it, status = CompletionStatus.DONE) })
+                orbBalance = result.orbs
             } catch (e: Exception) {
-                fetchError = e.message ?: "Unknown error"
+                error = e.message ?: "Unknown error"
             }
             loading = false
         }
 
         Column(Modifier.fillMaxSize().background(QC.Background)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(QC.Surface)
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = QC.TextPrimary, modifier = Modifier.size(20.dp))
+            TopBar(
+                orbBalance  = orbBalance,
+                onBack      = onBack,
+                onRefresh   = { refreshKey++ }
+            )
+            HorizontalDivider(color = QC.Divider)
+
+            if (!loading && error == null) {
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor   = QC.Surface,
+                    contentColor     = QC.Primary,
+                    divider          = { HorizontalDivider(color = QC.Divider) }
+                ) {
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                        Text(
+                            "Active (${activeStates.size})",
+                            modifier  = Modifier.padding(vertical = 12.dp),
+                            fontSize  = 13.sp,
+                            color     = if (selectedTab == 0) QC.Primary else QC.TextMuted,
+                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
+                        )
                     }
-                    Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Outlined.EmojiEvents, null, tint = QC.Primary, modifier = Modifier.size(22.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text("Quest Completer", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = QC.TextPrimary)
-                        Text("Auto-complete Discord quests", fontSize = 11.sp, color = QC.TextMuted)
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                        Text(
+                            "Completed (${claimedStates.size})",
+                            modifier  = Modifier.padding(vertical = 12.dp),
+                            fontSize  = 13.sp,
+                            color     = if (selectedTab == 1) QC.Primary else QC.TextMuted,
+                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal
+                        )
                     }
-                }
-                IconButton(onClick = { refreshKey++ }, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Outlined.Refresh, null, tint = QC.Primary, modifier = Modifier.size(20.dp))
                 }
             }
 
-            HorizontalDivider(color = QC.Divider)
-
             when {
-                loading -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            CircularProgressIndicator(color = QC.Primary, strokeWidth = 3.dp, modifier = Modifier.size(48.dp))
-                            Text("Loading quests...", color = QC.TextMuted, fontSize = 14.sp)
-                        }
+                loading -> LoadingState()
+                error != null -> ErrorState(message = error!!, onRetry = { refreshKey++ })
+                selectedTab == 0 -> QuestList(
+                    states     = activeStates,
+                    isClaimed  = false,
+                    emptyTitle = "No active quests!",
+                    emptyBody  = "No incomplete quests found for your account.",
+                    token      = token,
+                    onUpdate   = { updated ->
+                        val idx = activeStates.indexOfFirst { it.quest.id == updated.quest.id }
+                        if (idx >= 0) activeStates[idx] = updated
                     }
+                )
+                else -> QuestList(
+                    states     = claimedStates,
+                    isClaimed  = true,
+                    emptyTitle = "No completed quests yet.",
+                    emptyBody  = "",
+                    token      = token,
+                    onUpdate   = {}
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun TopBar(orbBalance: Int?, onBack: () -> Unit, onRefresh: () -> Unit) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(QC.Surface)
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back", tint = QC.TextPrimary, modifier = Modifier.size(20.dp))
                 }
-                fetchError != null -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(Modifier.size(64.dp).background(QC.Error.copy(0.12f), CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Outlined.ErrorOutline, null, tint = QC.Error, modifier = Modifier.size(32.dp))
-                            }
-                            Text("Failed to load quests", color = QC.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                            Text(fetchError ?: "", color = QC.TextMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                            Button(onClick = { refreshKey++ }, colors = ButtonDefaults.buttonColors(containerColor = QC.Primary), shape = RoundedCornerShape(12.dp)) {
-                                Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Try Again", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                Spacer(Modifier.width(4.dp))
+                Icon(Icons.Outlined.EmojiEvents, contentDescription = null, tint = QC.Primary, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Quest Completer", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = QC.TextPrimary)
+                    Text("Auto-complete Discord quests", fontSize = 11.sp, color = QC.TextMuted)
                 }
-                questStates.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(Modifier.size(64.dp).background(QC.Success.copy(0.12f), CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Outlined.TaskAlt, null, tint = QC.Success, modifier = Modifier.size(32.dp))
-                            }
-                            Text("All caught up!", color = QC.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                            Text("No incomplete quests found.", color = QC.TextMuted, fontSize = 13.sp)
-                        }
-                    }
-                }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (orbBalance != null) {
+                    Row(
+                        modifier = Modifier
+                            .background(QC.Orbs.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                            .border(1.dp, QC.Orbs.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        item { Spacer(Modifier.height(4.dp)) }
-                        items(questStates, key = { it.quest.id }) { state ->
-                            QuestCard(
-                                state = state,
-                                token = token,
-                                onStateChange = { updated ->
-                                    val i = questStates.indexOfFirst { it.quest.id == state.quest.id }
-                                    if (i >= 0) questStates[i] = updated
-                                }
-                            )
-                        }
-                        item { Spacer(Modifier.height(20.dp)) }
+                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = QC.Orbs, modifier = Modifier.size(14.dp))
+                        Text("$orbBalance Orbs", fontSize = 12.sp, color = QC.Orbs, fontWeight = FontWeight.Bold)
                     }
+                }
+                IconButton(onClick = onRefresh, modifier = Modifier.size(40.dp)) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "Refresh", tint = QC.Primary, modifier = Modifier.size(20.dp))
                 }
             }
         }
     }
 
     @Composable
-    fun QuestCard(state: QuestState, token: String, onStateChange: (QuestState) -> Unit) {
+    private fun LoadingState() {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                CircularProgressIndicator(color = QC.Primary, strokeWidth = 3.dp, modifier = Modifier.size(48.dp))
+                Text("Loading quests...", color = QC.TextMuted, fontSize = 14.sp)
+            }
+        }
+    }
+
+    @Composable
+    private fun ErrorState(message: String, onRetry: () -> Unit) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Box(Modifier.size(64.dp).background(QC.Error.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = QC.Error, modifier = Modifier.size(32.dp))
+                }
+                Text("Failed to load quests", color = QC.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(message, color = QC.TextMuted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                Button(
+                    onClick = onRetry,
+                    colors = ButtonDefaults.buttonColors(containerColor = QC.Primary),
+                    shape  = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Try Again", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun QuestList(
+        states: List<QuestState>,
+        isClaimed: Boolean,
+        emptyTitle: String,
+        emptyBody: String,
+        token: String,
+        onUpdate: (QuestState) -> Unit
+    ) {
+        if (states.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(64.dp).background(QC.Success.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.TaskAlt, contentDescription = null, tint = QC.Success, modifier = Modifier.size(32.dp))
+                    }
+                    Text(emptyTitle, color = QC.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    if (emptyBody.isNotEmpty()) Text(emptyBody, color = QC.TextMuted, fontSize = 13.sp)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item { Spacer(Modifier.height(4.dp)) }
+                items(states, key = { it.quest.id }) { state ->
+                    QuestCard(state = state, isClaimed = isClaimed, token = token, onStateChange = onUpdate)
+                }
+                item { Spacer(Modifier.height(20.dp)) }
+            }
+        }
+    }
+
+    @Composable
+    private fun QuestCard(
+        state: QuestState,
+        isClaimed: Boolean,
+        token: String,
+        onStateChange: (QuestState) -> Unit
+    ) {
         val ctx = LocalContext.current
-        val rewardColor = when (state.quest.rewardType) {
+
+        val rewardColor = if (isClaimed) QC.Claimed else when (state.quest.rewardType) {
             "orbs"  -> QC.Orbs
             "decor" -> QC.Decor
-            "nitro" -> QC.Nitro
             else    -> QC.Primary
         }
 
-        val shimmerT = rememberInfiniteTransition(label = "sq")
-        val shimmerAlpha by shimmerT.animateFloat(0.4f, 1f, infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Reverse), label = "sqa")
+        val shimmerT = rememberInfiniteTransition(label = "shimmer")
+        val shimmerAlpha by shimmerT.animateFloat(
+            initialValue    = 0.4f,
+            targetValue     = 1f,
+            animationSpec   = infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Reverse),
+            label           = "shimmerAlpha"
+        )
 
         val gifLoader = remember(ctx) {
             ImageLoader.Builder(ctx).components {
@@ -307,229 +436,206 @@ class QuestActivity : ComponentActivity() {
             }.build()
         }
 
-        val timeLeft = remember(state.quest.expiresMs) {
-            val diff = state.quest.expiresMs - System.currentTimeMillis()
-            val hours = diff / 3600000L
-            val days = hours / 24
+        val timeLeft = remember(state.quest.expiresMs, isClaimed) {
+            if (isClaimed) return@remember "Completed"
+            val diff  = state.quest.expiresMs - System.currentTimeMillis()
+            val hours = diff / 3_600_000L
+            val days  = hours / 24L
             when {
-                days > 1 -> "${days}d left"
-                hours > 0 -> "${hours}h left"
-                else -> "Expiring soon"
+                diff  < 0  -> "Expired"
+                days  > 1  -> "${days}d left"
+                hours > 0  -> "${hours}h left"
+                else       -> "Expiring soon"
             }
         }
 
+        val badgeLabel = when {
+            isClaimed -> "CLAIMED"
+            else      -> state.quest.rewardType.uppercase()
+        }
+        val badgeIcon: ImageVector = when {
+            isClaimed                       -> Icons.Outlined.CheckCircle
+            state.quest.rewardType == "orbs"  -> Icons.Outlined.AutoAwesome
+            state.quest.rewardType == "decor" -> Icons.Outlined.CardGiftcard
+            else                            -> Icons.Outlined.EmojiEvents
+        }
+        val taskIcon: ImageVector = when {
+            state.quest.taskName.contains("WATCH") -> Icons.Outlined.Videocam
+            state.quest.taskName.contains("PLAY")  -> Icons.Outlined.SportsEsports
+            else                                   -> Icons.Outlined.Schedule
+        }
+
         Card(
-            colors = CardDefaults.cardColors(containerColor = QC.Surface),
-            shape = RoundedCornerShape(18.dp),
-            modifier = Modifier.fillMaxWidth().border(1.dp, rewardColor.copy(0.18f), RoundedCornerShape(18.dp))
+            colors   = CardDefaults.cardColors(containerColor = QC.Surface),
+            shape    = RoundedCornerShape(18.dp),
+            modifier = Modifier.fillMaxWidth().border(1.dp, rewardColor.copy(alpha = 0.18f), RoundedCornerShape(18.dp))
         ) {
             Column(Modifier.fillMaxWidth()) {
                 if (state.quest.bannerUrl != null) {
-                    Box(
-                        Modifier.fillMaxWidth().height(110.dp)
-                            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
-                    ) {
+                    Box(Modifier.fillMaxWidth().height(110.dp).clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))) {
                         AsyncImage(
-                            model = ImageRequest.Builder(ctx).data(state.quest.bannerUrl).crossfade(true).build(),
-                            contentDescription = "Quest Banner",
-                            imageLoader = gifLoader,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                            model             = ImageRequest.Builder(ctx).data(state.quest.bannerUrl).crossfade(true).build(),
+                            contentDescription = null,
+                            imageLoader       = gifLoader,
+                            modifier          = Modifier.fillMaxSize(),
+                            contentScale      = ContentScale.Crop
                         )
-                        Box(
-                            Modifier.fillMaxSize().background(
-                                Brush.verticalGradient(listOf(Color.Transparent, QC.Surface))
-                            )
-                        )
-                        Box(
-                            Modifier.align(Alignment.TopEnd).padding(10.dp)
-                                .background(rewardColor.copy(0.85f), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(
-                                    when (state.quest.rewardType) {
-                                        "orbs"  -> Icons.Outlined.AutoAwesome
-                                        "decor" -> Icons.Outlined.CardGiftcard
-                                        else    -> Icons.Outlined.EmojiEvents
-                                    },
-                                    null, tint = Color.White, modifier = Modifier.size(11.dp)
-                                )
-                                Text(state.quest.rewardType.uppercase(), fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Black)
-                            }
-                        }
+                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, QC.Surface))))
+                        Badge(Modifier.align(Alignment.TopEnd).padding(10.dp), badgeIcon, badgeLabel, rewardColor)
                     }
                 } else {
                     Box(
-                        Modifier.fillMaxWidth().height(70.dp)
-                            .background(
-                                Brush.horizontalGradient(listOf(rewardColor.copy(0.25f), rewardColor.copy(0.08f))),
-                                RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
-                            ),
+                        Modifier.fillMaxWidth().height(72.dp)
+                            .background(Brush.horizontalGradient(listOf(rewardColor.copy(alpha = 0.25f), rewardColor.copy(alpha = 0.06f))), RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)),
                         contentAlignment = Alignment.CenterStart
                     ) {
                         Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Box(Modifier.size(44.dp).background(rewardColor.copy(0.2f), CircleShape), contentAlignment = Alignment.Center) {
-                                Icon(
-                                    when (state.quest.rewardType) {
-                                        "orbs"  -> Icons.Outlined.AutoAwesome
-                                        "decor" -> Icons.Outlined.CardGiftcard
-                                        else    -> Icons.Outlined.EmojiEvents
-                                    },
-                                    null, tint = rewardColor, modifier = Modifier.size(22.dp)
-                                )
+                            Box(Modifier.size(44.dp).background(rewardColor.copy(alpha = 0.2f), CircleShape), contentAlignment = Alignment.Center) {
+                                Icon(badgeIcon, contentDescription = null, tint = rewardColor, modifier = Modifier.size(22.dp))
                             }
                             Column {
-                                Text(state.quest.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = QC.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(state.quest.reward, fontSize = 11.sp, color = rewardColor, fontWeight = FontWeight.SemiBold)
+                                Text(state.quest.name, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = QC.TextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (state.quest.reward.isNotBlank())
+                                    Text(state.quest.reward, fontSize = 11.sp, color = rewardColor, fontWeight = FontWeight.SemiBold)
                             }
                         }
-                        Box(
-                            Modifier.align(Alignment.TopEnd).padding(10.dp)
-                                .background(rewardColor.copy(0.85f), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(
-                                    when (state.quest.rewardType) {
-                                        "orbs"  -> Icons.Outlined.AutoAwesome
-                                        "decor" -> Icons.Outlined.CardGiftcard
-                                        else    -> Icons.Outlined.EmojiEvents
-                                    },
-                                    null, tint = Color.White, modifier = Modifier.size(11.dp)
-                                )
-                                Text(state.quest.rewardType.uppercase(), fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Black)
-                            }
-                        }
+                        Badge(Modifier.align(Alignment.TopEnd).padding(10.dp), badgeIcon, badgeLabel, rewardColor)
                     }
                 }
 
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (state.quest.bannerUrl != null) {
                         Text(state.quest.name, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = QC.TextPrimary)
-                        if (state.quest.reward.isNotBlank()) {
+                        if (state.quest.reward.isNotBlank())
                             Text(state.quest.reward, fontSize = 12.sp, color = rewardColor, fontWeight = FontWeight.SemiBold)
-                        }
                     }
 
-                    if (state.quest.description.isNotBlank()) {
-                        Text(state.quest.description, fontSize = 12.sp, color = QC.TextSecondary, lineHeight = 17.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Chip(taskIcon, state.quest.taskName.replace("_", " "), QC.TextMuted)
+                        Chip(Icons.Outlined.HourglassEmpty, timeLeft, if (isClaimed) QC.Success else QC.Warning)
+                        if (!state.quest.applicationName.isNullOrEmpty())
+                            Chip(Icons.Outlined.SportsEsports, state.quest.applicationName, QC.Primary)
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        QChip(
-                            icon = when (state.quest.taskName) {
-                                "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> Icons.Outlined.Videocam
-                                "PLAY_ACTIVITY", "PLAY_ON_DESKTOP"     -> Icons.Outlined.SportsEsports
-                                else                                   -> Icons.Outlined.Schedule
-                            },
-                            text = state.quest.taskName.replace("_", " "),
-                            color = QC.TextMuted
-                        )
-                        QChip(Icons.Outlined.HourglassEmpty, timeLeft, QC.Warning)
-                        if (state.quest.applicationName != null) {
-                            QChip(Icons.Outlined.SportsEsports, state.quest.applicationName, QC.Primary)
-                        }
+                    if (isClaimed && !state.quest.claimedAt.isNullOrEmpty()) {
+                        val claimedFormatted = formatTs(state.quest.claimedAt)
+                        if (claimedFormatted.isNotEmpty())
+                            Text("Claimed on $claimedFormatted", fontSize = 10.sp, color = QC.TextMuted, fontFamily = FontFamily.Monospace)
                     }
 
-                    if (state.quest.secondsNeeded > 0 && (state.status == QuestStatus.RUNNING || state.status == QuestStatus.DONE || state.quest.secondsDone > 0)) {
-                        val prog = (state.progress.coerceAtLeast(state.quest.secondsDone).toFloat() / state.quest.secondsNeeded.toFloat()).coerceIn(0f, 1f)
+                    val currentProgress = state.progress.coerceAtLeast(state.quest.secondsDone)
+                    val showProgress = !isClaimed
+                        && state.quest.secondsNeeded > 0
+                        && (state.status == CompletionStatus.RUNNING || state.status == CompletionStatus.DONE || currentProgress > 0)
+
+                    if (showProgress) {
+                        val prog = (currentProgress.toFloat() / state.quest.secondsNeeded.toFloat()).coerceIn(0f, 1f)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Progress", fontSize = 10.sp, color = QC.TextMuted, fontWeight = FontWeight.SemiBold)
                                 Text("${(prog * 100).toInt()}%", fontSize = 10.sp, color = rewardColor, fontWeight = FontWeight.Bold)
                             }
                             LinearProgressIndicator(
-                                progress = { prog },
-                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                                color = rewardColor,
-                                trackColor = QC.SurfaceVar,
-                                strokeCap = StrokeCap.Round
+                                progress    = { prog },
+                                modifier    = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                                color       = rewardColor,
+                                trackColor  = QC.SurfaceVar,
+                                strokeCap   = StrokeCap.Round
                             )
-                            Text(
-                                "${state.progress.coerceAtLeast(state.quest.secondsDone)}s / ${state.quest.secondsNeeded}s",
-                                fontSize = 9.sp, color = QC.TextMuted, fontFamily = FontFamily.Monospace
-                            )
+                            Text("${currentProgress}s / ${state.quest.secondsNeeded}s", fontSize = 9.sp, color = QC.TextMuted, fontFamily = FontFamily.Monospace)
                         }
                     }
 
-                    if (state.log.isNotBlank()) {
-                        Box(
+                    if (!isClaimed && state.log.isNotBlank()) {
+                        val logBg = when (state.status) {
+                            CompletionStatus.ERROR -> QC.Error.copy(alpha = 0.08f)
+                            CompletionStatus.DONE  -> QC.Success.copy(alpha = 0.08f)
+                            else                   -> QC.SurfaceVar
+                        }
+                        val logColor = when (state.status) {
+                            CompletionStatus.ERROR -> QC.Error
+                            CompletionStatus.DONE  -> QC.Success
+                            else                   -> QC.TextMuted
+                        }
+                        Box(Modifier.fillMaxWidth().background(logBg, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 7.dp)) {
+                            Text(state.log, fontSize = 11.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 15.sp)
+                        }
+                    }
+
+                    if (isClaimed) {
+                        Row(
                             Modifier.fillMaxWidth()
-                                .background(when (state.status) {
-                                    QuestStatus.ERROR -> QC.Error.copy(0.08f)
-                                    QuestStatus.DONE  -> QC.Success.copy(0.08f)
-                                    else              -> QC.SurfaceVar
-                                }, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 10.dp, vertical = 7.dp)
+                                .background(QC.Success.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                                .border(1.dp, QC.Success.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
                         ) {
-                            Text(state.log, fontSize = 11.sp, color = when (state.status) {
-                                QuestStatus.ERROR -> QC.Error
-                                QuestStatus.DONE  -> QC.Success
-                                else              -> QC.TextMuted
-                            }, fontFamily = FontFamily.Monospace, lineHeight = 15.sp)
+                            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = QC.Success, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Reward already claimed", fontSize = 13.sp, color = QC.Success, fontWeight = FontWeight.SemiBold)
                         }
-                    }
-
-                    when (state.status) {
-                        QuestStatus.IDLE -> {
-                            Button(
-                                onClick = {
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        completeQuest(token, state, onStateChange)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth().height(44.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = rewardColor),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Outlined.PlayArrow, null, modifier = Modifier.size(18.dp), tint = Color.White)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Complete Quest", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                    } else {
+                        when (state.status) {
+                            CompletionStatus.IDLE -> {
+                                Button(
+                                    onClick = {
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            completeQuest(token, state, onStateChange)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                                    colors   = ButtonDefaults.buttonColors(containerColor = rewardColor),
+                                    shape    = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Outlined.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color.White)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Auto Complete", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                }
                             }
-                        }
-                        QuestStatus.RUNNING -> {
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .background(rewardColor.copy(0.10f), RoundedCornerShape(12.dp))
-                                    .border(1.dp, rewardColor.copy(0.25f), RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = rewardColor.copy(shimmerAlpha), strokeWidth = 2.5.dp)
-                                Spacer(Modifier.width(10.dp))
-                                Text("Running...", fontWeight = FontWeight.Bold, color = rewardColor, fontSize = 14.sp)
+                            CompletionStatus.RUNNING -> {
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .background(rewardColor.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                                        .border(1.dp, rewardColor.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = rewardColor.copy(alpha = shimmerAlpha), strokeWidth = 2.5.dp)
+                                    Spacer(Modifier.width(10.dp))
+                                    Text("Running...", fontWeight = FontWeight.Bold, color = rewardColor, fontSize = 14.sp)
+                                }
                             }
-                        }
-                        QuestStatus.DONE -> {
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .background(QC.Success.copy(0.10f), RoundedCornerShape(12.dp))
-                                    .border(1.dp, QC.Success.copy(0.25f), RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(Icons.Outlined.CheckCircle, null, tint = QC.Success, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Completed!", fontWeight = FontWeight.Bold, color = QC.Success, fontSize = 14.sp)
+                            CompletionStatus.DONE -> {
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .background(QC.Success.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+                                        .border(1.dp, QC.Success.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = QC.Success, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Completed!", fontWeight = FontWeight.Bold, color = QC.Success, fontSize = 14.sp)
+                                }
                             }
-                        }
-                        QuestStatus.ERROR -> {
-                            Button(
-                                onClick = {
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        completeQuest(token, state.copy(status = QuestStatus.IDLE, progress = state.quest.secondsDone, log = ""), onStateChange)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth().height(44.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = QC.Error),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Outlined.Refresh, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Retry", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            CompletionStatus.ERROR -> {
+                                Button(
+                                    onClick = {
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            completeQuest(token, state.copy(status = CompletionStatus.IDLE, progress = state.quest.secondsDone, log = ""), onStateChange)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                                    colors   = ButtonDefaults.buttonColors(containerColor = QC.Error),
+                                    shape    = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Retry", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
                             }
                         }
                     }
@@ -539,280 +645,326 @@ class QuestActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun QChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, color: Color) {
+    private fun Badge(modifier: Modifier, icon: ImageVector, label: String, color: Color) {
+        Box(
+            modifier = modifier
+                .background(color.copy(alpha = 0.85f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
+                Text(label, fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.Black)
+            }
+        }
+    }
+
+    @Composable
+    private fun Chip(icon: ImageVector, text: String, color: Color) {
         Row(
-            Modifier
-                .background(color.copy(0.09f), RoundedCornerShape(20.dp))
-                .border(1.dp, color.copy(0.22f), RoundedCornerShape(20.dp))
+            modifier = Modifier
+                .background(color.copy(alpha = 0.09f), RoundedCornerShape(20.dp))
+                .border(1.dp, color.copy(alpha = 0.22f), RoundedCornerShape(20.dp))
                 .padding(horizontal = 9.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(11.dp))
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(11.dp))
             Text(text, fontSize = 9.sp, color = color, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 
-    private fun buildRequest(url: String, token: String): Request.Builder {
-        return Request.Builder().url(url).apply {
+    private fun buildRequest(url: String, token: String): Request.Builder =
+        Request.Builder().url(url).apply {
             header("Authorization", token)
             DISCORD_HEADERS.forEach { (k, v) -> header(k, v) }
         }
-    }
 
-    private suspend fun fetchQuests(token: String): List<QuestItem> = withContext(Dispatchers.IO) {
-        val heartbeatSessionId = java.util.UUID.randomUUID().toString()
-        val adSessionId = java.util.UUID.randomUUID().toString()
+    private fun parseActiveQuest(q: JSONObject): QuestItem? {
+        val config     = q.optJSONObject("config") ?: return null
+        val userStatus = q.optJSONObject("user_status")
 
-        val collected = mutableListOf<JSONObject>()
-        var placement = 1
-        val seenIds = mutableSetOf<String>()
+        val expiresAt = config.optString("expires_at", "")
+        val expiresMs = parseTs(expiresAt)
+        val expiresDisplay = try {
+            SimpleDateFormat("MMM dd", Locale.US).format(UTC_SDF.parse(expiresAt.substringBefore('.'))!!)
+        } catch (_: Exception) { "?" }
 
-        while (placement <= 50) {
-            val url = "https://discord.com/api/v9/quests/decision?placement=$placement" +
-                "&client_heartbeat_session_id=$heartbeatSessionId" +
-                "&client_ad_session_id=$adSessionId"
+        val taskConfig = config.optJSONObject("task_config")
+            ?: config.optJSONObject("taskConfigV2")
+            ?: return null
+        val tasks = taskConfig.optJSONObject("tasks") ?: return null
 
-            val resp = questHttpClient.newCall(buildRequest(url, token).build()).execute()
-            val body = resp.body?.string() ?: break
+        val taskName = listOf(
+            "WATCH_VIDEO_ON_MOBILE", "WATCH_VIDEO",
+            "PLAY_ON_DESKTOP", "PLAY_ACTIVITY", "STREAM_ON_DESKTOP"
+        ).firstOrNull { tasks.has(it) } ?: return null
 
-            if (!resp.isSuccessful) {
-                if (placement == 1) {
-                    val errorMsg = try {
-                        JSONObject(body).optString("message", "HTTP ${resp.code}")
-                    } catch (_: Exception) { "HTTP ${resp.code}" }
-                    throw Exception(errorMsg)
-                }
-                break
-            }
+        val taskObj      = tasks.optJSONObject(taskName) ?: return null
+        val secondsNeeded = taskObj.optLong("target", 0L)
+        val secondsDone  = userStatus
+            ?.optJSONObject("progress")
+            ?.optJSONObject(taskName)
+            ?.optLong("value", 0L) ?: 0L
 
-            val obj = try { JSONObject(body) } catch (_: Exception) { break }
-            val questObj = obj.optJSONObject("quest") ?: break
-            val questId = questObj.optString("id", "")
-            if (questId.isEmpty() || seenIds.contains(questId)) break
-            seenIds.add(questId)
+        val application = config.optJSONObject("application")
+        val appId       = application?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" }
+        val appName     = application?.optString("name")?.takeIf { it.isNotEmpty() && it != "null" }
 
-            val userStatusResp = questHttpClient.newCall(
-                buildRequest("https://discord.com/api/v9/users/@me/quests/$questId", token).build()
-            ).execute()
-            val userStatusBody = userStatusResp.body?.string() ?: ""
-            val userStatusObj = try { JSONObject(userStatusBody) } catch (_: Exception) { JSONObject() }
+        val messages  = config.optJSONObject("messages")
+        val questName = messages?.optString("quest_name")?.takeIf { it.isNotEmpty() }
+            ?: appName ?: "Quest"
 
-            questObj.put("user_status", userStatusObj)
-            collected.add(questObj)
-            placement++
+        val rewardsConfig = config.optJSONObject("rewards_config")
+        val firstReward   = rewardsConfig?.optJSONArray("rewards")?.optJSONObject(0)
+        val rewardStr     = firstReward?.optJSONObject("messages")?.optString("name")
+            ?.takeIf { it.isNotEmpty() } ?: ""
+
+        val rewardType = when {
+            rewardStr.contains("orb", ignoreCase = true)        -> "orbs"
+            rewardStr.contains("decoration", ignoreCase = true) -> "decor"
+            rewardStr.contains("nitro", ignoreCase = true)      -> "nitro"
+            else                                                -> "prize"
         }
 
-        if (collected.isEmpty()) return@withContext emptyList<QuestItem>()
+        val assets    = config.optJSONObject("assets")
+        val logotype  = assets?.optString("logotype")?.takeIf { it.isNotEmpty() && it != "null" }
+        val bannerUrl = when {
+            logotype != null && logotype.startsWith("quests/") ->
+                "https://cdn.discordapp.com/quests/assets/$logotype"
+            logotype != null ->
+                "https://cdn.discordapp.com/quests/assets/$logotype"
+            appId != null ->
+                "https://cdn.discordapp.com/app-assets/$appId/store/header.jpg"
+            else -> null
+        }
 
-        val arr = JSONArray()
-        collected.forEach { arr.put(it) }
+        val enrolledAt  = userStatus?.optString("enrolled_at")?.takeIf { it.isNotEmpty() && it != "null" }
+        val completedAt = userStatus?.optString("completed_at")?.takeIf { it != "null" }
+        val claimedAt   = userStatus?.optString("claimed_at")?.takeIf { it != "null" }
 
-        val result = mutableListOf<QuestItem>()
+        return QuestItem(
+            id              = q.optString("id"),
+            name            = questName,
+            reward          = rewardStr,
+            rewardType      = rewardType,
+            expiresDisplay  = expiresDisplay,
+            expiresMs       = expiresMs,
+            taskName        = taskName,
+            secondsNeeded   = secondsNeeded,
+            secondsDone     = secondsDone,
+            applicationName = appName,
+            bannerUrl       = bannerUrl,
+            enrolledAt      = enrolledAt,
+            completedAt     = completedAt,
+            claimedAt       = claimedAt
+        )
+    }
+
+    private fun parseClaimedQuest(q: JSONObject): QuestItem? {
+        val config     = q.optJSONObject("config") ?: return null
+        val userStatus = q.optJSONObject("user_status") ?: return null
+        val claimedAt  = userStatus.optString("claimed_at").takeIf { it.isNotEmpty() && it != "null" } ?: return null
+
+        val messages  = config.optJSONObject("messages")
+        val questName = messages?.optString("quest_name")?.takeIf { it.isNotEmpty() } ?: "Quest"
+
+        val rewardsArr  = config.optJSONArray("rewards")
+        val firstReward = rewardsArr?.optJSONObject(0)
+        val rewardStr   = firstReward?.optString("name")?.takeIf { it.isNotEmpty() } ?: ""
+        val rewardType  = when {
+            rewardStr.contains("orb", ignoreCase = true)        -> "orbs"
+            rewardStr.contains("decoration", ignoreCase = true) -> "decor"
+            rewardStr.contains("nitro", ignoreCase = true)      -> "nitro"
+            else                                                -> "prize"
+        }
+
+        val expiresAt      = config.optString("expires_at", "")
+        val expiresMs      = parseTs(expiresAt)
+        val expiresDisplay = try {
+            SimpleDateFormat("MMM dd", Locale.US).format(UTC_SDF.parse(expiresAt.substringBefore('.'))!!)
+        } catch (_: Exception) { "?" }
+
+        val assets    = config.optJSONObject("assets")
+        val logotype  = assets?.optString("logotype")?.takeIf { it.isNotEmpty() && it != "null" }
+        val bannerUrl = logotype?.let { "https://cdn.discordapp.com/quests/assets/$it" }
+
+        val taskConfig = config.optJSONObject("task_config")
+            ?: config.optJSONObject("taskConfigV2") ?: JSONObject()
+        val tasks      = taskConfig.optJSONObject("tasks") ?: JSONObject()
+        val taskName   = listOf("WATCH_VIDEO_ON_MOBILE", "WATCH_VIDEO", "PLAY_ON_DESKTOP", "PLAY_ACTIVITY")
+            .firstOrNull { tasks.has(it) } ?: "WATCH_VIDEO"
+
+        return QuestItem(
+            id              = q.optString("id"),
+            name            = questName,
+            reward          = rewardStr,
+            rewardType      = rewardType,
+            expiresDisplay  = expiresDisplay,
+            expiresMs       = expiresMs,
+            taskName        = taskName,
+            secondsNeeded   = 0L,
+            secondsDone     = 0L,
+            applicationName = null,
+            bannerUrl       = bannerUrl,
+            enrolledAt      = userStatus.optString("enrolled_at").takeIf { it.isNotEmpty() && it != "null" },
+            completedAt     = userStatus.optString("completed_at").takeIf { it != "null" },
+            claimedAt       = claimedAt
+        )
+    }
+
+    data class FetchResult(val active: List<QuestItem>, val claimed: List<QuestItem>, val orbs: Int?)
+
+    private suspend fun fetchAll(token: String): FetchResult = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-            .also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }
 
-        for (i in 0 until arr.length()) {
-            val q = arr.getJSONObject(i)
-            val userStatus = q.optJSONObject("user_status") ?: continue
-            if (userStatus.has("completed_at") && !userStatus.isNull("completed_at")) continue
+        val activeResp = questHttpClient.newCall(
+            buildRequest("https://discord.com/api/v9/quests/@me", token).build()
+        ).execute()
+        val activeBody = activeResp.body?.string() ?: ""
 
-            val config = q.optJSONObject("config") ?: continue
-            val expiresAt = config.optString("expires_at", "")
-            val expiresMs = try {
-                sdf.parse(expiresAt.substringBefore('.'))?.time ?: 0L
-            } catch (_: Exception) { 0L }
-            if (expiresMs > 0 && expiresMs < now) continue
-
-            val taskConfig = config.optJSONObject("task_config")
-                ?: config.optJSONObject("taskConfig")
-                ?: config.optJSONObject("taskConfigV2")
-                ?: continue
-            val tasks = taskConfig.optJSONObject("tasks") ?: continue
-            val taskName = listOf(
-                "WATCH_VIDEO_ON_MOBILE", "WATCH_VIDEO",
-                "PLAY_ACTIVITY", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP"
-            ).firstOrNull { tasks.has(it) } ?: continue
-            val taskObj = tasks.optJSONObject(taskName) ?: continue
-            val secondsNeeded = taskObj.optLong("target", 0L)
-            val secondsDone = userStatus.optJSONObject("progress")
-                ?.optJSONObject(taskName)?.optLong("value", 0L) ?: 0L
-
-            val application = config.optJSONObject("application")
-            val appId = application?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" }
-            val appName = application?.optString("name")?.takeIf { it.isNotEmpty() && it != "null" }
-
-            val messages = config.optJSONObject("messages")
-            val questName = messages?.optString("quest_name")?.takeIf { it.isNotEmpty() }
-                ?: messages?.optString("questName")?.takeIf { it.isNotEmpty() }
-                ?: appName ?: "Quest"
-            val description = messages?.optString("quest_description")?.takeIf { it.isNotEmpty() }
-                ?: messages?.optString("description")?.takeIf { it.isNotEmpty() }
-                ?: ""
-            val rewardStr = messages?.optString("reward_preview")?.takeIf { it.isNotEmpty() }
-                ?: messages?.optString("rewardPreview")?.takeIf { it.isNotEmpty() }
-                ?: messages?.optString("reward_description")?.takeIf { it.isNotEmpty() }
-                ?: messages?.optString("rewardDescription")?.takeIf { it.isNotEmpty() }
-                ?: ""
-
-            val rewardType = when {
-                rewardStr.contains("orb", ignoreCase = true)        -> "orbs"
-                rewardStr.contains("decoration", ignoreCase = true) -> "decor"
-                rewardStr.contains("nitro", ignoreCase = true)      -> "nitro"
-                else                                                -> "prize"
-            }
-
-            val expDisplay = try {
-                val d = sdf.parse(expiresAt.substringBefore('.'))
-                java.text.SimpleDateFormat("MMM dd", java.util.Locale.US).format(d!!)
-            } catch (_: Exception) { "?" }
-
-            val assets = config.optJSONObject("assets")
-            val bannerUrl = assets?.optString("logotype")?.takeIf { it.isNotEmpty() && it != "null" }
-                ?.let { "https://cdn.discordapp.com/quests/assets/$it" }
-                ?: if (appId != null) "https://cdn.discordapp.com/app-assets/$appId/store/header.jpg" else null
-            val thumbUrl = assets?.optString("thumbnail")?.takeIf { it.isNotEmpty() && it != "null" }
-                ?.let { "https://cdn.discordapp.com/quests/assets/$it" }
-
-            result.add(QuestItem(
-                id = q.optString("id"),
-                name = questName,
-                description = description,
-                reward = rewardStr,
-                rewardType = rewardType,
-                expiresAt = expDisplay,
-                expiresMs = expiresMs,
-                taskName = taskName,
-                secondsNeeded = secondsNeeded,
-                secondsDone = secondsDone,
-                applicationId = appId,
-                applicationName = appName,
-                bannerUrl = bannerUrl,
-                thumbnailUrl = thumbUrl
-            ))
+        if (!activeResp.isSuccessful) {
+            val msg = try {
+                JSONObject(activeBody).optString("message", "HTTP ${activeResp.code}")
+            } catch (_: Exception) { "HTTP ${activeResp.code}" }
+            throw Exception(msg)
         }
-        result
+
+        val activeArr = try { JSONObject(activeBody).optJSONArray("quests") ?: JSONArray() } catch (_: Exception) { JSONArray() }
+        val active = mutableListOf<QuestItem>()
+        for (i in 0 until activeArr.length()) {
+            val q    = activeArr.getJSONObject(i)
+            val item = parseActiveQuest(q) ?: continue
+            if (item.expiresMs > 0 && item.expiresMs < now) continue
+            if (item.claimedAt != null) continue
+            active.add(item)
+        }
+
+        val claimedResp = questHttpClient.newCall(
+            buildRequest("https://discord.com/api/v9/quests/@me/claimed", token).build()
+        ).execute()
+        val claimedBody = claimedResp.body?.string() ?: ""
+        val claimedArr  = try { JSONObject(claimedBody).optJSONArray("quests") ?: JSONArray() } catch (_: Exception) { JSONArray() }
+        val claimed = mutableListOf<QuestItem>()
+        for (i in 0 until claimedArr.length()) {
+            val item = parseClaimedQuest(claimedArr.getJSONObject(i)) ?: continue
+            claimed.add(item)
+        }
+
+        val orbsResp  = questHttpClient.newCall(
+            buildRequest("https://discord.com/api/v9/users/@me/virtual-currency/balance", token).build()
+        ).execute()
+        val orbsBody  = orbsResp.body?.string() ?: ""
+        val orbs      = try { JSONObject(orbsBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
+
+        FetchResult(active, claimed, orbs)
     }
 
-    private suspend fun completeQuest(token: String, initialState: QuestState, onStateChange: (QuestState) -> Unit) {
-        val questId = initialState.quest.id
-        val taskName = initialState.quest.taskName
+    private suspend fun completeQuest(
+        token: String,
+        initialState: QuestState,
+        onStateChange: (QuestState) -> Unit
+    ) {
+        val questId       = initialState.quest.id
+        val taskName      = initialState.quest.taskName
         val secondsNeeded = initialState.quest.secondsNeeded
-        var secondsDone = initialState.quest.secondsDone
+        var secondsDone   = initialState.quest.secondsDone
 
-        var current = initialState.copy(status = QuestStatus.RUNNING, log = "Starting...", progress = secondsDone)
+        var current = initialState.copy(status = CompletionStatus.RUNNING, log = "Starting...", progress = secondsDone)
         withContext(Dispatchers.Main) { onStateChange(current) }
 
         try {
             when (taskName) {
                 "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
-                    val enrollResp = questHttpClient.newCall(
+                    val statusResp = questHttpClient.newCall(
                         buildRequest("https://discord.com/api/v9/users/@me/quests/$questId", token).build()
                     ).execute()
                     val enrolledAt = try {
-                        val statusObj = try { JSONObject(enrollResp.body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
-                        var ea = System.currentTimeMillis() - 60000L
-                        val str = statusObj.optString("enrolled_at", "")
-                        if (str.isNotEmpty()) {
-                            ea = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                                .also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }
-                                .parse(str.substringBefore('.'))?.time ?: ea
-                        }
-                        ea
-                    } catch (_: Exception) { System.currentTimeMillis() - 60000L }
+                        val obj = JSONObject(statusResp.body?.string() ?: "{}")
+                        val str = obj.optString("enrolled_at", "")
+                        if (str.isNotEmpty() && str != "null")
+                            UTC_SDF.parse(str.substringBefore('.'))?.time ?: (System.currentTimeMillis() - 60_000L)
+                        else
+                            System.currentTimeMillis() - 60_000L
+                    } catch (_: Exception) { System.currentTimeMillis() - 60_000L }
 
-                    val maxFuture = 10L
-                    val speed = 7L
+                    val maxFutureSecs = 10L
+                    val stepSecs      = 7L
 
                     while (secondsDone < secondsNeeded) {
-                        val maxAllowed = ((System.currentTimeMillis() - enrolledAt) / 1000L) + maxFuture
-                        if (maxAllowed - secondsDone >= speed) {
-                            val ts = minOf(secondsNeeded, secondsDone + speed).toDouble() + (Math.random() * 0.4)
-                            val reqBody = JSONObject().apply { put("timestamp", ts) }
-                                .toString().toRequestBody("application/json".toMediaType())
-                            val resp = questHttpClient.newCall(
-                                buildRequest("https://discord.com/api/v9/quests/$questId/video-progress", token)
-                                    .post(reqBody).build()
+                        val elapsedSecs = (System.currentTimeMillis() - enrolledAt) / 1000L
+                        val maxAllowed  = elapsedSecs + maxFutureSecs
+
+                        if (maxAllowed - secondsDone >= stepSecs) {
+                            val ts       = minOf(secondsNeeded, secondsDone + stepSecs).toDouble() + (Math.random() * 0.4)
+                            val reqBody  = JSONObject().apply { put("timestamp", ts) }.toString().toRequestBody("application/json".toMediaType())
+                            val resp     = questHttpClient.newCall(
+                                buildRequest("https://discord.com/api/v9/quests/$questId/video-progress", token).post(reqBody).build()
                             ).execute()
                             val respBody = resp.body?.string() ?: ""
-                            val completed = try {
-                                val obj = JSONObject(respBody)
-                                obj.has("completed_at") && !obj.isNull("completed_at")
-                            } catch (_: Exception) { false }
-                            secondsDone = minOf(secondsNeeded, secondsDone + speed)
-                            current = current.copy(progress = secondsDone, log = "Sending video progress: ${secondsDone}s / ${secondsNeeded}s")
+                            val done     = try { val o = JSONObject(respBody); o.has("completed_at") && !o.isNull("completed_at") } catch (_: Exception) { false }
+                            secondsDone  = minOf(secondsNeeded, secondsDone + stepSecs)
+                            current      = current.copy(progress = secondsDone, log = "Sending video progress: ${secondsDone}s / ${secondsNeeded}s")
                             withContext(Dispatchers.Main) { onStateChange(current) }
-                            if (completed || secondsDone >= secondsNeeded) break
+                            if (done || secondsDone >= secondsNeeded) break
                         } else {
-                            current = current.copy(log = "Waiting for allowed window... (${secondsDone}s done)")
+                            current = current.copy(log = "Waiting for time window... (${secondsDone}s done)")
                             withContext(Dispatchers.Main) { onStateChange(current) }
                         }
-                        delay(1000)
+                        delay(1000L)
                     }
 
-                    val finalBody = JSONObject().apply { put("timestamp", secondsNeeded.toDouble()) }
-                        .toString().toRequestBody("application/json".toMediaType())
+                    val finalBody = JSONObject().apply { put("timestamp", secondsNeeded.toDouble()) }.toString().toRequestBody("application/json".toMediaType())
                     questHttpClient.newCall(
-                        buildRequest("https://discord.com/api/v9/quests/$questId/video-progress", token)
-                            .post(finalBody).build()
+                        buildRequest("https://discord.com/api/v9/quests/$questId/video-progress", token).post(finalBody).build()
                     ).execute()
 
-                    current = current.copy(status = QuestStatus.DONE, progress = secondsNeeded, log = "Quest completed successfully!")
+                    current = current.copy(status = CompletionStatus.DONE, progress = secondsNeeded, log = "Quest completed successfully!")
                     withContext(Dispatchers.Main) { onStateChange(current) }
                 }
 
-                "PLAY_ACTIVITY" -> {
-                    val dmResp = questHttpClient.newCall(
+                "PLAY_ON_DESKTOP", "PLAY_ACTIVITY" -> {
+                    val dmResp    = questHttpClient.newCall(
                         buildRequest("https://discord.com/api/v9/users/@me/channels", token).build()
                     ).execute()
                     val channelId = try {
                         val arr = JSONArray(dmResp.body?.string() ?: "[]")
                         if (arr.length() > 0) arr.getJSONObject(0).optString("id")
-                        else throw Exception("No DM channels")
-                    } catch (e: Exception) { throw Exception("Need at least one DM channel: ${e.message}") }
+                        else throw Exception("No DM channels found")
+                    } catch (e: Exception) { throw Exception("Need at least one DM: ${e.message}") }
+
                     val streamKey = "call:$channelId:1"
 
                     while (secondsDone < secondsNeeded) {
-                        val reqBody = JSONObject().apply {
-                            put("stream_key", streamKey)
-                            put("terminal", false)
-                        }.toString().toRequestBody("application/json".toMediaType())
-                        val resp = questHttpClient.newCall(
-                            buildRequest("https://discord.com/api/v9/quests/$questId/heartbeat", token)
-                                .post(reqBody).build()
+                        val reqBody  = JSONObject().apply { put("stream_key", streamKey); put("terminal", false) }.toString().toRequestBody("application/json".toMediaType())
+                        val resp     = questHttpClient.newCall(
+                            buildRequest("https://discord.com/api/v9/quests/$questId/heartbeat", token).post(reqBody).build()
                         ).execute()
-                        val respStr = resp.body?.string() ?: "{}"
-                        secondsDone = try {
-                            JSONObject(respStr).optJSONObject("progress")
-                                ?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", secondsDone) ?: secondsDone
+                        val respStr  = resp.body?.string() ?: "{}"
+                        secondsDone  = try {
+                            JSONObject(respStr).optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", secondsDone) ?: secondsDone
                         } catch (_: Exception) { secondsDone }
                         current = current.copy(progress = secondsDone, log = "Heartbeat sent: ${secondsDone}s / ${secondsNeeded}s")
                         withContext(Dispatchers.Main) { onStateChange(current) }
                         if (secondsDone >= secondsNeeded) break
-                        delay(20000)
+                        delay(20_000L)
                     }
 
-                    val termBody = JSONObject().apply {
-                        put("stream_key", "call:$channelId:1")
-                        put("terminal", true)
-                    }.toString().toRequestBody("application/json".toMediaType())
+                    val termBody = JSONObject().apply { put("stream_key", streamKey); put("terminal", true) }.toString().toRequestBody("application/json".toMediaType())
                     questHttpClient.newCall(
-                        buildRequest("https://discord.com/api/v9/quests/$questId/heartbeat", token)
-                            .post(termBody).build()
+                        buildRequest("https://discord.com/api/v9/quests/$questId/heartbeat", token).post(termBody).build()
                     ).execute()
 
-                    current = current.copy(status = QuestStatus.DONE, progress = secondsNeeded, log = "Quest completed successfully!")
+                    current = current.copy(status = CompletionStatus.DONE, progress = secondsNeeded, log = "Quest completed successfully!")
                     withContext(Dispatchers.Main) { onStateChange(current) }
                 }
 
                 else -> {
-                    current = current.copy(status = QuestStatus.ERROR, log = "Task '$taskName' requires the Discord desktop app and cannot run on mobile.")
+                    current = current.copy(status = CompletionStatus.ERROR, log = "Task '$taskName' is not supported on this device.")
                     withContext(Dispatchers.Main) { onStateChange(current) }
                 }
             }
         } catch (e: Exception) {
-            current = current.copy(status = QuestStatus.ERROR, log = "Error: ${e.message}")
+            current = current.copy(status = CompletionStatus.ERROR, log = "Error: ${e.message}")
             withContext(Dispatchers.Main) { onStateChange(current) }
         }
     }
