@@ -70,9 +70,7 @@ private object DC {
     val Error       = Color(0xFFED4245)
     val White       = Color(0xFFF2F3F5)
     val Muted       = Color(0xFF72767D)
-    val OrbPurple   = Color(0xFF9B59B6)
     val OrbViolet   = Color(0xFFB675F0)
-    val Gold        = Color(0xFFFFD700)
     val Teal        = Color(0xFF43B581)
     val GradTop     = Color(0xFF1A1040)
     val GradMid     = Color(0xFF0F1B3D)
@@ -82,21 +80,11 @@ private object DC {
 private val SUPER_PROPS =
     "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTI7IE1vYmlsZTsgcnY6MTQ3LjApIEdlY2tvLzE0Ny4wIEZpcmVmb3gvMTQ3LjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNDcuMCIsIm9zX3ZlcnNpb24iOiIxMiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiJodHRwczovL2Rpc2NvcmQuY29tL2xvZ2luP3JlZGlyZWN0X3RvPSUyRnF1ZXN0LWhvbWUiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiJkaXNjb3JkLmNvbSIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjQ5OTEyMywiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0="
 
-private val DESKTOP_SUPER_PROPS =
-    "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MTkwIiwib3NfdmVyc2lvbiI6IjEwLjAuMTkwNDUiLCJvc19hcmNoIjoieDY0IiwiYXBwX2FyY2giOiJ4NjQiLCJzeXN0ZW1fbG9jYWxlIjoiZW4tVVMiLCJicm93c2VyX3VzZXJfYWdlbnQiOiJNb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYgKEtIVE1MLCBsaWtlIEdlY2tvKSBkaXNjb3JkLzEuMC45MTkwIENocm9tZS8xMjguMC42NjEzLjE4NiBFbGVjdHJvbi8zMi4yLjcgU2FmYXJpLzUzNy4zNiIsImJyb3dzZXJfdmVyc2lvbiI6IjEyOC4wLjY2MTMuMTg2IiwiY2xpZW50X2J1aWxkX251bWJlciI6MzM4NzkxLCJuYXRpdmVfYnVpbGRfbnVtYmVyIjo1NjE3MiwiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0="
-
-private val DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9190 Chrome/128.0.6613.186 Electron/32.2.7 Safari/537.36"
-
-private fun buildReq(url: String, token: String, desktop: Boolean = false) = Request.Builder().url(url).apply {
+private fun buildReq(url: String, token: String) = Request.Builder().url(url).apply {
     header("Authorization",      token)
     header("Content-Type",       "application/json")
-    if (desktop) {
-        header("User-Agent",         DESKTOP_UA)
-        header("X-Super-Properties", DESKTOP_SUPER_PROPS)
-    } else {
-        header("User-Agent",         "Mozilla/5.0 (Android 12; Mobile; rv:147.0) Gecko/147.0 Firefox/147.0")
-        header("X-Super-Properties", SUPER_PROPS)
-    }
+    header("User-Agent",         "Mozilla/5.0 (Android 12; Mobile; rv:147.0) Gecko/147.0 Firefox/147.0")
+    header("X-Super-Properties", SUPER_PROPS)
     header("X-Discord-Locale",   "pt-BR")
     header("X-Discord-Timezone", "America/Sao_Paulo")
     header("X-Debug-Options",    "bugReporterEnabled")
@@ -132,11 +120,12 @@ private fun buildBannerUrl(questId: String, config: JSONObject): String? {
     return null
 }
 
-private fun accentForQuest(rewardType: String): Color = when (rewardType) {
-    "orbs"  -> DC.OrbViolet
-    "decor" -> DC.Success
-    "nitro" -> DC.Primary
-    else    -> DC.Primary
+private fun accentForType(rewardType: String, isClaimed: Boolean): Color = when {
+    isClaimed -> DC.Teal
+    rewardType == "orbs"  -> DC.OrbViolet
+    rewardType == "decor" -> DC.Success
+    rewardType == "nitro" -> DC.Primary
+    else -> DC.Primary
 }
 
 data class QuestItem(
@@ -159,7 +148,7 @@ data class QuestItem(
     val questLink: String?
 )
 
-enum class RunState { IDLE, RUNNING, DONE, ERROR, NOT_ENROLLED }
+enum class RunState { IDLE, RUNNING, DONE, ERROR, NOT_ENROLLED, DESKTOP_ONLY }
 
 data class QuestState(
     val quest: QuestItem,
@@ -167,6 +156,17 @@ data class QuestState(
     var progress: Long = 0L,
     var log: String = ""
 )
+
+private val SUPPORTED_TASKS = listOf(
+    "WATCH_VIDEO_ON_MOBILE",
+    "WATCH_VIDEO",
+    "PLAY_ACTIVITY",
+    "PLAY_ON_DESKTOP",
+    "PLAY_ON_DESKTOP_V2",
+    "STREAM_ON_DESKTOP"
+)
+
+private val MOBILE_CAPABLE = setOf("WATCH_VIDEO_ON_MOBILE", "WATCH_VIDEO", "PLAY_ACTIVITY")
 
 private fun parseQuest(q: JSONObject): QuestItem? {
     val id     = q.optString("id").takeIf { it.isNotEmpty() } ?: return null
@@ -184,8 +184,7 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         ?: return null
     val tasks = taskConfig.optJSONObject("tasks") ?: return null
 
-    val SUPPORTED = listOf("WATCH_VIDEO_ON_MOBILE","WATCH_VIDEO","PLAY_ON_DESKTOP","PLAY_ON_DESKTOP_V2","PLAY_ACTIVITY","STREAM_ON_DESKTOP")
-    val taskName      = SUPPORTED.firstOrNull { tasks.has(it) } ?: return null
+    val taskName      = SUPPORTED_TASKS.firstOrNull { tasks.has(it) } ?: return null
     val taskObj       = tasks.optJSONObject(taskName) ?: return null
     val secondsNeeded = taskObj.optLong("target", 0L)
     val secondsDone   = us?.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", 0L) ?: 0L
@@ -256,8 +255,7 @@ private suspend fun fetchAll(token: String): FetchResult = withContext(Dispatche
     val activeArr = try { JSONObject(activeBody).optJSONArray("quests") ?: JSONArray() } catch (_: Exception) { JSONArray() }
     val active = mutableListOf<QuestItem>()
     for (i in 0 until activeArr.length()) {
-        val rawQ = activeArr.getJSONObject(i)
-        val item = parseQuest(rawQ) ?: continue
+        val item = parseQuest(activeArr.getJSONObject(i)) ?: continue
         if (item.expiresMs > 0 && item.expiresMs < now) continue
         if (item.claimedAt != null) continue
         active.add(item)
@@ -272,14 +270,11 @@ private suspend fun fetchAll(token: String): FetchResult = withContext(Dispatche
         claimed.add(item)
     }
 
-    val completedFromActive = active.filter { it.completedAt != null && it.claimedAt == null }
-    val stillActive = active.filter { it.completedAt == null }
-
     val orbResp = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token).build()).execute()
     val orbBody  = orbResp.body?.string() ?: ""
     val orbs     = try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
 
-    FetchResult(stillActive + completedFromActive, claimed, orbs)
+    FetchResult(active, claimed, orbs)
 }
 
 private suspend fun enrollQuest(token: String, questId: String): Boolean = withContext(Dispatchers.IO) {
@@ -290,7 +285,7 @@ private suspend fun enrollQuest(token: String, questId: String): Boolean = withC
 private suspend fun claimQuestReward(token: String, questId: String): Boolean = withContext(Dispatchers.IO) {
     try {
         val resp = httpClient.newCall(
-            buildReq("https://discord.com/api/v9/quests/$questId/claim-reward", token, desktop = true)
+            buildReq("https://discord.com/api/v9/quests/$questId/claim-reward", token)
                 .post("{}".toRequestBody("application/json".toMediaType()))
                 .build()
         ).execute()
@@ -298,10 +293,10 @@ private suspend fun claimQuestReward(token: String, questId: String): Boolean = 
     } catch (_: Exception) { false }
 }
 
-private suspend fun findChannelId(token: String): String? = withContext(Dispatchers.IO) {
+private suspend fun findFirstChannelId(token: String): String? = withContext(Dispatchers.IO) {
     try {
-        val dmResp = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/channels", token, desktop = true).build()).execute()
-        val arr = JSONArray(dmResp.body?.string() ?: "[]")
+        val resp = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/channels", token).build()).execute()
+        val arr = JSONArray(resp.body?.string() ?: "[]")
         if (arr.length() > 0) arr.getJSONObject(0).optString("id").takeIf { it.isNotEmpty() } else null
     } catch (_: Exception) { null }
 }
@@ -320,30 +315,42 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
         cur = cur.copy(runState = rs, log = log, progress = prog)
     }
 
+    if (taskName !in MOBILE_CAPABLE) {
+        upd(
+            when (taskName) {
+                "PLAY_ON_DESKTOP", "PLAY_ON_DESKTOP_V2" ->
+                    "Requires Discord desktop app.\nPLAY_ON_DESKTOP uses Electron IPC to register the game — not possible via HTTP from Android."
+                "STREAM_ON_DESKTOP" ->
+                    "Requires Discord desktop app.\nSTREAM_ON_DESKTOP needs an active stream from the Electron client."
+                else -> "Task '$taskName' is not supported from Android."
+            },
+            prog = secondsDone,
+            rs = RunState.DESKTOP_ONLY
+        )
+        withContext(Dispatchers.Main) { onUpdate(cur) }
+        return
+    }
+
     try {
         if (q.completedAt != null && q.claimedAt == null) {
             upd("Claiming reward...", secondsNeeded)
             withContext(Dispatchers.Main) { onUpdate(cur) }
             val ok = claimQuestReward(token, questId)
-            if (ok) {
-                upd("Reward claimed!", secondsNeeded, RunState.DONE)
-            } else {
-                upd("Completed! Claim reward in Discord.", secondsNeeded, RunState.DONE)
-            }
+            upd(if (ok) "Reward claimed!" else "Completed! Claim reward in Discord.", secondsNeeded, RunState.DONE)
             withContext(Dispatchers.Main) { onUpdate(cur) }
             return
         }
 
         var enrolledAt = q.enrolledAt
         if (enrolledAt == null) {
-            upd("Enrolling...")
+            upd("Enrolling in quest...")
             withContext(Dispatchers.Main) { onUpdate(cur) }
             val ok = enrollQuest(token, questId)
             if (!ok) {
                 val sb = httpClient.newCall(buildReq("https://discord.com/api/v9/users/@me/quests/$questId", token).build()).execute().body?.string() ?: "{}"
                 enrolledAt = try { JSONObject(sb).optString("enrolled_at","").takeIf { it.isNotEmpty() && it != "null" } } catch (_: Exception) { null }
                 if (enrolledAt == null) {
-                    upd("Not enrolled. Accept quest in Discord first.", prog = 0, rs = RunState.NOT_ENROLLED)
+                    upd("Not enrolled. Accept the quest in Discord first.", prog = 0, rs = RunState.NOT_ENROLLED)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
                     return
                 }
@@ -360,144 +367,94 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
                 val enrollMs  = parseIso(enrolledAt).takeIf { it > 0L } ?: (System.currentTimeMillis() - 60_000L)
                 val maxFuture = 10
                 val speed     = 7
-                val interval  = 1
+                val interval  = 1L
 
                 upd("Spoofing video: ${q.name}")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
                 var completed = false
                 while (true) {
-                    val maxAllowed = ((System.currentTimeMillis() - enrollMs) / 1000).toInt() + maxFuture
-                    val diff       = maxAllowed - secondsDone
-                    val timestamp  = secondsDone + speed
+                    val maxAllowed  = ((System.currentTimeMillis() - enrollMs) / 1000L).toInt() + maxFuture
+                    val diff        = maxAllowed - secondsDone
+                    val nextTs      = secondsDone + speed
 
                     if (diff >= speed) {
-                        val sendTs = minOf(secondsNeeded.toDouble(), timestamp.toDouble() + Math.random())
+                        val sendTs = minOf(secondsNeeded.toDouble(), nextTs.toDouble() + Math.random())
                         val body   = JSONObject().apply { put("timestamp", sendTs) }.toString().toRequestBody("application/json".toMediaType())
                         val resp   = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/video-progress", token).post(body).build()).execute()
                         val rb     = resp.body?.string() ?: "{}"
                         val rj     = try { JSONObject(rb) } catch (_: Exception) { JSONObject() }
                         completed  = rj.optString("completed_at","").isNotEmpty()
-                        secondsDone = minOf(secondsNeeded, timestamp)
+                        secondsDone = minOf(secondsNeeded, nextTs)
                         upd("Video: ${secondsDone}s / ${secondsNeeded}s", secondsDone)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
+                        if (completed) break
                     }
 
-                    if (timestamp >= secondsNeeded) break
+                    if (nextTs >= secondsNeeded) break
                     delay(interval * 1000L)
                 }
 
                 if (!completed) {
                     val fb = JSONObject().apply { put("timestamp", secondsNeeded.toDouble()) }.toString().toRequestBody("application/json".toMediaType())
-                    val finalResp = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/video-progress", token).post(fb).build()).execute()
-                    val finalBody = finalResp.body?.string() ?: "{}"
-                    val fj = try { JSONObject(finalBody) } catch (_: Exception) { JSONObject() }
+                    val fr = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/video-progress", token).post(fb).build()).execute()
+                    val fj = try { JSONObject(fr.body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
                     completed = fj.optString("completed_at","").isNotEmpty()
                 }
 
-                if (completed) {
-                    upd("Claiming reward...", secondsNeeded)
-                    withContext(Dispatchers.Main) { onUpdate(cur) }
-                    delay(1000)
-                    val claimed = claimQuestReward(token, questId)
-                    upd(if (claimed) "Reward claimed!" else "Completed! Claim reward in Discord.", secondsNeeded, RunState.DONE)
-                } else {
-                    upd("Completed! Claim the reward in Discord.", secondsNeeded, RunState.DONE)
-                }
+                secondsDone = secondsNeeded
+                upd("Attempting to claim reward...", secondsDone)
+                withContext(Dispatchers.Main) { onUpdate(cur) }
+                delay(1000L)
+                val claimed = claimQuestReward(token, questId)
+                upd(if (claimed) "Reward claimed!" else "Completed! Claim the reward in Discord.", secondsDone, RunState.DONE)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
-            "PLAY_ON_DESKTOP", "PLAY_ON_DESKTOP_V2" -> {
-                val channelId = findChannelId(token)
+            "PLAY_ACTIVITY" -> {
+                val channelId = findFirstChannelId(token)
                     ?: throw Exception("No DM channel found. Open a DM in Discord first.")
                 val streamKey = "call:$channelId:1"
 
-                var appNameStr = q.appName ?: "Game"
-
-                upd("Spoofing game: $appNameStr (~${(secondsNeeded - secondsDone) / 60} min)")
+                upd("Spoofing activity (~${maxOf(0L,(secondsNeeded - secondsDone) / 60)} min remaining)")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                while (secondsDone < secondsNeeded) {
+                while (true) {
                     val rb = JSONObject().apply {
                         put("stream_key", streamKey)
                         put("terminal", false)
                     }.toString().toRequestBody("application/json".toMediaType())
 
-                    val rs = httpClient.newCall(
-                        buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token, desktop = true).post(rb).build()
-                    ).execute().body?.string() ?: "{}"
+                    val rs  = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token).post(rb).build()).execute()
+                    val rsb = rs.body?.string() ?: "{}"
+                    val rj  = try { JSONObject(rsb) } catch (_: Exception) { JSONObject() }
 
-                    val rj = try { JSONObject(rs) } catch (_: Exception) { JSONObject() }
-                    val newP = when {
-                        q.configVersion == 1 -> rj.optLong("stream_progress_seconds", secondsDone)
-                        else -> {
-                            val pr = rj.optJSONObject("progress")
-                            pr?.optJSONObject(taskName)?.optLong("value", secondsDone)
-                                ?: pr?.optJSONObject("PLAY_ON_DESKTOP")?.optLong("value", secondsDone)
-                                ?: pr?.optJSONObject("PLAY_ON_DESKTOP_V2")?.optLong("value", secondsDone)
-                                ?: secondsDone
-                        }
-                    }
-
-                    if (newP > secondsDone) secondsDone = newP
-                    else secondsDone = minOf(secondsNeeded, secondsDone + 20)
-
-                    upd("Game: ${secondsDone}s / ${secondsNeeded}s (~${maxOf(0L,(secondsNeeded-secondsDone)/60)} min left)", secondsDone)
-                    withContext(Dispatchers.Main) { onUpdate(cur) }
-                    if (secondsDone >= secondsNeeded) break
-                    delay(20_000L)
-                }
-
-                val tb = JSONObject().apply { put("stream_key", streamKey); put("terminal", true) }.toString().toRequestBody("application/json".toMediaType())
-                httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token, desktop = true).post(tb).build()).execute()
-
-                upd("Claiming reward...", secondsNeeded)
-                withContext(Dispatchers.Main) { onUpdate(cur) }
-                delay(1500)
-                val claimed = claimQuestReward(token, questId)
-                upd(if (claimed) "Reward claimed!" else "Completed! Claim reward in Discord.", secondsNeeded, RunState.DONE)
-                withContext(Dispatchers.Main) { onUpdate(cur) }
-            }
-
-            "PLAY_ACTIVITY" -> {
-                val channelId = findChannelId(token)
-                    ?: throw Exception("No DM channel found. Open a DM in Discord first.")
-                val streamKey = "call:$channelId:1"
-                upd("Spoofing activity (~${(secondsNeeded - secondsDone) / 60} min)")
-                withContext(Dispatchers.Main) { onUpdate(cur) }
-
-                while (true) {
-                    val rb = JSONObject().apply { put("stream_key", streamKey); put("terminal", false) }.toString().toRequestBody("application/json".toMediaType())
-                    val rs = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token, desktop = true).post(rb).build()).execute().body?.string() ?: "{}"
-                    val rj = try { JSONObject(rs) } catch (_: Exception) { JSONObject() }
                     val newP = rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", secondsDone) ?: secondsDone
-                    if (newP > secondsDone) secondsDone = newP
-                    else secondsDone = minOf(secondsNeeded, secondsDone + 20)
-                    upd("Activity: ${secondsDone}s / ${secondsNeeded}s", secondsDone)
+                    secondsDone = newP
+                    upd("Activity: ${secondsDone}s / ${secondsNeeded}s (~${maxOf(0L,(secondsNeeded-secondsDone)/60)} min left)", secondsDone)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
+
                     if (secondsDone >= secondsNeeded) {
-                        val tb = JSONObject().apply { put("stream_key", streamKey); put("terminal", true) }.toString().toRequestBody("application/json".toMediaType())
-                        httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token, desktop = true).post(tb).build()).execute()
+                        val tb = JSONObject().apply {
+                            put("stream_key", streamKey)
+                            put("terminal", true)
+                        }.toString().toRequestBody("application/json".toMediaType())
+                        httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token).post(tb).build()).execute()
                         break
                     }
                     delay(20_000L)
                 }
 
-                upd("Claiming reward...", secondsNeeded)
+                upd("Attempting to claim reward...", secondsDone)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
-                delay(1500)
+                delay(1000L)
                 val claimed = claimQuestReward(token, questId)
                 upd(if (claimed) "Reward claimed!" else "Completed! Claim reward in Discord.", secondsNeeded, RunState.DONE)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
-            "STREAM_ON_DESKTOP" -> {
-                upd("STREAM_ON_DESKTOP requires Discord desktop app.", prog = 0, rs = RunState.ERROR)
-                withContext(Dispatchers.Main) { onUpdate(cur) }
-            }
-
             else -> {
-                upd("Task '$taskName' not supported.", prog = 0, rs = RunState.ERROR)
+                upd("Task '$taskName' not supported from Android.", prog = 0, rs = RunState.DESKTOP_ONLY)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
         }
@@ -575,72 +532,6 @@ private fun TosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
 }
 
 @Composable
-private fun QuestVideoHeader(ctx: Context) {
-    val videoUrl  = "https://github.com/RhyanXG7/host-de-imagens/raw/refs/heads/BetterStar/imagens-Host/Novo%20projeto%203%20%5B6ED5A22%5D.mp4"
-    val cacheFile = remember { File(ctx.cacheDir, "quest_bg2.mp4") }
-
-    Box(Modifier.fillMaxWidth().height(174.dp)) {
-        AndroidView(
-            factory = { context ->
-                SurfaceView(context).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        private var mp: MediaPlayer? = null
-                        override fun surfaceCreated(h: SurfaceHolder) {
-                            val player = MediaPlayer()
-                            mp = player
-                            try {
-                                if (cacheFile.exists() && cacheFile.length() > 0) {
-                                    player.setDataSource(cacheFile.absolutePath)
-                                } else {
-                                    player.setDataSource(videoUrl)
-                                }
-                                player.setDisplay(h)
-                                player.isLooping = true
-                                player.setVolume(0f, 0f)
-                                player.setOnPreparedListener { p ->
-                                    p.start()
-                                    if (!cacheFile.exists() || cacheFile.length() == 0L) {
-                                        CoroutineScope(Dispatchers.IO).launch {
-                                            try {
-                                                val resp = okhttp3.OkHttpClient().newCall(
-                                                    okhttp3.Request.Builder().url(videoUrl).build()
-                                                ).execute()
-                                                resp.body?.byteStream()?.use { input ->
-                                                    cacheFile.outputStream().use { output -> input.copyTo(output) }
-                                                }
-                                            } catch (_: Exception) {}
-                                        }
-                                    }
-                                }
-                                player.prepareAsync()
-                            } catch (_: Exception) {}
-                        }
-                        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hi: Int) {}
-                        override fun surfaceDestroyed(h: SurfaceHolder) { mp?.release(); mp = null }
-                    })
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0.0f to Color.Transparent,
-                        0.55f to DC.GradTop.copy(alpha = 0.6f),
-                        1.0f to DC.Bg
-                    )
-                )
-            )
-        )
-    }
-}
-
-@Composable
 private fun QuestScreen(token: String, onBack: () -> Unit) {
     val ctx = LocalContext.current
     var loading     by remember { mutableStateOf(true) }
@@ -661,10 +552,15 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
             activeStates.addAll(res.active.map { q ->
                 val rs = when {
                     q.completedAt != null && q.claimedAt == null -> RunState.DONE
+                    q.taskName !in MOBILE_CAPABLE -> RunState.DESKTOP_ONLY
                     q.enrolledAt == null -> RunState.NOT_ENROLLED
                     else -> RunState.IDLE
                 }
-                val log = if (rs == RunState.DONE && q.claimedAt == null) "Completed! Tap to claim reward." else ""
+                val log = when (rs) {
+                    RunState.DONE -> "Completed! Tap to claim reward."
+                    RunState.DESKTOP_ONLY -> "Requires Discord desktop app (PLAY/STREAM tasks use Electron IPC)."
+                    else -> ""
+                }
                 QuestState(quest = q, runState = rs, progress = q.secondsDone, log = log)
             })
             claimedStates.addAll(res.claimed.map { QuestState(it, RunState.DONE) })
@@ -673,64 +569,71 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
         loading = false
     }
 
-    Box(Modifier.fillMaxSize().background(
-        Brush.verticalGradient(listOf(DC.GradTop, DC.GradMid, DC.GradBot))
-    )) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(DC.GradTop, DC.GradMid, DC.GradBot)))) {
         Column(Modifier.fillMaxSize()) {
-            QuestVideoHeader(ctx)
 
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 0.dp).offset(y = (-20).dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.size(38.dp).background(DC.Card.copy(0.9f), CircleShape)
+            Box(Modifier.fillMaxWidth()) {
+                QuestVideoBackground(ctx)
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomStart)
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp, top = 52.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White, modifier = Modifier.size(18.dp))
-                    }
-                    Column {
-                        Text("Discord Quests", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = DC.White)
-                        if (orbBalance != null && orbBalance!! > 0)
-                            Text("${orbBalance} orbs", fontSize = 11.sp, color = DC.OrbViolet, fontWeight = FontWeight.Bold)
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (!loading && fetchError == null && selectedTab == 0) {
-                        val anyIdle = activeStates.any { it.runState == RunState.IDLE || it.runState == RunState.NOT_ENROLLED || it.runState == RunState.DONE }
-                        if (anyIdle && !completing) {
-                            Button(
-                                onClick = {
-                                    completing = true
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        activeStates.forEachIndexed { idx, st ->
-                                            if (st.runState == RunState.IDLE || st.runState == RunState.NOT_ENROLLED || st.runState == RunState.DONE) {
-                                                completeQuest(token, st) { updated ->
-                                                    if (idx < activeStates.size) activeStates[idx] = updated
-                                                }
-                                            }
-                                        }
-                                        withContext(Dispatchers.Main) { completing = false }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = DC.Primary.copy(0.2f)),
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                modifier = Modifier.height(34.dp)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            IconButton(
+                                onClick = onBack,
+                                modifier = Modifier.size(38.dp).background(Color.Black.copy(0.45f), CircleShape)
                             ) {
-                                Icon(Icons.Outlined.DoneAll, null, modifier = Modifier.size(14.dp), tint = DC.PrimaryGlow)
-                                Spacer(Modifier.width(5.dp))
-                                Text("Complete All", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = DC.PrimaryGlow)
+                                Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White, modifier = Modifier.size(18.dp))
+                            }
+                            Column {
+                                Text("Discord Quests", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = DC.White)
+                                if (orbBalance != null && orbBalance!! > 0)
+                                    Text("${orbBalance} orbs", fontSize = 11.sp, color = DC.OrbViolet, fontWeight = FontWeight.Bold)
                             }
                         }
-                    }
-                    IconButton(
-                        onClick = { refreshKey++ },
-                        modifier = Modifier.size(34.dp).background(DC.Card.copy(0.9f), RoundedCornerShape(10.dp))
-                    ) {
-                        Icon(Icons.Outlined.Refresh, null, tint = DC.Primary, modifier = Modifier.size(16.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (!loading && fetchError == null && selectedTab == 0) {
+                                val anyRunnable = activeStates.any { it.runState == RunState.IDLE || it.runState == RunState.NOT_ENROLLED }
+                                if (anyRunnable && !completing) {
+                                    Button(
+                                        onClick = {
+                                            completing = true
+                                            CoroutineScope(Dispatchers.IO).launch {
+                                                activeStates.forEachIndexed { idx, st ->
+                                                    if (st.runState == RunState.IDLE || st.runState == RunState.NOT_ENROLLED) {
+                                                        completeQuest(token, st) { updated ->
+                                                            if (idx < activeStates.size) activeStates[idx] = updated
+                                                        }
+                                                    }
+                                                }
+                                                withContext(Dispatchers.Main) { completing = false }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = DC.Primary.copy(0.85f)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) {
+                                        Icon(Icons.Outlined.DoneAll, null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                        Spacer(Modifier.width(5.dp))
+                                        Text("Complete All", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+                                    }
+                                }
+                            }
+                            IconButton(
+                                onClick = { refreshKey++ },
+                                modifier = Modifier.size(34.dp).background(Color.Black.copy(0.45f), RoundedCornerShape(10.dp))
+                            ) {
+                                Icon(Icons.Outlined.Refresh, null, tint = DC.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -743,10 +646,10 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                     divider          = { HorizontalDivider(color = DC.Border.copy(0.5f)) }
                 ) {
                     listOf("Active (${activeStates.size})", "Claimed (${claimedStates.size})").forEachIndexed { idx, label ->
-                        Tab(selected = selectedTab == idx, onClick = { selectedTab = idx }, modifier = Modifier.offset(y = (-10).dp)) {
+                        Tab(selected = selectedTab == idx, onClick = { selectedTab = idx }) {
                             Text(
                                 label,
-                                modifier   = Modifier.padding(vertical = 10.dp),
+                                modifier   = Modifier.padding(vertical = 12.dp),
                                 fontSize   = 13.sp,
                                 fontWeight = if (selectedTab == idx) FontWeight.ExtraBold else FontWeight.Medium,
                                 color      = if (selectedTab == idx) DC.Primary else DC.Muted
@@ -774,6 +677,72 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun QuestVideoBackground(ctx: Context) {
+    val videoUrl  = "https://github.com/RhyanXG7/host-de-imagens/raw/refs/heads/BetterStar/imagens-Host/Novo%20projeto%203%20%5B6ED5A22%5D.mp4"
+    val cacheFile = remember { File(ctx.cacheDir, "quest_bg2.mp4") }
+
+    Box(Modifier.fillMaxWidth().height(200.dp)) {
+        AndroidView(
+            factory = { context ->
+                SurfaceView(context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    holder.addCallback(object : SurfaceHolder.Callback {
+                        private var mp: MediaPlayer? = null
+                        override fun surfaceCreated(h: SurfaceHolder) {
+                            val player = MediaPlayer()
+                            mp = player
+                            try {
+                                if (cacheFile.exists() && cacheFile.length() > 0) {
+                                    player.setDataSource(cacheFile.absolutePath)
+                                } else {
+                                    player.setDataSource(videoUrl)
+                                }
+                                player.setDisplay(h)
+                                player.isLooping = true
+                                player.setVolume(0f, 0f)
+                                player.setOnPreparedListener { p ->
+                                    p.start()
+                                    if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                                        CoroutineScope(Dispatchers.IO).launch {
+                                            try {
+                                                val resp = OkHttpClient().newCall(
+                                                    Request.Builder().url(videoUrl).build()
+                                                ).execute()
+                                                resp.body?.byteStream()?.use { input ->
+                                                    cacheFile.outputStream().use { output -> input.copyTo(output) }
+                                                }
+                                            } catch (_: Exception) {}
+                                        }
+                                    }
+                                }
+                                player.prepareAsync()
+                            } catch (_: Exception) {}
+                        }
+                        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hi: Int) {}
+                        override fun surfaceDestroyed(h: SurfaceHolder) { mp?.release(); mp = null }
+                    })
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    colorStops = arrayOf(
+                        0.0f to Color.Black.copy(alpha = 0.25f),
+                        0.6f to Color.Black.copy(alpha = 0.45f),
+                        1.0f to DC.Bg
+                    )
+                )
+            )
+        )
     }
 }
 
@@ -806,7 +775,7 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
     val ctx = LocalContext.current
     val q   = state.quest
 
-    val accentColor = if (isClaimed) DC.Teal else accentForQuest(q.rewardType)
+    val accentColor = accentForType(q.rewardType, isClaimed)
 
     val gifLoader = remember(ctx) {
         ImageLoader.Builder(ctx).components {
@@ -904,6 +873,7 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
                     MiniChip(Icons.Outlined.HourglassEmpty, timeLeft, if (isClaimed) DC.Teal else accentColor)
                     if (q.enrolledAt == null && !isClaimed) MiniChip(Icons.Outlined.ErrorOutline, "NOT ENROLLED", DC.Error)
                     if (q.completedAt != null && q.claimedAt == null && !isClaimed) MiniChip(Icons.Outlined.CheckCircle, "COMPLETED", DC.Success)
+                    if (state.runState == RunState.DESKTOP_ONLY && !isClaimed) MiniChip(Icons.Outlined.Computer, "DESKTOP ONLY", DC.Warning)
                 }
 
                 if (isClaimed && q.claimedAt != null) {
@@ -929,26 +899,33 @@ private fun QuestCard(state: QuestState, isClaimed: Boolean, token: String, onSt
                 }
 
                 if (!isClaimed && state.log.isNotBlank()) {
-                    val logBg    = when (state.runState) { RunState.ERROR -> DC.Error.copy(0.1f); RunState.DONE -> DC.Success.copy(0.1f); RunState.NOT_ENROLLED -> DC.Warning.copy(0.1f); else -> DC.CardAlt }
-                    val logColor = when (state.runState) { RunState.ERROR -> DC.Error; RunState.DONE -> DC.Success; RunState.NOT_ENROLLED -> DC.Warning; else -> DC.Muted }
+                    val logBg    = when (state.runState) {
+                        RunState.ERROR        -> DC.Error.copy(0.1f)
+                        RunState.DONE         -> accentColor.copy(0.1f)
+                        RunState.NOT_ENROLLED -> DC.Warning.copy(0.1f)
+                        RunState.DESKTOP_ONLY -> DC.Warning.copy(0.08f)
+                        else                  -> DC.CardAlt
+                    }
+                    val logColor = when (state.runState) {
+                        RunState.ERROR        -> DC.Error
+                        RunState.DONE         -> accentColor
+                        RunState.NOT_ENROLLED -> DC.Warning
+                        RunState.DESKTOP_ONLY -> DC.Warning
+                        else                  -> DC.Muted
+                    }
                     Text(state.log, fontSize = 10.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 15.sp,
                         modifier = Modifier.fillMaxWidth().background(logBg, RoundedCornerShape(8.dp)).padding(9.dp, 7.dp))
                 }
 
                 when {
                     isClaimed -> ClaimedActionRow(q, ctx, accentColor)
+                    state.runState == RunState.DESKTOP_ONLY -> DesktopOnlyRow(q, ctx, accentColor)
                     state.runState == RunState.DONE && q.completedAt != null && q.claimedAt == null ->
-                        ClaimActionRow(
-                            accentColor = accentColor,
-                            quest       = q,
-                            ctx         = ctx,
-                            token       = token,
-                            onClaim     = {
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    completeQuest(token, state, onStateChange)
-                                }
+                        ClaimActionRow(accentColor, q, ctx) {
+                            CoroutineScope(Dispatchers.IO).launch {
+                                completeQuest(token, state, onStateChange)
                             }
-                        )
+                        }
                     state.runState == RunState.DONE -> DoneActionRow(q, ctx, accentColor)
                     state.runState == RunState.RUNNING -> RunningRow(accentColor, shimmerX, state.log)
                     state.runState == RunState.NOT_ENROLLED ->
@@ -987,7 +964,6 @@ private fun QuestActionRow(
     onMain: () -> Unit
 ) {
     val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(
             Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp))
@@ -1004,14 +980,12 @@ private fun QuestActionRow(
                 Text(mainLabel, fontWeight = FontWeight.ExtraBold, color = Color.White, fontSize = 13.sp)
             }
         }
-
         IconButton(
             onClick = { clipboard.setPrimaryClip(ClipData.newPlainText("quest", quest.name)) },
             modifier = Modifier.size(46.dp).background(DC.CardAlt, RoundedCornerShape(12.dp)).border(1.dp, DC.Border, RoundedCornerShape(12.dp))
         ) {
             Icon(Icons.Outlined.ContentCopy, null, tint = DC.Muted, modifier = Modifier.size(16.dp))
         }
-
         if (quest.questLink != null) {
             IconButton(
                 onClick = {
@@ -1026,13 +1000,7 @@ private fun QuestActionRow(
 }
 
 @Composable
-private fun ClaimActionRow(
-    accentColor: Color,
-    quest: QuestItem,
-    ctx: Context,
-    token: String,
-    onClaim: () -> Unit
-) {
+private fun ClaimActionRow(accentColor: Color, quest: QuestItem, ctx: Context, onClaim: () -> Unit) {
     val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(
@@ -1059,6 +1027,39 @@ private fun ClaimActionRow(
             modifier = Modifier.size(46.dp).background(accentColor.copy(0.15f), RoundedCornerShape(12.dp)).border(1.dp, accentColor.copy(0.3f), RoundedCornerShape(12.dp))
         ) {
             Icon(Icons.Outlined.OpenInBrowser, null, tint = accentColor, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun DesktopOnlyRow(quest: QuestItem, ctx: Context, accentColor: Color) {
+    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp))
+                .background(DC.Warning.copy(0.08f)).border(1.dp, DC.Warning.copy(0.25f), RoundedCornerShape(12.dp)),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(Icons.Outlined.Computer, null, tint = DC.Warning, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Desktop App Only", fontSize = 12.sp, color = DC.Warning, fontWeight = FontWeight.SemiBold)
+        }
+        IconButton(
+            onClick = { clipboard.setPrimaryClip(ClipData.newPlainText("quest", quest.name)) },
+            modifier = Modifier.size(46.dp).background(DC.CardAlt, RoundedCornerShape(12.dp)).border(1.dp, DC.Border, RoundedCornerShape(12.dp))
+        ) {
+            Icon(Icons.Outlined.ContentCopy, null, tint = DC.Muted, modifier = Modifier.size(16.dp))
+        }
+        if (quest.questLink != null) {
+            IconButton(
+                onClick = {
+                    try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(quest.questLink)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }) } catch (_: Exception) {}
+                },
+                modifier = Modifier.size(46.dp).background(accentColor.copy(0.12f), RoundedCornerShape(12.dp)).border(1.dp, accentColor.copy(0.25f), RoundedCornerShape(12.dp))
+            ) {
+                Icon(Icons.Outlined.OpenInBrowser, null, tint = accentColor, modifier = Modifier.size(16.dp))
+            }
         }
     }
 }
