@@ -444,20 +444,22 @@ private suspend fun completeQuestTask(
         when (taskName) {
             "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
                 val enrollMs  = parseQuestIso(enrolledAt).takeIf { it > 0L } ?: (System.currentTimeMillis() - 60_000L)
-                val maxFuture = 10L
-                val step      = 7L
+                val maxFuture = 10
+                val speed     = 7
+                val interval  = 1
 
                 upd("Spoofing video watch for: ${q.name}")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
                 var completed = false
-                while (!completed && secondsDone < secondsNeeded) {
-                    val elapsedReal = (System.currentTimeMillis() - enrollMs) / 1000L
-                    val maxAllowed  = elapsedReal + maxFuture
+                while (true) {
+                    val maxAllowed = ((System.currentTimeMillis() - enrollMs) / 1000).toInt() + maxFuture
+                    val diff       = maxAllowed - secondsDone
+                    val timestamp  = secondsDone + speed
 
-                    if (maxAllowed - secondsDone >= step) {
-                        val ts   = min(secondsNeeded.toDouble(), (secondsDone + step).toDouble() + Math.random())
-                        val body = JSONObject().apply { put("timestamp", ts) }.toString()
+                    if (diff >= speed) {
+                        val sendTs = minOf(secondsNeeded.toDouble(), timestamp.toDouble() + Math.random())
+                        val body = JSONObject().apply { put("timestamp", sendTs) }.toString()
                             .toRequestBody("application/json".toMediaType())
 
                         val resp     = questHttpClient.newCall(
@@ -465,19 +467,16 @@ private suspend fun completeQuestTask(
                                 .post(body).build()
                         ).execute()
                         val respBody = resp.body?.string() ?: "{}"
-                        qLog("INFO", "Quest", "video-progress HTTP ${resp.code}")
+                        qLog("INFO", "Quest", "video-progress HTTP ${resp.code} | $respBody")
 
-                        completed   = try { val o = JSONObject(respBody); !o.isNull("completed_at") && o.optString("completed_at").isNotEmpty() } catch (_: Exception) { false }
-                        secondsDone = min(secondsNeeded, secondsDone + step)
+                        completed   = try { JSONObject(respBody).optString("completed_at", "").isNotEmpty() } catch (_: Exception) { false }
+                        secondsDone = minOf(secondsNeeded, timestamp)
                         upd("Video progress: ${secondsDone}s / ${secondsNeeded}s", secondsDone)
-                        withContext(Dispatchers.Main) { onUpdate(cur) }
-                    } else {
-                        upd("Waiting for time window... (${secondsDone}s / ${secondsNeeded}s)", secondsDone)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
                     }
 
-                    if (secondsDone >= secondsNeeded) break
-                    delay(1000L)
+                    if (timestamp >= secondsNeeded) break
+                    delay(interval * 1000L)
                 }
 
                 if (!completed) {
