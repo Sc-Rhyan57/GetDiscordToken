@@ -364,31 +364,33 @@ private suspend fun completeQuest(token: String, state: QuestState, onUpdate: (Q
 
         when (taskName) {
             "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
-                val startMs   = System.currentTimeMillis()
-                val speed     = 7L
-                val interval  = 1000L
+                val enrollMs  = parseIso(enrolledAt).takeIf { it > 0L } ?: (System.currentTimeMillis() - 60_000L)
+                val maxFuture = 10
+                val speed     = 7
+                val interval  = 1
 
                 upd("Spoofing video: ${q.name}")
                 withContext(Dispatchers.Main) { onUpdate(cur) }
 
                 var completed = false
-                while (secondsDone < secondsNeeded) {
-                    val elapsedSec = (System.currentTimeMillis() - startMs) / 1000L
-                    val nextTs     = secondsDone + speed
-                    val sendTs     = minOf(secondsNeeded.toDouble(), nextTs.toDouble())
+                while (true) {
+                    val maxAllowed = ((System.currentTimeMillis() - enrollMs) / 1000).toInt() + maxFuture
+                    val diff       = maxAllowed - secondsDone
+                    val timestamp  = secondsDone + speed
 
-                    if (elapsedSec + 2 >= secondsDone) {
-                        val body = JSONObject().apply { put("timestamp", sendTs) }.toString().toRequestBody("application/json".toMediaType())
-                        val resp = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/video-progress", token).post(body).build()).execute()
-                        val rj   = try { JSONObject(resp.body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
-                        completed = rj.optString("completed_at","").isNotEmpty()
-                        secondsDone = minOf(secondsNeeded, nextTs)
+                    if (diff >= speed) {
+                        val sendTs = minOf(secondsNeeded.toDouble(), timestamp.toDouble() + Math.random())
+                        val body   = JSONObject().apply { put("timestamp", sendTs) }.toString().toRequestBody("application/json".toMediaType())
+                        val resp   = httpClient.newCall(buildReq("https://discord.com/api/v9/quests/$questId/video-progress", token).post(body).build()).execute()
+                        val rb     = resp.body?.string() ?: "{}"
+                        completed  = try { JSONObject(rb).optString("completed_at","").isNotEmpty() } catch (_: Exception) { false }
+                        secondsDone = minOf(secondsNeeded, timestamp)
                         upd("Video: ${secondsDone}s / ${secondsNeeded}s", secondsDone)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
-                        if (completed) break
                     }
 
-                    delay(interval)
+                    if (timestamp >= secondsNeeded) break
+                    delay(interval * 1000L)
                 }
 
                 if (!completed) {
