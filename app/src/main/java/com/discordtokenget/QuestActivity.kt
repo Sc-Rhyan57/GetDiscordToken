@@ -14,7 +14,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -102,21 +100,28 @@ private val questHttpClient = OkHttpClient.Builder()
     .build()
 
 private val QC = object {
-    val Background  = Color(0xFF1E1F22)
-    val Surface     = Color(0xFF2B2D31)
-    val SurfaceVar  = Color(0xFF313338)
-    val Primary     = Color(0xFF5865F2)
-    val Success     = Color(0xFF23A55A)
-    val Warning     = Color(0xFFFAA61A)
-    val Error       = Color(0xFFED4245)
-    val TextPrimary = Color(0xFFF2F3F5)
+    val Background    = Color(0xFF1E1F22)
+    val Surface       = Color(0xFF2B2D31)
+    val SurfaceVar    = Color(0xFF313338)
+    val Primary       = Color(0xFF5865F2)
+    val Success       = Color(0xFF23A55A)
+    val Warning       = Color(0xFFFAA61A)
+    val Error         = Color(0xFFED4245)
+    val TextPrimary   = Color(0xFFF2F3F5)
     val TextSecondary = Color(0xFFB5BAC1)
-    val TextMuted   = Color(0xFF80848E)
-    val Divider     = Color(0xFF3F4147)
-    val Orbs        = Color(0xFF7C43E0)
-    val Decor       = Color(0xFF57F287)
-    val Nitro       = Color(0xFF5865F2)
+    val TextMuted     = Color(0xFF80848E)
+    val Divider       = Color(0xFF3F4147)
+    val Orbs          = Color(0xFF7C43E0)
+    val Decor         = Color(0xFF57F287)
+    val Nitro         = Color(0xFF5865F2)
 }
+
+private val DISCORD_HEADERS = mapOf(
+    "Content-Type" to "application/json",
+    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9166 Chrome/124.0.6367.243 Electron/30.2.0 Safari/537.36",
+    "X-Super-Properties" to "ewogICJvcyI6ICJXaW5kb3dzIiwKICAiY2xpZW50X2J1aWxkX251bWJlciI6IDE1MjQ1MAp9",
+    "X-Discord-Locale" to "en-US"
+)
 
 data class QuestItem(
     val id: String,
@@ -544,18 +549,27 @@ class QuestActivity : ComponentActivity() {
         }
     }
 
+    private fun buildRequest(url: String, token: String): Request.Builder {
+        return Request.Builder().url(url).apply {
+            header("Authorization", token)
+            DISCORD_HEADERS.forEach { (k, v) -> header(k, v) }
+        }
+    }
+
     private suspend fun fetchQuests(token: String): List<QuestItem> = withContext(Dispatchers.IO) {
         val resp = questHttpClient.newCall(
-            Request.Builder()
-                .url("https://discord.com/api/v9/users/@me/quests")
-                .header("Authorization", token)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9166 Chrome/124.0.6367.243 Electron/30.2.0 Safari/537.36")
-                .header("X-Super-Properties", "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCIsImRldmljZSI6IiIsInN5c3RlbV9sb2NhbGUiOiJlbi1VUyIsImJyb3dzZXJfdXNlcl9hZ2VudCI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIGRpc2NvcmQvMS4wLjkxNjYgQ2hyb21lLzEyNC4wLjYzNjcuMjQzIEVsZWN0cm9uLzMwLjIuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMzAuMi4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6IiIsInJlZmVycmluZ19kb21haW5fY3VycmVudCI6IiIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjkxNjYsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9")
-                .build()
+            buildRequest("https://discord.com/api/v10/users/@me/quests?with_user_status=true", token).build()
         ).execute()
 
-        if (!resp.isSuccessful) throw Exception("HTTP ${resp.code} — ${resp.message}")
         val body = resp.body?.string() ?: throw Exception("Empty response")
+
+        if (!resp.isSuccessful) {
+            val errorMsg = try {
+                val obj = JSONObject(body)
+                obj.optString("message", "HTTP ${resp.code}")
+            } catch (_: Exception) { "HTTP ${resp.code}" }
+            throw Exception(errorMsg)
+        }
 
         val arr = try { JSONArray(body) } catch (_: Exception) {
             val obj = JSONObject(body)
@@ -564,6 +578,8 @@ class QuestActivity : ComponentActivity() {
 
         val result = mutableListOf<QuestItem>()
         val now = System.currentTimeMillis()
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            .also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }
 
         for (i in 0 until arr.length()) {
             val q = arr.getJSONObject(i)
@@ -573,9 +589,7 @@ class QuestActivity : ComponentActivity() {
             val config = q.optJSONObject("config") ?: continue
             val expiresAt = config.optString("expires_at", "")
             val expiresMs = try {
-                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                    .also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }
-                    .parse(expiresAt.substringBefore('.'))?.time ?: 0L
+                sdf.parse(expiresAt.substringBefore('.'))?.time ?: 0L
             } catch (_: Exception) { 0L }
             if (expiresMs > 0 && expiresMs < now) continue
 
@@ -600,8 +614,7 @@ class QuestActivity : ComponentActivity() {
             val messages = config.optJSONObject("messages")
             val questName = messages?.optString("quest_name")?.takeIf { it.isNotEmpty() }
                 ?: messages?.optString("questName")?.takeIf { it.isNotEmpty() }
-                ?: appName
-                ?: "Quest"
+                ?: appName ?: "Quest"
             val description = messages?.optString("quest_description")?.takeIf { it.isNotEmpty() }
                 ?: messages?.optString("description")?.takeIf { it.isNotEmpty() }
                 ?: ""
@@ -612,16 +625,14 @@ class QuestActivity : ComponentActivity() {
                 ?: ""
 
             val rewardType = when {
-                rewardStr.contains("orb", ignoreCase = true)         -> "orbs"
-                rewardStr.contains("decoration", ignoreCase = true)  -> "decor"
-                rewardStr.contains("nitro", ignoreCase = true)       -> "nitro"
-                else                                                 -> "prize"
+                rewardStr.contains("orb", ignoreCase = true)        -> "orbs"
+                rewardStr.contains("decoration", ignoreCase = true) -> "decor"
+                rewardStr.contains("nitro", ignoreCase = true)      -> "nitro"
+                else                                                -> "prize"
             }
 
             val expDisplay = try {
-                val d = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
-                    .also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }
-                    .parse(expiresAt.substringBefore('.'))
+                val d = sdf.parse(expiresAt.substringBefore('.'))
                 java.text.SimpleDateFormat("MMM dd", java.util.Locale.US).format(d!!)
             } catch (_: Exception) { "?" }
 
@@ -658,13 +669,6 @@ class QuestActivity : ComponentActivity() {
         val secondsNeeded = initialState.quest.secondsNeeded
         var secondsDone = initialState.quest.secondsDone
 
-        val headers = mapOf(
-            "Authorization" to token,
-            "Content-Type" to "application/json",
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9166 Chrome/124.0.6367.243 Electron/30.2.0 Safari/537.36",
-            "X-Super-Properties" to "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCIsImRldmljZSI6IiIsInN5c3RlbV9sb2NhbGUiOiJlbi1VUyIsImJyb3dzZXJfdXNlcl9hZ2VudCI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIGRpc2NvcmQvMS4wLjkxNjYgQ2hyb21lLzEyNC4wLjYzNjcuMjQzIEVsZWN0cm9uLzMwLjIuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMzAuMi4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6IiIsInJlZmVycmluZ19kb21haW5fY3VycmVudCI6IiIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjkxNjYsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
-        )
-
         var current = initialState.copy(status = QuestStatus.RUNNING, log = "Starting...", progress = secondsDone)
         withContext(Dispatchers.Main) { onStateChange(current) }
 
@@ -672,8 +676,7 @@ class QuestActivity : ComponentActivity() {
             when (taskName) {
                 "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
                     val enrollResp = questHttpClient.newCall(
-                        Request.Builder().url("https://discord.com/api/v9/users/@me/quests")
-                            .apply { headers.forEach { (k, v) -> header(k, v) } }.build()
+                        buildRequest("https://discord.com/api/v10/users/@me/quests?with_user_status=true", token).build()
                     ).execute()
                     val enrolledAt = try {
                         val rawArr = try { JSONArray(enrollResp.body?.string() ?: "[]") } catch (_: Exception) { JSONArray() }
@@ -683,7 +686,11 @@ class QuestActivity : ComponentActivity() {
                             if (q.optString("id") == questId) {
                                 val us = q.optJSONObject("user_status")
                                 val str = us?.optString("enrolled_at") ?: ""
-                                if (str.isNotEmpty()) ea = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }.parse(str.substringBefore('.'))?.time ?: ea
+                                if (str.isNotEmpty()) {
+                                    ea = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                        .also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }
+                                        .parse(str.substringBefore('.'))?.time ?: ea
+                                }
                                 break
                             }
                         }
@@ -697,13 +704,17 @@ class QuestActivity : ComponentActivity() {
                         val maxAllowed = ((System.currentTimeMillis() - enrolledAt) / 1000L) + maxFuture
                         if (maxAllowed - secondsDone >= speed) {
                             val ts = minOf(secondsNeeded, secondsDone + speed).toDouble() + (Math.random() * 0.4)
-                            val reqBody = JSONObject().apply { put("timestamp", ts) }.toString().toRequestBody("application/json".toMediaType())
+                            val reqBody = JSONObject().apply { put("timestamp", ts) }
+                                .toString().toRequestBody("application/json".toMediaType())
                             val resp = questHttpClient.newCall(
-                                Request.Builder().url("https://discord.com/api/v9/quests/$questId/video-progress")
-                                    .apply { headers.forEach { (k, v) -> header(k, v) } }.post(reqBody).build()
+                                buildRequest("https://discord.com/api/v10/quests/$questId/video-progress", token)
+                                    .post(reqBody).build()
                             ).execute()
                             val respBody = resp.body?.string() ?: ""
-                            val completed = try { JSONObject(respBody).has("completed_at") && !JSONObject(respBody).isNull("completed_at") } catch (_: Exception) { false }
+                            val completed = try {
+                                val obj = JSONObject(respBody)
+                                obj.has("completed_at") && !obj.isNull("completed_at")
+                            } catch (_: Exception) { false }
                             secondsDone = minOf(secondsNeeded, secondsDone + speed)
                             current = current.copy(progress = secondsDone, log = "Sending video progress: ${secondsDone}s / ${secondsNeeded}s")
                             withContext(Dispatchers.Main) { onStateChange(current) }
@@ -715,10 +726,11 @@ class QuestActivity : ComponentActivity() {
                         delay(1000)
                     }
 
-                    val finalBody = JSONObject().apply { put("timestamp", secondsNeeded.toDouble()) }.toString().toRequestBody("application/json".toMediaType())
+                    val finalBody = JSONObject().apply { put("timestamp", secondsNeeded.toDouble()) }
+                        .toString().toRequestBody("application/json".toMediaType())
                     questHttpClient.newCall(
-                        Request.Builder().url("https://discord.com/api/v9/quests/$questId/video-progress")
-                            .apply { headers.forEach { (k, v) -> header(k, v) } }.post(finalBody).build()
+                        buildRequest("https://discord.com/api/v10/quests/$questId/video-progress", token)
+                            .post(finalBody).build()
                     ).execute()
 
                     current = current.copy(status = QuestStatus.DONE, progress = secondsNeeded, log = "Quest completed successfully!")
@@ -727,33 +739,44 @@ class QuestActivity : ComponentActivity() {
 
                 "PLAY_ACTIVITY" -> {
                     val dmResp = questHttpClient.newCall(
-                        Request.Builder().url("https://discord.com/api/v9/users/@me/channels")
-                            .apply { headers.forEach { (k, v) -> header(k, v) } }.build()
+                        buildRequest("https://discord.com/api/v10/users/@me/channels", token).build()
                     ).execute()
                     val channelId = try {
                         val arr = JSONArray(dmResp.body?.string() ?: "[]")
-                        if (arr.length() > 0) arr.getJSONObject(0).optString("id") else throw Exception("No DM channels")
+                        if (arr.length() > 0) arr.getJSONObject(0).optString("id")
+                        else throw Exception("No DM channels")
                     } catch (e: Exception) { throw Exception("Need at least one DM channel: ${e.message}") }
                     val streamKey = "call:$channelId:1"
 
                     while (secondsDone < secondsNeeded) {
-                        val reqBody = JSONObject().apply { put("stream_key", streamKey); put("terminal", false) }.toString().toRequestBody("application/json".toMediaType())
+                        val reqBody = JSONObject().apply {
+                            put("stream_key", streamKey)
+                            put("terminal", false)
+                        }.toString().toRequestBody("application/json".toMediaType())
                         val resp = questHttpClient.newCall(
-                            Request.Builder().url("https://discord.com/api/v9/quests/$questId/heartbeat")
-                                .apply { headers.forEach { (k, v) -> header(k, v) } }.post(reqBody).build()
+                            buildRequest("https://discord.com/api/v10/quests/$questId/heartbeat", token)
+                                .post(reqBody).build()
                         ).execute()
                         val respStr = resp.body?.string() ?: "{}"
-                        secondsDone = try { JSONObject(respStr).optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", secondsDone) ?: secondsDone } catch (_: Exception) { secondsDone }
+                        secondsDone = try {
+                            JSONObject(respStr).optJSONObject("progress")
+                                ?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", secondsDone) ?: secondsDone
+                        } catch (_: Exception) { secondsDone }
                         current = current.copy(progress = secondsDone, log = "Heartbeat sent: ${secondsDone}s / ${secondsNeeded}s")
                         withContext(Dispatchers.Main) { onStateChange(current) }
                         if (secondsDone >= secondsNeeded) break
                         delay(20000)
                     }
-                    val termBody = JSONObject().apply { put("stream_key", "call:$channelId:1"); put("terminal", true) }.toString().toRequestBody("application/json".toMediaType())
+
+                    val termBody = JSONObject().apply {
+                        put("stream_key", "call:$channelId:1")
+                        put("terminal", true)
+                    }.toString().toRequestBody("application/json".toMediaType())
                     questHttpClient.newCall(
-                        Request.Builder().url("https://discord.com/api/v9/quests/$questId/heartbeat")
-                            .apply { headers.forEach { (k, v) -> header(k, v) } }.post(termBody).build()
+                        buildRequest("https://discord.com/api/v10/quests/$questId/heartbeat", token)
+                            .post(termBody).build()
                     ).execute()
+
                     current = current.copy(status = QuestStatus.DONE, progress = secondsNeeded, log = "Quest completed successfully!")
                     withContext(Dispatchers.Main) { onStateChange(current) }
                 }
