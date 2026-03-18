@@ -888,7 +888,7 @@ private fun QuestCard(
                             Alignment.Center
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                CircularProgressIndicator(Modifier.size(14.dp), color = accentColor, strokeWidth = 2.dp)
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), color = accentColor, strokeWidth = 2.dp)
                                 Text(state.log.lines().lastOrNull()?.take(30) ?: "Running...", fontSize = 11.sp, color = accentColor, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
@@ -1295,7 +1295,7 @@ private fun VideoPlayerDialog(
 
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (spoofActive && !completed) {
-                            CircularProgressIndicator(Modifier.size(12.dp), color = DC.Primary, strokeWidth = 2.dp, modifier = Modifier.graphicsLayer { alpha = pA })
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp).graphicsLayer { alpha = pA }, color = DC.Primary, strokeWidth = 2.dp)
                         } else if (completed) {
                             Icon(Icons.Outlined.CheckCircle, null, tint = DC.Success, modifier = Modifier.size(13.dp))
                         }
