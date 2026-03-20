@@ -88,11 +88,14 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RateReview
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Smartphone
@@ -204,6 +207,7 @@ data class DiscordUser(
     val banner: String?,
     val bannerColor: String?,
     val bio: String?,
+    val pronouns: String?,
     val email: String?,
     val phone: String?,
     val verified: Boolean,
@@ -230,7 +234,8 @@ data class DiscordUser(
     val themeGradientAngle: Float,
     val nitroSince: String?,
     val nitroEnds: String?,
-    val orbsBalance: Int?
+    val orbsBalance: Int?,
+    val usrbgBannerUrl: String?
 )
 
 data class CustomStatus(
@@ -391,6 +396,13 @@ private fun snowflakeToTimestamp(id: String): Long = try {
 
 private fun nitroLabel(t: Int): String = when (t) {
     1 -> "Nitro Classic"; 2 -> "Nitro"; 3 -> "Nitro Basic"; else -> "None"
+}
+
+private fun nitroLabelFull(t: Int): String = when (t) {
+    1 -> "Nitro Classic — Limited cosmetics"
+    2 -> "Nitro — Full subscription with server boosts"
+    3 -> "Nitro Basic — Basic cosmetics, no boosts"
+    else -> "None"
 }
 
 private fun localeLabel(l: String): String = try {
@@ -1497,6 +1509,7 @@ class MainActivity : ComponentActivity() {
         var selectedBadge    by remember { mutableStateOf<BadgeInfo?>(null) }
         var showTokenWarning by remember { mutableStateOf(false) }
         var pendingAction    by remember { mutableStateOf<String?>(null) }
+        var useUsrbgBanner   by remember { mutableStateOf(false) }
         val riskPrefs        = remember { ctx.getSharedPreferences(PREF_SESSION, Context.MODE_PRIVATE) }
         val riskAccepted     = remember { mutableStateOf(riskPrefs.getBoolean(KEY_RISK_ACCEPTED, false)) }
 
@@ -1553,10 +1566,19 @@ class MainActivity : ComponentActivity() {
 
             val hasThemeGradient = user?.themeColorPrimary != null && user.themeColorAccent != null
             val themeAngleRad    = if (hasThemeGradient) user!!.themeGradientAngle else 0f
+            val hasUsrbg         = user?.usrbgBannerUrl != null
 
             Box(Modifier.fillMaxWidth()) {
                 Box(Modifier.fillMaxWidth().height(160.dp)) {
                     when {
+                        useUsrbgBanner && hasUsrbg -> {
+                            AsyncImage(
+                                model = user!!.usrbgBannerUrl,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
                         hasThemeGradient -> {
                             ProfileThemeGradient(
                                 primaryColor  = discordColorToCompose(user!!.themeColorPrimary!!),
@@ -1566,10 +1588,7 @@ class MainActivity : ComponentActivity() {
                             )
                             if (user.banner != null) {
                                 val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
-                                AnimatedImage(
-                                    "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600",
-                                    null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop
-                                )
+                                AnimatedImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             }
                         }
                         user?.banner != null -> {
@@ -1584,13 +1603,27 @@ class MainActivity : ComponentActivity() {
                             val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrElse { AppColors.Primary }
                             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
                         }
-                        else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary, Color(0xFF7289DA), AppColors.Background))))
+                        else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary.copy(0.6f), AppColors.Background))))
+                    }
+                    if (hasUsrbg && user?.usrbgBannerUrl != null) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd).padding(8.dp)
+                                .background(AppColors.Background.copy(0.75f), RoundedCornerShape(8.dp))
+                                .border(1.dp, AppColors.Divider, RoundedCornerShape(8.dp))
+                                .clickable { useUsrbgBanner = !useUsrbgBanner }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                if (useUsrbgBanner) "Discord Banner" else "USRBG Banner",
+                                fontSize = 9.sp, color = AppColors.TextSecondary, fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
                 if (user?.profileEffectId != null) {
                     ProfileEffectOverlay(
                         effectId = user.profileEffectId,
-                        modifier = Modifier.fillMaxWidth().height(320.dp).align(Alignment.TopStart)
+                        modifier = Modifier.fillMaxWidth().height(280.dp).align(Alignment.TopStart)
                     )
                 }
             }
@@ -1649,6 +1682,19 @@ class MainActivity : ComponentActivity() {
                                 onClick = { showMenu = false; onQuestClick() }
                             )
                             DropdownMenuItem(
+                                text = { Text("Reviews", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.RateReview, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
+                                onClick = {
+                                    showMenu = false
+                                    if (user != null) ReviewActivity.start(ctx, token, user.id, user.username)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Active Sessions", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.Devices, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
+                                onClick = { showMenu = false; SessionsActivity.start(ctx, token) }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Copy All Info", color = AppColors.TextPrimary, fontSize = 14.sp) },
                                 leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp)) },
                                 onClick = {
@@ -1658,6 +1704,7 @@ class MainActivity : ComponentActivity() {
                                             appendLine("=== Discord Account Info ===")
                                             appendLine("Username: ${user.username}")
                                             appendLine("Display Name: ${user.globalName ?: user.username}")
+                                            if (!user.pronouns.isNullOrBlank()) appendLine("Pronouns: ${user.pronouns}")
                                             appendLine("User ID: ${user.id}")
                                             appendLine("Discriminator: ${user.discriminator}")
                                             if (!user.email.isNullOrBlank()) appendLine("Email: ${user.email}")
@@ -1777,6 +1824,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    if (!user.pronouns.isNullOrBlank()) {
+                        Text(user.pronouns, fontSize = 13.sp, color = AppColors.TextMuted.copy(0.8f), fontWeight = FontWeight.Normal)
+                    }
+
                     if (user.nameplateAsset != null) {
                         Spacer(Modifier.height(8.dp))
                         NameplateRow(asset = user.nameplateAsset, label = user.nameplateLabel, palette = user.nameplatePalette)
@@ -1831,8 +1882,16 @@ class MainActivity : ComponentActivity() {
                     }
 
                     if (user.displayNameStyle != null) {
-                        Spacer(Modifier.height(8.dp))
-                        DisplayNameStyleBadge(styleJson = user.displayNameStyle)
+                        val dsObj = runCatching { org.json.JSONObject(user.displayNameStyle) }.getOrNull()
+                        val hasRealStyle = dsObj != null && (
+                            dsObj.optString("color_primary").isNotEmpty() ||
+                            dsObj.optString("color_secondary").isNotEmpty() ||
+                            (dsObj.optString("font_type").isNotEmpty() && dsObj.optString("font_type") != "null")
+                        )
+                        if (hasRealStyle) {
+                            Spacer(Modifier.height(8.dp))
+                            DisplayNameStyleBadge(styleJson = user.displayNameStyle)
+                        }
                     }
 
                     if (loadingBadges) {
@@ -1876,6 +1935,7 @@ class MainActivity : ComponentActivity() {
                         CopyableInfoRow(Icons.Outlined.Tag, "User ID", user.id) { copyToClipboard("User ID", user.id) }
                         CopyableInfoRow(Icons.Outlined.CalendarMonth, "Created", snowflakeToDate(user.id)) { copyToClipboard("Created", snowflakeToDate(user.id)) }
                         InfoRow(Icons.Outlined.Update, "Account Age", accountAgeString(createdMs))
+                        if (!user.pronouns.isNullOrBlank()) InfoRow(Icons.Outlined.Person, "Pronouns", user.pronouns)
                         if (!user.email.isNullOrBlank())  CopyableInfoRow(Icons.Outlined.Email,    "Email",   user.email)  { copyToClipboard("Email",   user.email) }
                         if (!user.phone.isNullOrBlank())  CopyableInfoRow(Icons.Outlined.Phone,    "Phone",   user.phone)  { copyToClipboard("Phone",   user.phone) }
                         if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale",  localeLabel(user.locale))
@@ -1887,7 +1947,7 @@ class MainActivity : ComponentActivity() {
                     if (user.premiumType > 0) {
                         SectionDivider("Nitro", AppColors.NitroPink)
                         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                            InfoRow(Icons.Outlined.WorkspacePremium, "Nitro Type", nitroLabel(user.premiumType), AppColors.NitroPink)
+                            InfoRow(Icons.Outlined.WorkspacePremium, "Subscription", nitroLabel(user.premiumType), AppColors.NitroPink)
                             if (loadingNitro) {
                                 InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", "Loading...", AppColors.NitroPink.copy(0.6f))
                             } else if (nitroInfo != null) {
@@ -2351,12 +2411,28 @@ class MainActivity : ComponentActivity() {
                 ?: j.optString("display_name_styles").takeIf { it.isNotEmpty() && it != "null" }
                 ?: j.optString("display_name_style").takeIf  { it.isNotEmpty() && it != "null" }
         }
-        addLog("SUCCESS", "API", "HTTP 200 /users/@me → ${j.optString("username")}")
+        val userId = j.optString("id")
+        val usrbgUrl = try {
+            val usrbgResp = httpClient.newCall(Request.Builder().url("https://usrbg.is-hardly.online/users").build()).execute()
+            if (usrbgResp.isSuccessful) {
+                val usrbgJson = JSONObject(usrbgResp.body?.string() ?: "{}")
+                val users = usrbgJson.optJSONObject("users")
+                val etag  = users?.optString(userId)?.takeIf { it.isNotEmpty() }
+                val endpoint = usrbgJson.optString("endpoint", "").takeIf { it.isNotEmpty() }
+                val bucket   = usrbgJson.optString("bucket",   "").takeIf { it.isNotEmpty() }
+                val prefix   = usrbgJson.optString("prefix",   "").takeIf { it.isNotEmpty() }
+                if (etag != null && endpoint != null && bucket != null && prefix != null)
+                    "$endpoint/$bucket/$prefix$userId?$etag"
+                else null
+            } else null
+        } catch (_: Exception) { null }
+        addLog("SUCCESS", "API", "HTTP 200 /users/@me → ${j.optString("username")} usrbg=${usrbgUrl != null}")
         DiscordUser(
-            id = j.optString("id"), username = j.optString("username"),
+            id = userId, username = j.optString("username"),
             discriminator = j.optString("discriminator", "0"), globalName = str("global_name"),
             avatar = str("avatar"), banner = str("banner"), bannerColor = str("banner_color"),
-            bio = str("bio"), email = str("email"), phone = str("phone"),
+            bio = str("bio"), pronouns = str("pronouns"),
+            email = str("email"), phone = str("phone"),
             verified = j.optBoolean("verified", false), mfaEnabled = j.optBoolean("mfa_enabled", false),
             locale = str("locale"), premiumType = j.optInt("premium_type", 0),
             publicFlags = j.optLong("public_flags", 0L),
@@ -2379,7 +2455,8 @@ class MainActivity : ComponentActivity() {
             themeGradientAngle = 0f,
             nitroSince = null,
             nitroEnds  = null,
-            orbsBalance = null
+            orbsBalance = null,
+            usrbgBannerUrl = usrbgUrl
         )
     }
 
@@ -2503,29 +2580,30 @@ class MainActivity : ComponentActivity() {
 
     private suspend fun fetchOrbsBalance(token: String): Int? = withContext(Dispatchers.IO) {
         try {
-            val questResp = httpClient.newCall(
-                Request.Builder()
-                    .url("https://discord.com/api/v9/users/@me/quests?with_userquest=true&with_orb_balance=true&include_dismissed=false&user_quest_completions=false")
-                    .header("Authorization", token)
-                    .build()
-            ).execute()
+            val superProps = "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTI7IE1vYmlsZTsgcnY6MTQ4LjApIEdlY2tvLzE0OC4wIEZpcmVmb3gvMTQ4LjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNDguMCIsIm9zX3ZlcnNpb24iOiIxMiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiIiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiIiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1MTA3MzMsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+            fun req(url: String) = Request.Builder().url(url)
+                .header("Authorization", token)
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "Mozilla/5.0 (Android 12; Mobile; rv:148.0) Gecko/148.0 Firefox/148.0")
+                .header("X-Super-Properties", superProps)
+                .header("X-Discord-Locale", "pt-BR")
+                .header("X-Discord-Timezone", "America/Sao_Paulo")
+                .header("X-Debug-Options", "bugReporterEnabled")
+                .header("Referer", "https://discord.com/quest-home")
+                .build()
+            val vcResp = httpClient.newCall(req("https://discord.com/api/v9/users/@me/virtual-currency/balance")).execute()
+            if (vcResp.isSuccessful) {
+                val j = JSONObject(vcResp.body?.string() ?: "{}")
+                val balance = j.optInt("balance", -1)
+                if (balance >= 0) { addLog("SUCCESS", "API", "Orbs (vc): $balance"); return@withContext balance }
+            }
+            val questResp = httpClient.newCall(req("https://discord.com/api/v9/users/@me/quests?with_userquest=true&with_orb_balance=true&include_dismissed=false&user_quest_completions=false")).execute()
             if (questResp.isSuccessful) {
                 val qj = JSONObject(questResp.body?.string() ?: "{}")
                 val balance = qj.optInt("orb_balance", -1)
                 if (balance >= 0) { addLog("SUCCESS", "API", "Orbs (quests): $balance"); return@withContext balance }
                 val nested = qj.optJSONObject("orbs")?.optInt("balance", -1) ?: -1
                 if (nested >= 0) { addLog("SUCCESS", "API", "Orbs (nested): $nested"); return@withContext nested }
-            }
-            val vcResp = httpClient.newCall(
-                Request.Builder()
-                    .url("https://discord.com/api/v9/users/@me/virtual-currency/balance")
-                    .header("Authorization", token)
-                    .build()
-            ).execute()
-            if (vcResp.isSuccessful) {
-                val j = JSONObject(vcResp.body?.string() ?: "{}")
-                val balance = j.optInt("balance", -1)
-                if (balance >= 0) { addLog("SUCCESS", "API", "Orbs (vc): $balance"); return@withContext balance }
             }
             addLog("WARN", "API", "Could not fetch orbs balance")
             null
