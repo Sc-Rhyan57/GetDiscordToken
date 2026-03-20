@@ -130,11 +130,13 @@ private suspend fun revokeSessions(token: String, hashes: List<String>): Boolean
     }
 }
 
-private fun parseIsoShort(s: String): String = try {
-    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).also { it.timeZone = TimeZone.getTimeZone("UTC") }
-    val date = sdf.parse(s.substringBefore('.')) ?: return s
-    SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(date)
-} catch (_: Exception) { s.take(16) }
+private fun parseIsoShort(s: String): String {
+    return try {
+        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).also { it.timeZone = TimeZone.getTimeZone("UTC") }
+        val date = sdf.parse(s.substringBefore('.')) ?: return s
+        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(date)
+    } catch (_: Exception) { s.take(16) }
+}
 
 private fun platformIcon(platform: String?): ImageVector = when {
     platform == null                           -> Icons.Outlined.DeviceUnknown
