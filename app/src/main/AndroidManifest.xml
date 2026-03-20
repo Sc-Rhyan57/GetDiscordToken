@@ -31,6 +31,18 @@
             android:configChanges="orientation|screenSize"
             android:hardwareAccelerated="true" />
 
+        <activity
+            android:name=".ReviewActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true" />
+
+        <activity
+            android:name=".SessionsActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize"
+            android:hardwareAccelerated="true" />
+
     </application>
 
 </manifest>
