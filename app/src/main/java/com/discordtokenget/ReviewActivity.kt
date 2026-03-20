@@ -5,9 +5,13 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,7 +41,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
@@ -251,7 +254,12 @@ private fun ReviewScreen(token: String, userId: String, username: String, onBack
         when {
             loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 val inf = rememberInfiniteTransition(label = "ld")
-                val rot by inf.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = androidx.compose.animation.core.LinearEasing)), label = "lr")
+                val rot by inf.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+                    label = "lr"
+                )
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     CircularProgressIndicator(color = RColors.Primary, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
                     Text("Loading reviews...", color = RColors.Muted, fontSize = 14.sp)
@@ -295,7 +303,6 @@ private fun ReviewScreen(token: String, userId: String, username: String, onBack
 private fun ReviewCard(review: RDBReview, gifLoader: ImageLoader) {
     val ctx = LocalContext.current
     val isSystem = review.isSystem
-    val accentColor = if (isSystem) RColors.Primary else RColors.Surface
 
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isSystem) RColors.Primary.copy(0.08f) else RColors.Card),

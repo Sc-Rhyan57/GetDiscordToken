@@ -101,30 +101,32 @@ private suspend fun fetchSessions(token: String): List<AuthSession> = withContex
             val s = arr.getJSONObject(i)
             val ci = s.optJSONObject("client_info")
             list.add(AuthSession(
-                idHash        = s.optString("id_hash", ""),
-                approxLastUsed= s.optString("approx_last_used_time", ""),
-                os            = ci?.optString("os")?.takeIf { it.isNotEmpty() && it != "null" },
-                platform      = ci?.optString("platform")?.takeIf { it.isNotEmpty() && it != "null" },
-                location      = ci?.optString("location")?.takeIf { it.isNotEmpty() && it != "null" }
+                idHash         = s.optString("id_hash", ""),
+                approxLastUsed = s.optString("approx_last_used_time", ""),
+                os             = ci?.optString("os")?.takeIf { it.isNotEmpty() && it != "null" },
+                platform       = ci?.optString("platform")?.takeIf { it.isNotEmpty() && it != "null" },
+                location       = ci?.optString("location")?.takeIf { it.isNotEmpty() && it != "null" }
             ))
         }
         list
     } catch (_: Exception) { emptyList() }
 }
 
-private suspend fun revokeSessions(token: String, hashes: List<String>): Boolean = withContext(Dispatchers.IO) {
-    try {
-        val body = JSONObject().put("session_id_hashes", JSONArray(hashes)).toString()
-            .toRequestBody("application/json".toMediaType())
-        val resp = sessHttp.newCall(
-            Request.Builder().url("https://discord.com/api/v10/auth/sessions/logout")
-                .header("Authorization", token)
-                .header("Content-Type", "application/json")
-                .post(body)
-                .build()
-        ).execute()
-        resp.code in 200..204
-    } catch (_: Exception) { false }
+private suspend fun revokeSessions(token: String, hashes: List<String>): Boolean {
+    return withContext(Dispatchers.IO) {
+        try {
+            val body = JSONObject().put("session_id_hashes", JSONArray(hashes)).toString()
+                .toRequestBody("application/json".toMediaType())
+            val resp = sessHttp.newCall(
+                Request.Builder().url("https://discord.com/api/v10/auth/sessions/logout")
+                    .header("Authorization", token)
+                    .header("Content-Type", "application/json")
+                    .post(body)
+                    .build()
+            ).execute()
+            resp.code in 200..204
+        } catch (_: Exception) { false }
+    }
 }
 
 private fun parseIsoShort(s: String): String = try {
@@ -276,9 +278,9 @@ fun SessionsScreen(token: String, onBack: () -> Unit) {
                     item { Spacer(Modifier.height(8.dp)) }
                     items(sessions, key = { it.idHash }) { session ->
                         SessionCard(
-                            session  = session,
+                            session    = session,
                             isRevoking = revoking == session.idHash,
-                            onRevoke = {
+                            onRevoke   = {
                                 scope.launch {
                                     revoking = session.idHash
                                     val ok = revokeSessions(token, listOf(session.idHash))
