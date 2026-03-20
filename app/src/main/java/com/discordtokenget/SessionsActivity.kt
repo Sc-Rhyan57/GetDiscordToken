@@ -67,8 +67,9 @@ data class AuthSession(
 class SessionsActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_TOKEN = "extra_token"
-        fun start(ctx: Context, token: String) =
+        fun start(ctx: Context, token: String) {
             ctx.startActivity(Intent(ctx, SessionsActivity::class.java).putExtra(EXTRA_TOKEN, token))
+        }
     }
 
     override fun onCreate(s: Bundle?) {
