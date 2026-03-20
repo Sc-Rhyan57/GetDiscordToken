@@ -93,9 +93,8 @@ import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Tag
@@ -113,6 +112,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -141,6 +142,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -294,6 +296,19 @@ data class AppLog(
     val detail: String? = null
 )
 
+data class AuthorizedApp(
+    val applicationId: String,
+    val name: String,
+    val icon: String?,
+    val scopes: List<String>,
+    val authorizedAt: String?
+)
+
+data class AccountStanding(
+    val state: Int,
+    val violations: Int
+)
+
 private object AppColors {
     val Background     = Color(0xFF1E1F22)
     val Surface        = Color(0xFF2B2D31)
@@ -349,7 +364,6 @@ private const val GITHUB_API_LATEST = "https://api.github.com/repos/Sc-Rhyan57/G
 private const val GATEWAY_URL      = "wss://gateway.discord.gg/?v=10&encoding=json"
 private const val GATEWAY_RECONNECT_DELAY_MS = 3000L
 private const val GATEWAY_MAX_RECONNECT_ATTEMPTS = 5
-private const val PROFILE_EFFECT_CDN = "https://cdn.discordapp.com/profile-effects"
 
 private val httpClient = OkHttpClient.Builder()
     .connectTimeout(15, TimeUnit.SECONDS)
@@ -506,6 +520,24 @@ private fun isNetworkAvailable(context: Context): Boolean {
            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }
 
+private fun standingStateLabel(state: Int): String = when (state) {
+    100 -> "All good"
+    200 -> "Limited"
+    300 -> "Very limited"
+    400 -> "At risk"
+    500 -> "Suspended"
+    else -> "Unknown"
+}
+
+private fun standingStateColor(state: Int): Color = when (state) {
+    100 -> AppColors.Success
+    200 -> AppColors.Warning
+    300 -> Color(0xFFFFA500)
+    400 -> AppColors.Error
+    500 -> Color(0xFF8B0000)
+    else -> AppColors.TextMuted
+}
+
 private sealed class MdBlock {
     data class Heading(val text: String, val level: Int)     : MdBlock()
     data class Blockquote(val text: String)                  : MdBlock()
@@ -626,7 +658,8 @@ private fun ProfileThemeGradient(
         val w = size.width; val h = size.height
         val cx = w / 2f; val cy = h / 2f
         val diag = sqrt(w * w + h * h) / 2f
-        val cosA = kotlin.math.cos(angleRadians); val sinA = kotlin.math.sin(angleRadians)
+        val cosA = kotlin.math.cos(angleRadians.toDouble()).toFloat()
+        val sinA = kotlin.math.sin(angleRadians.toDouble()).toFloat()
         val startX = cx - cosA * diag; val startY = cy - sinA * diag
         val endX   = cx + cosA * diag; val endY   = cy + sinA * diag
         drawRect(
@@ -709,23 +742,14 @@ private fun ProfileEffectOverlay(effectId: String, modifier: Modifier = Modifier
     Box(modifier = modifier) {
         AsyncImage(
             model = ImageRequest.Builder(ctx)
-                .data("https://cdn.discordapp.com/profile-effects/$effectId/thumbnail.png")
-                .crossfade(false)
-                .build(),
-            contentDescription = null,
-            imageLoader = gifLoader,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-        AsyncImage(
-            model = ImageRequest.Builder(ctx)
                 .data("https://cdn.discordapp.com/profile-effects/$effectId/effect.gif")
                 .crossfade(false)
+                .repeatCount(Int.MAX_VALUE)
                 .build(),
             contentDescription = "Profile Effect",
             imageLoader = gifLoader,
             modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
+            contentScale = ContentScale.FillWidth
         )
     }
 }
@@ -771,12 +795,17 @@ private fun AnimatedDecorationBorder(
             }
             .build()
     }
+    val decorUrl = if (Build.VERSION.SDK_INT >= 28)
+        "https://cdn.discordapp.com/avatar-decoration-presets/$decorationAsset.png?size=240&passthrough=true"
+    else
+        "https://cdn.discordapp.com/avatar-decoration-presets/$decorationAsset.gif?size=240"
     Box(modifier = modifier.size(size + 16.dp), contentAlignment = Alignment.Center) {
         content()
         AsyncImage(
             model = ImageRequest.Builder(ctx)
-                .data("https://cdn.discordapp.com/avatar-decoration-presets/$decorationAsset.png?size=240&passthrough=true")
+                .data(decorUrl)
                 .crossfade(false)
+                .repeatCount(Int.MAX_VALUE)
                 .build(),
             contentDescription = null,
             imageLoader = gifLoader,
@@ -1142,8 +1171,12 @@ class MainActivity : ComponentActivity() {
         var loadingFriends  by remember { mutableStateOf(false) }
         var loadingNitro    by remember { mutableStateOf(false) }
         var loadingOrbs     by remember { mutableStateOf(false) }
+        var loadingStanding by remember { mutableStateOf(false) }
+        var loadingApps     by remember { mutableStateOf(false) }
         var nitroInfo       by remember { mutableStateOf<Triple<String?,String?,Int>?>(null) }
         var orbsBalance     by remember { mutableStateOf<Int?>(null) }
+        var accountStanding by remember { mutableStateOf<AccountStanding?>(null) }
+        var authorizedApps  by remember { mutableStateOf<List<AuthorizedApp>?>(null) }
         var showWebView     by remember { mutableStateOf(false) }
         var updateTag       by remember { mutableStateOf<String?>(null) }
         var noInternet      by remember { mutableStateOf(false) }
@@ -1217,6 +1250,16 @@ class MainActivity : ComponentActivity() {
                 orbsBalance = try { fetchOrbsBalance(t) } catch (e: Exception) { addLog("ERROR", "API", "Orbs: ${e.message}"); null }
                 loadingOrbs = false
             }
+            loadingStanding = true
+            launch {
+                accountStanding = try { fetchAccountStanding(t) } catch (e: Exception) { addLog("ERROR", "API", "Standing: ${e.message}"); null }
+                loadingStanding = false
+            }
+            loadingApps = true
+            launch {
+                authorizedApps = try { fetchAuthorizedApps(t) } catch (e: Exception) { addLog("ERROR", "API", "AuthApps: ${e.message}"); null }
+                loadingApps = false
+            }
         }
 
         if (noInternet) {
@@ -1260,14 +1303,16 @@ class MainActivity : ComponentActivity() {
                     loadingConns = loadingConns, loadingGuilds = loadingGuilds, loadingBadges = loadingBadges,
                     loadingFriends = loadingFriends,
                     loadingNitro = loadingNitro, loadingOrbs = loadingOrbs,
+                    loadingStanding = loadingStanding, loadingApps = loadingApps,
                     presence = presence, connections = connections, guildCount = guildCount, badges = badges,
                     friendCount = friendCount, nitroInfo = nitroInfo, orbsBalance = orbsBalance,
+                    accountStanding = accountStanding, authorizedApps = authorizedApps,
                     footerClicks = footerClicks,
                     onFooterClick = { footerClicks++; if (footerClicks >= 5) { showLogs = true; footerClicks = 0 } },
                     onQuestClick = { showQuestPage = true },
                     onRefresh = {
                         addLog("INFO", "Session", "Manual refresh")
-                        user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null; nitroInfo = null; orbsBalance = null
+                        user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null; nitroInfo = null; orbsBalance = null; accountStanding = null; authorizedApps = null
                         heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
                         gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; refreshTick++
                     },
@@ -1275,7 +1320,7 @@ class MainActivity : ComponentActivity() {
                         addLog("INFO", "Session", "Logout")
                         heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
                         gatewaySessionId = ""; gatewaySequence = -1; gatewayReconnectAttempts = 0; ownUserId = ""
-                        clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null; nitroInfo = null; orbsBalance = null
+                        clearToken(); token = null; user = null; presence = null; connections = null; guildCount = null; badges = emptyList(); friendCount = null; nitroInfo = null; orbsBalance = null; accountStanding = null; authorizedApps = null
                     })
             }
         }
@@ -1437,9 +1482,11 @@ class MainActivity : ComponentActivity() {
         user: DiscordUser?, token: String, loadingUser: Boolean, loadingPresence: Boolean,
         loadingConns: Boolean, loadingGuilds: Boolean, loadingBadges: Boolean,
         loadingFriends: Boolean, loadingNitro: Boolean, loadingOrbs: Boolean,
+        loadingStanding: Boolean, loadingApps: Boolean,
         presence: DiscordPresence?, connections: List<DiscordConnection>?,
         guildCount: Int?, badges: List<BadgeInfo>, friendCount: Int?,
         nitroInfo: Triple<String?,String?,Int>?, orbsBalance: Int?,
+        accountStanding: AccountStanding?, authorizedApps: List<AuthorizedApp>?,
         footerClicks: Int, onFooterClick: () -> Unit,
         onQuestClick: () -> Unit,
         onRefresh: () -> Unit, onLogout: () -> Unit
@@ -1448,16 +1495,22 @@ class MainActivity : ComponentActivity() {
         var showToken        by remember { mutableStateOf(false) }
         var copied           by remember { mutableStateOf(false) }
         var expandConns      by remember { mutableStateOf(false) }
+        var expandApps       by remember { mutableStateOf(false) }
         var selectedBadge    by remember { mutableStateOf<BadgeInfo?>(null) }
         var showTokenWarning by remember { mutableStateOf(false) }
         var pendingAction    by remember { mutableStateOf<String?>(null) }
         val riskPrefs        = remember { ctx.getSharedPreferences(PREF_SESSION, Context.MODE_PRIVATE) }
         val riskAccepted     = remember { mutableStateOf(riskPrefs.getBoolean(KEY_RISK_ACCEPTED, false)) }
 
+        fun copyToClipboard(label: String, text: String) {
+            (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText(label, text))
+        }
+
         fun triggerTokenAction(action: String) {
             if (riskAccepted.value) {
                 when (action) {
-                    "copy" -> { (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Token", token)); copied = true; CoroutineScope(Dispatchers.Main).launch { delay(2000); copied = false } }
+                    "copy" -> { copyToClipboard("Token", token); copied = true; CoroutineScope(Dispatchers.Main).launch { delay(2000); copied = false } }
                     "show" -> { showToken = !showToken }
                 }
             } else { pendingAction = action; showTokenWarning = true }
@@ -1503,56 +1556,55 @@ class MainActivity : ComponentActivity() {
             val hasThemeGradient = user?.themeColorPrimary != null && user.themeColorAccent != null
             val themeAngleRad    = if (hasThemeGradient) user!!.themeGradientAngle else 0f
 
-            Box(Modifier.fillMaxWidth().height(160.dp)) {
-                when {
-                    hasThemeGradient -> {
-                        ProfileThemeGradient(
-                            primaryColor  = discordColorToCompose(user!!.themeColorPrimary!!),
-                            accentColor   = discordColorToCompose(user.themeColorAccent!!),
-                            angleRadians  = themeAngleRad,
-                            modifier      = Modifier.fillMaxSize()
-                        )
-                        if (user.banner != null) {
-                            val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
-                            AnimatedImage(
-                                "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600",
-                                null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+            Box(Modifier.fillMaxWidth()) {
+                Box(Modifier.fillMaxWidth().height(160.dp)) {
+                    when {
+                        hasThemeGradient -> {
+                            ProfileThemeGradient(
+                                primaryColor  = discordColorToCompose(user!!.themeColorPrimary!!),
+                                accentColor   = discordColorToCompose(user.themeColorAccent!!),
+                                angleRadians  = themeAngleRad,
+                                modifier      = Modifier.fillMaxSize()
                             )
+                            if (user.banner != null) {
+                                val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
+                                AnimatedImage(
+                                    "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600",
+                                    null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+                                )
+                            }
                         }
+                        user?.banner != null -> {
+                            val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
+                            AnimatedImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        }
+                        user?.accentColor != null -> {
+                            val c = Color(0xFF000000 or user.accentColor.toLong())
+                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
+                        }
+                        user?.bannerColor != null -> {
+                            val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrElse { AppColors.Primary }
+                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
+                        }
+                        else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary, Color(0xFF7289DA), AppColors.Background))))
                     }
-                    user?.banner != null -> {
-                        val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
-                        AnimatedImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    }
-                    user?.accentColor != null -> {
-                        val c = Color(0xFF000000 or user.accentColor.toLong())
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
-                    }
-                    user?.bannerColor != null -> {
-                        val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrElse { AppColors.Primary }
-                        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
-                    }
-                    else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary, Color(0xFF7289DA), AppColors.Background))))
                 }
                 if (user?.profileEffectId != null) {
-                    ProfileEffectOverlay(effectId = user.profileEffectId, modifier = Modifier.fillMaxSize())
+                    ProfileEffectOverlay(
+                        effectId = user.profileEffectId,
+                        modifier = Modifier.fillMaxWidth().height(320.dp).align(Alignment.TopStart)
+                    )
                 }
             }
 
-            Column(Modifier.fillMaxWidth().then(if (hasThemeGradient) Modifier.background(
-                Brush.verticalGradient(
-                    0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.55f),
-                    0.4f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.30f),
-                    1f to Color.Transparent
-                )
-            ) else Modifier).padding(horizontal = 20.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     val decorAsset = user?.avatarDecorationAsset
                     if (decorAsset != null) {
                         AnimatedDecorationBorder(decorationAsset = decorAsset, size = 90.dp) {
                             Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
                                 if (user.avatar != null) {
-                                    val ext = if (user.avatar.startsWith("a_")) "gif" else "png"
+                                    val ext = if (user.avatar.startsWith("a_")) "gif" else "webp"
                                     AnimatedImage(
                                         "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256",
                                         null, Modifier.fillMaxSize(), ContentScale.Crop
@@ -1567,7 +1619,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
                             if (user?.avatar != null) {
-                                val ext = if (user.avatar.startsWith("a_")) "gif" else "png"
+                                val ext = if (user.avatar.startsWith("a_")) "gif" else "webp"
                                 AnimatedImage(
                                     "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256",
                                     null, Modifier.fillMaxSize(), ContentScale.Crop
@@ -1597,6 +1649,34 @@ class MainActivity : ComponentActivity() {
                                 text = { Text("Quest Completer", color = AppColors.TextPrimary, fontSize = 14.sp) },
                                 leadingIcon = { Icon(Icons.Outlined.EmojiEvents, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
                                 onClick = { showMenu = false; onQuestClick() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy All Info", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp)) },
+                                onClick = {
+                                    showMenu = false
+                                    if (user != null) {
+                                        val sb = buildString {
+                                            appendLine("=== Discord Account Info ===")
+                                            appendLine("Username: ${user.username}")
+                                            appendLine("Display Name: ${user.globalName ?: user.username}")
+                                            appendLine("User ID: ${user.id}")
+                                            appendLine("Discriminator: ${user.discriminator}")
+                                            if (!user.email.isNullOrBlank()) appendLine("Email: ${user.email}")
+                                            if (!user.phone.isNullOrBlank()) appendLine("Phone: ${user.phone}")
+                                            appendLine("Created: ${snowflakeToDate(user.id)}")
+                                            appendLine("Account Age: ${accountAgeString(snowflakeToTimestamp(user.id))}")
+                                            appendLine("2FA: ${if (user.mfaEnabled) "Enabled" else "Disabled"}")
+                                            appendLine("Verified: ${if (user.verified) "Yes" else "No"}")
+                                            if (!user.locale.isNullOrBlank()) appendLine("Locale: ${localeLabel(user.locale)}")
+                                            appendLine("Nitro: ${nitroLabel(user.premiumType)}")
+                                            if (guildCount != null) appendLine("Servers: $guildCount")
+                                            if (friendCount != null) appendLine("Friends: $friendCount")
+                                            if (orbsBalance != null && orbsBalance > 0) appendLine("Orbs: $orbsBalance")
+                                        }
+                                        copyToClipboard("Account Info", sb)
+                                    }
+                                }
                             )
                             DropdownMenuItem(
                                 text = { Text("Refresh", color = AppColors.TextPrimary, fontSize = 14.sp) },
@@ -1645,23 +1725,29 @@ class MainActivity : ComponentActivity() {
 
                     val displayName = user.globalName ?: user.username
                     val nameStyle = user.displayNameStyle?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
-                    val nameColorPrimary = nameStyle?.optString("color_primary")?.takeIf { it.isNotBlank() && it != "null" }
-                    val nameColorAccent  = nameStyle?.optString("color_secondary")?.takeIf { it.isNotBlank() && it != "null" }
+                    val nameColorPrimary  = nameStyle?.optString("color_primary")?.takeIf  { it.isNotBlank() && it != "null" }
+                    val nameColorAccent   = nameStyle?.optString("color_secondary")?.takeIf { it.isNotBlank() && it != "null" }
+                    val nameColorGradient = nameStyle?.optString("gradient_preset")?.takeIf { it.isNotBlank() && it != "null" }
+
+                    fun parseNameColor(hex: String?): Color? = hex?.let {
+                        runCatching { Color(android.graphics.Color.parseColor(if (it.startsWith("#")) it else "#$it")) }.getOrNull()
+                    }
+
+                    val c1 = parseNameColor(nameColorPrimary)
+                    val c2 = parseNameColor(nameColorAccent)
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        if (nameColorPrimary != null && nameColorAccent != null) {
-                            val c1 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorPrimary.startsWith("#")) nameColorPrimary else "#$nameColorPrimary")) }.getOrElse { AppColors.TextPrimary }
-                            val c2 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorAccent.startsWith("#")) nameColorAccent else "#$nameColorAccent")) }.getOrElse { AppColors.TextPrimary }
-                            Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.horizontalGradient(listOf(c1, c2))))
-                        } else if (nameColorPrimary != null) {
-                            val c1 = runCatching { Color(android.graphics.Color.parseColor(if (nameColorPrimary.startsWith("#")) nameColorPrimary else "#$nameColorPrimary")) }.getOrElse { AppColors.TextPrimary }
-                            Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = c1)
-                        } else {
-                            Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
+                        when {
+                            c1 != null && c2 != null && c1 != c2 ->
+                                Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.horizontalGradient(listOf(c1, c2))))
+                            c1 != null ->
+                                Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = c1)
+                            else ->
+                                Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
                         }
 
                         if (user.primaryGuildTag != null) {
@@ -1683,7 +1769,15 @@ class MainActivity : ComponentActivity() {
                         StatusBadge(presence = presence, loadingPresence = loadingPresence)
                     }
 
-                    Text("@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "", fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "", fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                        IconButton(
+                            onClick = { copyToClipboard("Username", "@${user.username}${if (user.discriminator != "0") "#${user.discriminator}" else ""}") },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp))
+                        }
+                    }
 
                     if (user.nameplateAsset != null) {
                         Spacer(Modifier.height(8.dp))
@@ -1750,8 +1844,15 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             badges.forEach { badge ->
-                                Row(Modifier.background(badge.color.copy(0.12f), RoundedCornerShape(Radius.Badge)).border(1.dp, badge.color.copy(0.35f), RoundedCornerShape(Radius.Badge)).clickable { selectedBadge = badge }.padding(horizontal = 8.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    AsyncImage(badge.cdnUrl, badge.label, Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text(badge.label, fontSize = 11.sp, color = badge.color, fontWeight = FontWeight.SemiBold)
+                                Row(
+                                    Modifier
+                                        .background(badge.color.copy(0.12f), RoundedCornerShape(Radius.Badge))
+                                        .border(1.dp, badge.color.copy(0.35f), RoundedCornerShape(Radius.Badge))
+                                        .clickable { selectedBadge = badge }
+                                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(badge.cdnUrl, badge.label, Modifier.size(16.dp))
                                 }
                             }
                         }
@@ -1774,15 +1875,15 @@ class MainActivity : ComponentActivity() {
 
                     val createdMs = snowflakeToTimestamp(user.id)
                     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        InfoRow(Icons.Outlined.Tag, "User ID", user.id)
-                        InfoRow(Icons.Outlined.CalendarMonth, "Created", snowflakeToDate(user.id))
+                        CopyableInfoRow(Icons.Outlined.Tag, "User ID", user.id) { copyToClipboard("User ID", user.id) }
+                        CopyableInfoRow(Icons.Outlined.CalendarMonth, "Created", snowflakeToDate(user.id)) { copyToClipboard("Created", snowflakeToDate(user.id)) }
                         InfoRow(Icons.Outlined.Update, "Account Age", accountAgeString(createdMs))
-                        if (!user.email.isNullOrBlank())  InfoRow(Icons.Outlined.Email,    "Email",   user.email)
-                        if (!user.phone.isNullOrBlank())  InfoRow(Icons.Outlined.Phone,    "Phone",   user.phone)
+                        if (!user.email.isNullOrBlank())  CopyableInfoRow(Icons.Outlined.Email,    "Email",   user.email)  { copyToClipboard("Email",   user.email) }
+                        if (!user.phone.isNullOrBlank())  CopyableInfoRow(Icons.Outlined.Phone,    "Phone",   user.phone)  { copyToClipboard("Phone",   user.phone) }
                         if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale",  localeLabel(user.locale))
                         InfoRow(Icons.Outlined.Lock,        "2FA",      if (user.mfaEnabled)  "Enabled"  else "Disabled", if (user.mfaEnabled) AppColors.Success else AppColors.TextMuted)
                         InfoRow(Icons.Outlined.CheckCircle, "Verified", if (user.verified)    "Yes"      else "No",       if (user.verified)   AppColors.Success else AppColors.TextMuted)
-                        InfoRow(Icons.Outlined.Security, "Public Flags", "0x${user.publicFlags.toString(16).uppercase()} (${user.publicFlags})")
+                        CopyableInfoRow(Icons.Outlined.Security, "Public Flags", "0x${user.publicFlags.toString(16).uppercase()} (${user.publicFlags})") { copyToClipboard("Public Flags", user.publicFlags.toString()) }
                     }
 
                     if (user.premiumType > 0) {
@@ -1826,6 +1927,68 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    SectionDivider("Account Standing", if (loadingStanding) AppColors.TextMuted else if (accountStanding != null) standingStateColor(accountStanding.state) else AppColors.TextMuted)
+                    if (loadingStanding) {
+                        Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading standing...", fontSize = 13.sp, color = AppColors.TextMuted) }
+                    } else if (accountStanding != null) {
+                        val standingColor = standingStateColor(accountStanding.state)
+                        val standingLabel = standingStateLabel(accountStanding.state)
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(standingColor.copy(0.08f), RoundedCornerShape(Radius.Medium))
+                                    .border(1.dp, standingColor.copy(0.25f), RoundedCornerShape(Radius.Medium))
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.Shield, null, tint = standingColor, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Column {
+                                        Text("Account Standing", fontSize = 12.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium)
+                                        Text(standingLabel, fontSize = 15.sp, color = standingColor, fontWeight = FontWeight.ExtraBold)
+                                    }
+                                }
+                                Box(
+                                    Modifier
+                                        .background(standingColor.copy(0.15f), RoundedCornerShape(Radius.Badge))
+                                        .border(1.dp, standingColor.copy(0.3f), RoundedCornerShape(Radius.Badge))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("State ${accountStanding.state}", fontSize = 10.sp, color = standingColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                            val steps = listOf(100 to "All good", 200 to "Limited", 300 to "Very limited", 400 to "At risk", 500 to "Suspended")
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                steps.forEachIndexed { idx, (state, label) ->
+                                    val isActive = accountStanding.state == state
+                                    val isPast   = accountStanding.state > state
+                                    val dotColor = when {
+                                        isActive -> standingStateColor(state)
+                                        isPast   -> AppColors.Error.copy(0.5f)
+                                        else     -> AppColors.TextMuted.copy(0.3f)
+                                    }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                        Box(
+                                            Modifier.size(if (isActive) 14.dp else 10.dp)
+                                                .background(dotColor, CircleShape)
+                                                .then(if (isActive) Modifier.border(2.dp, dotColor.copy(0.4f), CircleShape) else Modifier)
+                                        )
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(label, fontSize = 8.sp, color = if (isActive) dotColor else AppColors.TextMuted.copy(0.5f), fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal, textAlign = TextAlign.Center, lineHeight = 10.sp)
+                                    }
+                                    if (idx < steps.lastIndex) {
+                                        Box(Modifier.weight(0.3f).height(1.5.dp).background(if (isPast) AppColors.Error.copy(0.3f) else AppColors.Divider.copy(0.4f)))
+                                    }
+                                }
+                            }
+                            if (accountStanding.violations > 0) {
+                                InfoRow(Icons.Outlined.Warning, "Violations", "${accountStanding.violations} on record", AppColors.Warning)
+                            }
+                        }
+                    }
+
                     SectionDivider("Cosmetics", AppColors.Primary)
                     Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                         if (user.themeColorPrimary != null && user.themeColorAccent != null) {
@@ -1838,9 +2001,12 @@ class MainActivity : ComponentActivity() {
                                 Box(Modifier.size(18.dp).background(discordColorToCompose(user.themeColorAccent), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "→ " + "#%06X".format(user.themeColorPrimary and 0xFFFFFF) + " · #%06X".format(user.themeColorAccent and 0xFFFFFF),
-                                    fontSize = 11.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace
+                                    "#%06X".format(user.themeColorPrimary and 0xFFFFFF) + " · #%06X".format(user.themeColorAccent and 0xFFFFFF),
+                                    fontSize = 11.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
                                 )
+                                IconButton(onClick = { copyToClipboard("Theme Colors", "#%06X / #%06X".format(user.themeColorPrimary and 0xFFFFFF, user.themeColorAccent and 0xFFFFFF)) }, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
+                                }
                             }
                         }
                         if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
@@ -1855,7 +2021,10 @@ class MainActivity : ComponentActivity() {
                                     Icon(Icons.Outlined.AutoAwesome, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(12.dp))
                                     Text("Accent", fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
                                     Box(Modifier.size(20.dp).background(c, RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp))); Spacer(Modifier.width(8.dp))
-                                    Text(user.bannerColor.uppercase(), fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace)
+                                    Text(user.bannerColor.uppercase(), fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { copyToClipboard("Accent Color", user.bannerColor.uppercase()) }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
+                                    }
                                 }
                             }
                         }
@@ -1870,7 +2039,14 @@ class MainActivity : ComponentActivity() {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             visible.forEach { conn ->
                                 val cc = connectionColor(conn.type); val profileUrl = connectionProfileUrl(conn.type, conn.name)
-                                Row(Modifier.fillMaxWidth().background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium)).border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium)).then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier).padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium))
+                                        .border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium))
+                                        .then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier)
+                                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Box(Modifier.size(32.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) { Text(connectionLabel(conn.type).first().toString(), fontSize = 14.sp, color = cc, fontWeight = FontWeight.Black) }
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
@@ -1878,12 +2054,58 @@ class MainActivity : ComponentActivity() {
                                         Text(conn.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                     if (conn.verified) Box(Modifier.background(AppColors.Success.copy(0.12f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 7.dp, vertical = 2.dp)) { Text("✓", fontSize = 11.sp, color = AppColors.Success, fontWeight = FontWeight.Bold) }
+                                    IconButton(onClick = { copyToClipboard(connectionLabel(conn.type), conn.name) }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
+                                    }
                                 }
                             }
                             if (connections.size > 3) {
                                 TextButton(onClick = { expandConns = !expandConns }, Modifier.fillMaxWidth()) {
                                     Icon(if (expandConns) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
                                     Text(if (expandConns) "Show less" else "Show ${connections.size - 3} more", fontSize = 12.sp, color = AppColors.Primary)
+                                }
+                            }
+                        }
+                    }
+
+                    if (loadingApps) {
+                        SectionDivider("Authorized Apps", AppColors.TextSecondary)
+                        Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading...", fontSize = 13.sp, color = AppColors.TextMuted) }
+                    } else if (!authorizedApps.isNullOrEmpty()) {
+                        SectionDivider("Authorized Apps (${authorizedApps.size})", AppColors.TextSecondary)
+                        val visibleApps = if (expandApps) authorizedApps else authorizedApps.take(3)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            visibleApps.forEach { app ->
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .background(AppColors.Surface, RoundedCornerShape(Radius.Medium))
+                                        .border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium))
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (app.icon != null) {
+                                        AsyncImage("https://cdn.discordapp.com/app-icons/${app.applicationId}/${app.icon}.png?size=64", null, Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                                    } else {
+                                        Box(Modifier.size(36.dp).background(AppColors.Primary.copy(0.18f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                                            Text(app.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 15.sp, color = AppColors.Primary, fontWeight = FontWeight.Black)
+                                        }
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(app.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (app.scopes.isNotEmpty()) {
+                                            Text(app.scopes.take(3).joinToString(", "), fontSize = 10.sp, color = AppColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                    IconButton(onClick = { copyToClipboard("App ID", app.applicationId) }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
+                                    }
+                                }
+                            }
+                            if (authorizedApps.size > 3) {
+                                TextButton(onClick = { expandApps = !expandApps }, Modifier.fillMaxWidth()) {
+                                    Icon(if (expandApps) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
+                                    Text(if (expandApps) "Show less" else "Show ${authorizedApps.size - 3} more", fontSize = 12.sp, color = AppColors.Primary)
                                 }
                             }
                         }
@@ -1948,6 +2170,7 @@ class MainActivity : ComponentActivity() {
         val parsed = runCatching { JSONObject(styleJson) }.getOrNull()
         val fontName = parsed?.optString("font_type")?.takeIf { it.isNotEmpty() && it != "null" }
             ?: parsed?.optString("font")?.takeIf  { it.isNotEmpty() && it != "null" }
+            ?: parsed?.optString("type")?.takeIf  { it.isNotEmpty() && it != "null" }
             ?: styleJson.trim().let { if (it.length < 40 && !it.startsWith("{")) it else null }
             ?: "Custom Style"
         val colorPrimaryHex  = parsed?.optString("color_primary")?.takeIf   { it.isNotEmpty() && it != "null" }
@@ -2078,6 +2301,18 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    fun CopyableInfoRow(icon: ImageVector, label: String, value: String, valueColor: Color = AppColors.TextPrimary, onCopy: () -> Unit) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(12.dp))
+            Text(label, fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
+            Text(value, fontSize = 13.sp, color = valueColor, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
+            }
+        }
+    }
+
+    @Composable
     fun Footer(clicks: Int, onClick: () -> Unit) {
         val t   = rememberInfiniteTransition(label = "rgb")
         val hue by t.animateFloat(0f, 360f, infiniteRepeatable(tween(3000, easing = LinearEasing), RepeatMode.Restart), label = "h")
@@ -2112,8 +2347,12 @@ class MainActivity : ComponentActivity() {
         val col = j.optJSONObject("collectibles")
         val np  = col?.optJSONObject("nameplate")
         val pg  = j.optJSONObject("primary_guild")
-        val nameStyleRaw = j.optJSONObject("display_name_style")?.toString()
-            ?: j.optString("display_name_style").takeIf { it.isNotEmpty() && it != "null" }
+        val displayNameStyleRaw: String? = run {
+            val obj = j.optJSONObject("display_name_styles") ?: j.optJSONObject("display_name_style")
+            obj?.toString()
+                ?: j.optString("display_name_styles").takeIf { it.isNotEmpty() && it != "null" }
+                ?: j.optString("display_name_style").takeIf  { it.isNotEmpty() && it != "null" }
+        }
         addLog("SUCCESS", "API", "HTTP 200 /users/@me → ${j.optString("username")}")
         DiscordUser(
             id = j.optString("id"), username = j.optString("username"),
@@ -2138,7 +2377,7 @@ class MainActivity : ComponentActivity() {
             themeColorPrimary = null,
             themeColorAccent  = null,
             profileEffectId   = null,
-            displayNameStyle  = nameStyleRaw,
+            displayNameStyle  = displayNameStyleRaw,
             themeGradientAngle = 0f,
             nitroSince = null,
             nitroEnds  = null,
@@ -2228,10 +2467,7 @@ class MainActivity : ComponentActivity() {
             if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /relationships"); return@withContext null }
             val arr = JSONArray(resp.body?.string() ?: return@withContext null)
             var count = 0
-            for (i in 0 until arr.length()) {
-                val rel = arr.getJSONObject(i)
-                if (rel.optInt("type", -1) == 1) count++
-            }
+            for (i in 0 until arr.length()) { val rel = arr.getJSONObject(i); if (rel.optInt("type", -1) == 1) count++ }
             addLog("SUCCESS", "API", "Friends: $count"); count
         } catch (e: Exception) { addLog("ERROR", "API", "fetchFriendCount: ${e.message}"); null }
     }
@@ -2260,10 +2496,7 @@ class MainActivity : ComponentActivity() {
             var boostCount = 0
             if (boostResp.isSuccessful) {
                 val slots = JSONArray(boostResp.body?.string() ?: "[]")
-                for (i in 0 until slots.length()) {
-                    val slot = slots.getJSONObject(i)
-                    if (!slot.isNull("subscription_id")) boostCount++
-                }
+                for (i in 0 until slots.length()) { val slot = slots.getJSONObject(i); if (!slot.isNull("subscription_id")) boostCount++ }
             }
             addLog("SUCCESS", "API", "Nitro since=$since ends=${ends?.substring(0,10)} boosts=$boostCount")
             Triple(since, ends, boostCount)
@@ -2272,20 +2505,9 @@ class MainActivity : ComponentActivity() {
 
     private suspend fun fetchOrbsBalance(token: String): Int? = withContext(Dispatchers.IO) {
         try {
-            val resp = httpClient.newCall(
-                Request.Builder()
-                    .url("https://discord.com/api/v10/users/@me/quests/collectibles/balance")
-                    .header("Authorization", token)
-                    .build()
-            ).execute()
-            if (resp.isSuccessful) {
-                val j = JSONObject(resp.body?.string() ?: "{}")
-                val balance = j.optInt("balance", -1)
-                if (balance >= 0) { addLog("SUCCESS", "API", "Orbs: $balance"); return@withContext balance }
-            }
             val questResp = httpClient.newCall(
                 Request.Builder()
-                    .url("https://discord.com/api/v10/users/@me/quests?with_userquest=true&with_orb_balance=true&include_dismissed=false&user_quest_completions=false")
+                    .url("https://discord.com/api/v9/users/@me/quests?with_userquest=true&with_orb_balance=true&include_dismissed=false&user_quest_completions=false")
                     .header("Authorization", token)
                     .build()
             ).execute()
@@ -2296,9 +2518,65 @@ class MainActivity : ComponentActivity() {
                 val nested = qj.optJSONObject("orbs")?.optInt("balance", -1) ?: -1
                 if (nested >= 0) { addLog("SUCCESS", "API", "Orbs (nested): $nested"); return@withContext nested }
             }
-            addLog("WARN", "API", "Could not fetch orbs balance (may not be exposed in API)")
+            val vcResp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v9/users/@me/virtual-currency/balance")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (vcResp.isSuccessful) {
+                val j = JSONObject(vcResp.body?.string() ?: "{}")
+                val balance = j.optInt("balance", -1)
+                if (balance >= 0) { addLog("SUCCESS", "API", "Orbs (vc): $balance"); return@withContext balance }
+            }
+            addLog("WARN", "API", "Could not fetch orbs balance")
             null
         } catch (e: Exception) { addLog("ERROR", "API", "fetchOrbsBalance: ${e.message}"); null }
+    }
+
+    private suspend fun fetchAccountStanding(token: String): AccountStanding? = withContext(Dispatchers.IO) {
+        try {
+            val resp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v10/safety-hub/@me")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /safety-hub"); return@withContext null }
+            val body = resp.body?.string() ?: return@withContext null
+            val j = JSONObject(body)
+            val state = j.optJSONObject("account_standing")?.optInt("state", 100) ?: 100
+            val classificationsCount = j.optJSONArray("classifications")?.length() ?: 0
+            addLog("SUCCESS", "API", "Standing: state=$state violations=$classificationsCount")
+            AccountStanding(state = state, violations = classificationsCount)
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchAccountStanding: ${e.message}"); null }
+    }
+
+    private suspend fun fetchAuthorizedApps(token: String): List<AuthorizedApp>? = withContext(Dispatchers.IO) {
+        try {
+            val resp = httpClient.newCall(
+                Request.Builder()
+                    .url("https://discord.com/api/v10/oauth2/tokens")
+                    .header("Authorization", token)
+                    .build()
+            ).execute()
+            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /oauth2/tokens"); return@withContext null }
+            val arr = JSONArray(resp.body?.string() ?: return@withContext null)
+            val list = mutableListOf<AuthorizedApp>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val app = o.optJSONObject("application") ?: continue
+                val appId = app.optString("id").takeIf { it.isNotEmpty() } ?: continue
+                val name  = app.optString("name", "Unknown App")
+                val icon  = app.optString("icon").takeIf { it.isNotEmpty() && it != "null" }
+                val scopesStr = o.optString("scopes", "")
+                val scopes = if (scopesStr.isNotEmpty()) scopesStr.split(" ").filter { it.isNotBlank() } else emptyList()
+                val authorizedAt = o.optString("expires_in").takeIf { it.isNotEmpty() && it != "null" }
+                list.add(AuthorizedApp(applicationId = appId, name = name, icon = icon, scopes = scopes, authorizedAt = authorizedAt))
+            }
+            addLog("SUCCESS", "API", "AuthApps: ${list.size}")
+            list
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchAuthorizedApps: ${e.message}"); null }
     }
 
     private suspend fun checkLatestVersion(): String? = withContext(Dispatchers.IO) {
