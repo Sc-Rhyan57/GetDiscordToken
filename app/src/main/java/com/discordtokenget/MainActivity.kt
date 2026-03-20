@@ -744,7 +744,6 @@ private fun ProfileEffectOverlay(effectId: String, modifier: Modifier = Modifier
             model = ImageRequest.Builder(ctx)
                 .data("https://cdn.discordapp.com/profile-effects/$effectId/effect.gif")
                 .crossfade(false)
-                .repeatCount(Int.MAX_VALUE)
                 .build(),
             contentDescription = "Profile Effect",
             imageLoader = gifLoader,
@@ -805,7 +804,6 @@ private fun AnimatedDecorationBorder(
             model = ImageRequest.Builder(ctx)
                 .data(decorUrl)
                 .crossfade(false)
-                .repeatCount(Int.MAX_VALUE)
                 .build(),
             contentDescription = null,
             imageLoader = gifLoader,
