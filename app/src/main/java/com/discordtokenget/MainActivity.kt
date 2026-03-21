@@ -1838,7 +1838,7 @@ class MainActivity : ComponentActivity() {
                         InfoRow(Icons.Outlined.Tag, "User ID", user.id)
                         InfoRow(Icons.Outlined.CalendarMonth, "Created", snowflakeToDate(user.id))
                         InfoRow(Icons.Outlined.Update, "Account Age", accountAgeString(createdMs))
-                        if (!user.pronouns.isNullOrBlank()) InfoRow(Icons.Outlined.Person, "Pronouns", user.pronouns)
+                        if (!user.pronouns.isNullOrBlank()) InfoRow(Icons.Outlined.Tag, "Pronouns", user.pronouns)
                         if (!user.email.isNullOrBlank())  InfoRow(Icons.Outlined.Email,    "Email",   user.email)
                         if (!user.phone.isNullOrBlank())  InfoRow(Icons.Outlined.Phone,    "Phone",   user.phone)
                         if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale",  localeLabel(user.locale))
