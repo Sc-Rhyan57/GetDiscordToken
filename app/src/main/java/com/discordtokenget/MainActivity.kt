@@ -933,7 +933,8 @@ private data class ProfileData(
     val themeColorPrimary: Int?,
     val themeColorAccent: Int?,
     val profileEffectId: String?,
-    val gradientAngle: Float
+    val gradientAngle: Float,
+    val pronouns: String?
 )
 
 @Composable
@@ -1210,12 +1211,13 @@ class MainActivity : ComponentActivity() {
                 if (profileResult != null) {
                     badges = profileResult.badges
                     val prevUser = user
-                    if (prevUser != null && (profileResult.themeColorPrimary != null || profileResult.themeColorAccent != null || profileResult.profileEffectId != null)) {
+                    if (prevUser != null) {
                         user = prevUser.copy(
                             themeColorPrimary  = profileResult.themeColorPrimary ?: prevUser.themeColorPrimary,
                             themeColorAccent   = profileResult.themeColorAccent  ?: prevUser.themeColorAccent,
                             profileEffectId    = profileResult.profileEffectId   ?: prevUser.profileEffectId,
-                            themeGradientAngle = profileResult.gradientAngle
+                            themeGradientAngle = profileResult.gradientAngle,
+                            pronouns           = profileResult.pronouns ?: prevUser.pronouns
                         )
                     }
                 }
@@ -2458,8 +2460,8 @@ class MainActivity : ComponentActivity() {
                     .header("Authorization", token)
                     .build()
             ).execute()
-            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /profile"); return@withContext ProfileData(emptyList(), null, null, null, 0f) }
-            val body = resp.body?.string() ?: return@withContext ProfileData(emptyList(), null, null, null, 0f)
+            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /profile"); return@withContext ProfileData(emptyList(), null, null, null, 0f, null) }
+            val body = resp.body?.string() ?: return@withContext ProfileData(emptyList(), null, null, null, 0f, null)
             val json = JSONObject(body)
 
             val up = json.optJSONObject("user_profile")
@@ -2469,6 +2471,7 @@ class MainActivity : ComponentActivity() {
             val effectId = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
             val angleRaw = up?.optDouble("theme_gradient_angle", 0.0) ?: 0.0
             val angleRad = (angleRaw * kotlin.math.PI / 180.0).toFloat()
+            val pronouns = up?.optString("pronouns")?.takeIf { it.isNotEmpty() && it != "null" }
 
             val badgesArr = json.optJSONArray("badges") ?: JSONArray()
             val result    = mutableListOf<BadgeInfo>()
@@ -2480,9 +2483,9 @@ class MainActivity : ComponentActivity() {
                 val link = b.optString("link").takeIf { it.isNotEmpty() && it != "null" }
                 result.add(BadgeInfo(id = id, label = badgeLabelFromId(id, desc), color = badgeColorFromId(id), cdnUrl = "https://cdn.discordapp.com/badge-icons/$icon.png", description = desc, link = link))
             }
-            addLog("SUCCESS", "API", "Profile: badges=${result.size} theme=${primary != null} effect=${effectId != null} angle=${angleRaw}°")
-            ProfileData(result, primary, accent, effectId, angleRad)
-        } catch (e: Exception) { addLog("ERROR", "API", "fetchProfileData: ${e.message}"); ProfileData(emptyList(), null, null, null, 0f) }
+            addLog("SUCCESS", "API", "Profile: badges=${result.size} theme=${primary != null} effect=${effectId != null} angle=${angleRaw}° pronouns=${pronouns != null}")
+            ProfileData(result, primary, accent, effectId, angleRad, pronouns)
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchProfileData: ${e.message}"); ProfileData(emptyList(), null, null, null, 0f, null) }
     }
 
     private fun badgeLabelFromId(id: String, fallback: String): String = when {
