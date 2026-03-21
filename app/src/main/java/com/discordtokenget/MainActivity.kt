@@ -218,9 +218,6 @@ data class DiscordUser(
     val flags: Long,
     val accentColor: Int?,
     val avatarDecorationAsset: String?,
-    val nameplateAsset: String?,
-    val nameplateLabel: String?,
-    val nameplatePalette: String?,
     val primaryGuildTag: String?,
     val primaryGuildBadge: String?,
     val primaryGuildId: String?,
@@ -685,44 +682,6 @@ private fun ProfileThemeGradient(
     }
 }
 
-@Composable
-private fun NameplateRow(asset: String, label: String?, palette: String?) {
-    val baseUrl = "https://cdn.discordapp.com/assets/${asset}nameplate.png"
-    val paletteColor = when (palette) {
-        "cobalt"    -> Color(0xFF1D63E8)
-        "crimson"   -> Color(0xFFE8341D)
-        "forest"    -> Color(0xFF1DB954)
-        "gold"      -> Color(0xFFFFD700)
-        "violet"    -> Color(0xFF9747FF)
-        "twilight"  -> Color(0xFF5865F2)
-        else        -> AppColors.Primary
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(paletteColor.copy(0.12f), RoundedCornerShape(Radius.Badge))
-            .border(1.dp, paletteColor.copy(0.35f), RoundedCornerShape(Radius.Badge))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AsyncImage(
-            model = baseUrl,
-            contentDescription = "Nameplate",
-            modifier = Modifier.height(22.dp)
-        )
-        if (!label.isNullOrBlank()) {
-            Spacer(Modifier.width(8.dp))
-            Text(label, fontSize = 12.sp, color = paletteColor, fontWeight = FontWeight.Bold)
-        }
-        if (!palette.isNullOrBlank()) {
-            Spacer(Modifier.width(6.dp))
-            Box(
-                Modifier.background(paletteColor.copy(0.20f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 5.dp, vertical = 2.dp)
-            ) { Text(palette.replaceFirstChar { it.uppercase() }, fontSize = 9.sp, color = paletteColor, fontWeight = FontWeight.Bold) }
-        }
-    }
-}
 
 @Composable
 private fun ProfileEffectBadge(effectId: String) {
@@ -1820,11 +1779,6 @@ class MainActivity : ComponentActivity() {
                         Text(user.pronouns, fontSize = 13.sp, color = AppColors.TextMuted.copy(0.8f), fontWeight = FontWeight.Normal)
                     }
 
-                    if (user.nameplateAsset != null) {
-                        Spacer(Modifier.height(8.dp))
-                        NameplateRow(asset = user.nameplateAsset, label = user.nameplateLabel, palette = user.nameplatePalette)
-                    }
-
                     if (presence?.customStatus != null) {
                         Spacer(Modifier.height(8.dp))
                         val cs = presence.customStatus
@@ -2061,7 +2015,6 @@ class MainActivity : ComponentActivity() {
                         }
                         if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
                         if (user.avatarDecorationAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Decoration", "Active ✓", AppColors.Success)
-                        if (user.nameplateAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Nameplate", if (!user.nameplateLabel.isNullOrBlank()) user.nameplateLabel else "Active ✓", AppColors.Success)
                         if (user.profileEffectId != null) InfoRow(Icons.Outlined.Star, "Profile Effect", "Active (ID: ${user.profileEffectId.take(12)}…)", AppColors.Primary)
                         if (user.displayNameStyle != null) InfoRow(Icons.Outlined.TextFields, "Name Style", "Active ✓", AppColors.Primary)
                         if (!user.bannerColor.isNullOrBlank()) {
@@ -2395,7 +2348,6 @@ class MainActivity : ComponentActivity() {
         fun str(k: String) = j.optString(k).takeIf { it.isNotEmpty() && it != "null" }
         val dec = j.optJSONObject("avatar_decoration_data")
         val col = j.optJSONObject("collectibles")
-        val np  = col?.optJSONObject("nameplate")
         val pg  = j.optJSONObject("primary_guild")
         val displayNameStyleRaw: String? = run {
             val obj = j.optJSONObject("display_name_styles") ?: j.optJSONObject("display_name_style")
@@ -2431,9 +2383,6 @@ class MainActivity : ComponentActivity() {
             flags = j.optLong("flags", j.optLong("public_flags", 0L)),
             accentColor = if (!j.isNull("accent_color")) j.optInt("accent_color") else null,
             avatarDecorationAsset = dec?.optString("asset")?.takeIf { it.isNotEmpty() },
-            nameplateAsset  = np?.optString("asset")?.takeIf  { it.isNotEmpty() },
-            nameplateLabel  = np?.optString("label")?.takeIf  { it.isNotEmpty() },
-            nameplatePalette= np?.optString("palette")?.takeIf{ it.isNotEmpty() },
             primaryGuildTag  = pg?.optString("tag")?.takeIf  { it.isNotEmpty() },
             primaryGuildBadge= pg?.optString("badge")?.takeIf { it.isNotEmpty() },
             primaryGuildId   = pg?.optString("identity_guild_id")?.takeIf { it.isNotEmpty() },
@@ -2471,7 +2420,6 @@ class MainActivity : ComponentActivity() {
             val effectId = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
             val angleRaw = up?.optDouble("theme_gradient_angle", 0.0) ?: 0.0
             val angleRad = (angleRaw * kotlin.math.PI / 180.0).toFloat()
-            val pronouns = up?.optString("pronouns")?.takeIf { it.isNotEmpty() && it != "null" }
 
             val badgesArr = json.optJSONArray("badges") ?: JSONArray()
             val result    = mutableListOf<BadgeInfo>()
@@ -2483,6 +2431,7 @@ class MainActivity : ComponentActivity() {
                 val link = b.optString("link").takeIf { it.isNotEmpty() && it != "null" }
                 result.add(BadgeInfo(id = id, label = badgeLabelFromId(id, desc), color = badgeColorFromId(id), cdnUrl = "https://cdn.discordapp.com/badge-icons/$icon.png", description = desc, link = link))
             }
+            val pronouns = up?.optString("pronouns")?.takeIf { it.isNotEmpty() && it != "null" }
             addLog("SUCCESS", "API", "Profile: badges=${result.size} theme=${primary != null} effect=${effectId != null} angle=${angleRaw}° pronouns=${pronouns != null}")
             ProfileData(result, primary, accent, effectId, angleRad, pronouns)
         } catch (e: Exception) { addLog("ERROR", "API", "fetchProfileData: ${e.message}"); ProfileData(emptyList(), null, null, null, 0f, null) }
