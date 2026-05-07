@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -75,39 +74,92 @@ private object DC {
     val Teal      = Color(0xFF43B581)
 }
 
-data class Region(val label: String, val flag: String, val locale: String, val timezone: String)
+data class Region(val label: String, val flag: String, val locale: String, val timezone: String, val superProps: String)
 
 private val REGIONS = listOf(
-    Region("Brazil",         "BR", "pt-BR", "America/Sao_Paulo"),
-    Region("United States",  "US", "en-US", "America/New_York"),
-    Region("United Kingdom", "GB", "en-GB", "Europe/London"),
-    Region("France",         "FR", "fr",    "Europe/Paris"),
-    Region("Germany",        "DE", "de",    "Europe/Berlin"),
-    Region("Japan",          "JP", "ja",    "Asia/Tokyo"),
-    Region("South Korea",    "KR", "ko",    "Asia/Seoul"),
-    Region("Canada",         "CA", "en-US", "America/Toronto"),
-    Region("Australia",      "AU", "en-AU", "Australia/Sydney"),
-    Region("Poland",         "PL", "pl",    "Europe/Warsaw"),
-    Region("Turkey",         "TR", "tr",    "Europe/Istanbul"),
-    Region("Russia",         "RU", "ru",    "Europe/Moscow"),
-    Region("India",          "IN", "en-IN", "Asia/Kolkata"),
-    Region("Mexico",         "MX", "es-419","America/Mexico_City"),
-    Region("Spain",          "ES", "es-ES", "Europe/Madrid"),
+    Region(
+        "Brazil", "BR", "pt-BR", "America/Sao_Paulo",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZC5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "United States", "US", "en-US", "America/New_York",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVuLVVTIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "United Kingdom", "GB", "en-GB", "Europe/London",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVuLUdCIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "France", "FR", "fr", "Europe/Paris",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImZyIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "Germany", "DE", "de", "Europe/Berlin",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImRlIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZS5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "Japan", "JP", "ja", "Asia/Tokyo",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImphIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "South Korea", "KR", "ko", "Asia/Seoul",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImtvIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "Canada", "CA", "en-US", "America/Toronto",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVuLVVTIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "Australia", "AU", "en-AU", "Australia/Sydney",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVuLUFVIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "Poland", "PL", "pl", "Europe/Warsaw",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6InBsIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "Turkey", "TR", "tr", "Europe/Istanbul",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6InRyIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "Russia", "RU", "ru", "Europe/Moscow",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6InJ1IiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "India", "IN", "en-IN", "Asia/Kolkata",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVuLUlOIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZS5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
+    Region(
+        "Mexico", "MX", "es-419", "America/Mexico_City",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVzLTQxOSIsImhhc19jbGllbnRfbW9kcyI6ZmFsc2UsImJyb3dzZXJfdXNlcl9hZ2VudCI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIENocm9tZS8xNDcuMC4wLjAgU2FmYXJpLzUzNy4zNiIsImJyb3dzZXJfdmVyc2lvbiI6IjE0Ny4wLjAuMCIsIm9zX3ZlcnNpb24iOiIxMCIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiJodHRwczovL2Rpc2NvcmQuY29tLyIsInJlZmVycmluZ19kb21haW5fY3VycmVudCI6ImRpc2NvcmQuY29tIiwicmVsZWFzZV9jaGFubmVsIjoic3RhYmxlIiwiY2xpZW50X2J1aWxkX251bWJlciI6NTM5OTUxLCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsfQ=="
+    ),
+    Region(
+        "Spain", "ES", "es-ES", "Europe/Madrid",
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVzLUVTIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZS5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZS5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+    ),
 )
 
-private val SUPER_PROPS =
-    "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVuIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZC5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGwsImNsaWVudF9sYXVuY2hfaWQiOiI4ZDFiMTM1Ni0wYjkyLTQzZTYtODUwYy1kNjA2NjNhZTc5MTAiLCJsYXVuY2hfc2lnbmF0dXJlIjoiM2U2MmNjYzEtYTVhMC00MzY3LTkxNzQtZmM4NjM2YjU4NzBhIiwiY2xpZW50X2FwcF9zdGF0ZSI6ImZvY3VzZWQiLCJjbGllbnRfaGVhcnRiZWF0X3Nlc3Npb25faWQiOiJiNjhkZDM5MS00ZTVhLTRiMjYtYmM4Mi0wNzIxMmM2ZWUxOGMifQ=="
-
-private fun buildReq(url: String, token: String, region: Region) =
+private fun buildReq(url: String, token: String, region: Region, referer: String = "https://discord.com/quest-home") =
     Request.Builder().url(url).apply {
-        header("Authorization",      token)
-        header("Content-Type",       "application/json")
-        header("User-Agent",         "Mozilla/5.0 (Android 12; Mobile; rv:148.0) Gecko/148.0 Firefox/148.0")
-        header("X-Super-Properties", SUPER_PROPS)
-        header("X-Discord-Locale",   region.locale)
-        header("X-Discord-Timezone", region.timezone)
-        header("X-Debug-Options",    "bugReporterEnabled")
-        header("Referer",            "https://discord.com/quest-home")
+        header("Authorization",         token)
+        header("Content-Type",          "application/json")
+        header("Accept",                "*/*")
+        header("Accept-Language",       "${region.locale};q=0.9,en;q=0.8")
+        header("Accept-Encoding",       "gzip, deflate, br, zstd")
+        header("User-Agent",            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
+        header("X-Super-Properties",    region.superProps)
+        header("X-Discord-Locale",      region.locale)
+        header("X-Discord-Timezone",    region.timezone)
+        header("X-Debug-Options",       "bugReporterEnabled")
+        header("Referer",               referer)
+        header("Origin",                "https://discord.com")
+        header("Sec-Ch-Ua",             "\"Google Chrome\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\"")
+        header("Sec-Ch-Ua-Mobile",      "?0")
+        header("Sec-Ch-Ua-Platform",    "\"Windows\"")
+        header("Sec-Fetch-Dest",        "empty")
+        header("Sec-Fetch-Mode",        "cors")
+        header("Sec-Fetch-Site",        "same-origin")
+        header("Priority",              "u=1, i")
     }
 
 private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).also {
@@ -224,38 +276,56 @@ private fun parseQuest(q: JSONObject): QuestItem? {
 
 private suspend fun apiFetch(token: String, region: Region): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
     val now  = System.currentTimeMillis()
-    val resp = http.newCall(buildReq("https://discord.com/api/v9/quests/@me", token, region).build()).execute()
+    val resp = http.newCall(
+        buildReq("https://discord.com/api/v9/quests/@me", token, region, "https://discord.com/quest-home?tab=all").build()
+    ).execute()
     val body = resp.body?.string() ?: ""
     if (!resp.isSuccessful) throw Exception(try { JSONObject(body).optString("message", "HTTP ${resp.code}") } catch (_: Exception) { "HTTP ${resp.code}" })
     val arr  = try { JSONObject(body).optJSONArray("quests") ?: JSONArray() } catch (_: Exception) { JSONArray() }
     val list = mutableListOf<QuestItem>()
-    for (i in 0 until arr.length()) { val item = parseQuest(arr.getJSONObject(i)) ?: continue; if (item.expiresMs > 0 && item.expiresMs < now) continue; if (item.claimedAt != null) continue; list.add(item) }
-    val orbBody = try { http.newCall(buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region).build()).execute().body?.string() ?: "{}" } catch (_: Exception) { "{}" }
+    for (i in 0 until arr.length()) {
+        val item = parseQuest(arr.getJSONObject(i)) ?: continue
+        if (item.expiresMs > 0 && item.expiresMs < now) continue
+        if (item.claimedAt != null) continue
+        list.add(item)
+    }
+    val orbBody = try {
+        http.newCall(
+            buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region).build()
+        ).execute().body?.string() ?: "{}"
+    } catch (_: Exception) { "{}" }
     list to try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
 }
 
-private suspend fun apiEnroll(token: String, questId: String, region: Region): String? = withContext(Dispatchers.IO) {
-    val body = JSONObject().put("location_context", JSONObject().put("guild_id", "0").put("channel_id", "0").put("channel_type", "0")).toString().toRequestBody("application/json".toMediaType())
-    val resp = http.newCall(buildReq("https://discord.com/api/v9/quests/$questId/enroll", token, region).post(body).build()).execute()
-    val rb   = resp.body?.string() ?: "{}"
-    try { val j = JSONObject(rb); j.optString("enrolled_at").takeIf { it.isNotEmpty() && it != "null" } ?: j.optJSONObject("user_status")?.optString("enrolled_at")?.takeIf { it.isNotEmpty() && it != "null" } } catch (_: Exception) { null }
-}
-
 private suspend fun apiGetStatus(token: String, questId: String, region: Region): JSONObject = withContext(Dispatchers.IO) {
-    try { JSONObject(http.newCall(buildReq("https://discord.com/api/v9/quests/@me/$questId", token, region).build()).execute().body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
-}
-
-private suspend fun apiClaim(token: String, questId: String, region: Region): Pair<Int, JSONObject> = withContext(Dispatchers.IO) {
-    val r = http.newCall(buildReq("https://discord.com/api/v9/quests/$questId/claim-reward", token, region).post("{}".toRequestBody("application/json".toMediaType())).build()).execute()
-    r.code to try { JSONObject(r.body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
+    try {
+        JSONObject(
+            http.newCall(
+                buildReq("https://discord.com/api/v9/quests/@me/$questId", token, region).build()
+            ).execute().body?.string() ?: "{}"
+        )
+    } catch (_: Exception) { JSONObject() }
 }
 
 private suspend fun apiFirstDm(token: String, region: Region): String? = withContext(Dispatchers.IO) {
-    try { val arr = JSONArray(http.newCall(buildReq("https://discord.com/api/v9/users/@me/channels", token, region).build()).execute().body?.string() ?: "[]"); if (arr.length() > 0) arr.getJSONObject(0).optString("id").takeIf { it.isNotEmpty() } else null } catch (_: Exception) { null }
+    try {
+        val arr = JSONArray(
+            http.newCall(
+                buildReq("https://discord.com/api/v9/users/@me/channels", token, region).build()
+            ).execute().body?.string() ?: "[]"
+        )
+        if (arr.length() > 0) arr.getJSONObject(0).optString("id").takeIf { it.isNotEmpty() } else null
+    } catch (_: Exception) { null }
 }
 
 private suspend fun apiCollectibles(token: String, region: Region): JSONArray = withContext(Dispatchers.IO) {
-    try { JSONArray(http.newCall(buildReq("https://discord.com/api/v9/users/@me/collectibles-purchases", token, region).build()).execute().body?.string() ?: "[]") } catch (_: Exception) { JSONArray() }
+    try {
+        JSONArray(
+            http.newCall(
+                buildReq("https://discord.com/api/v9/users/@me/collectibles-purchases", token, region).build()
+            ).execute().body?.string() ?: "[]"
+        )
+    } catch (_: Exception) { JSONArray() }
 }
 
 private suspend fun runComplete(token: String, region: Region, state: QuestState, onUpdate: (QuestState) -> Unit) {
@@ -264,72 +334,125 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
     var cur  = state.copy(runState = RunState.RUNNING, log = "Starting...", progress = done)
     withContext(Dispatchers.Main) { onUpdate(cur) }
     fun upd(log: String, prog: Long = done, rs: RunState = RunState.RUNNING) { cur = cur.copy(runState = rs, log = log, progress = prog) }
-    if (taskName !in MOBILE) { upd("Requires Discord Desktop app.", rs = RunState.DESKTOP_ONLY); withContext(Dispatchers.Main) { onUpdate(cur) }; return }
+
+    if (taskName !in MOBILE) {
+        upd("Requires Discord Desktop app.", rs = RunState.DESKTOP_ONLY)
+        withContext(Dispatchers.Main) { onUpdate(cur) }
+        return
+    }
+
     try {
-        if (q.completedAt != null && q.claimedAt == null) {
-            upd("Claiming reward...", needed); withContext(Dispatchers.Main) { onUpdate(cur) }
-            val (code, _) = apiClaim(token, questId, region)
-            upd(if (code == 200) "Reward claimed!" else "Completed! Claim in Discord.", needed, RunState.DONE)
-            withContext(Dispatchers.Main) { onUpdate(cur) }; return
-        }
-        var enrolledAt = q.enrolledAt
+        val enrolledAt = q.enrolledAt
         if (enrolledAt == null) {
-            upd("Enrolling in quest...", 0); withContext(Dispatchers.Main) { onUpdate(cur) }
-            val ea = apiEnroll(token, questId, region)
-            if (ea != null) { enrolledAt = ea } else {
-                delay(800)
-                enrolledAt = apiGetStatus(token, questId, region).optJSONObject("user_status")?.optString("enrolled_at")?.takeIf { it.isNotEmpty() && it != "null" }
-                if (enrolledAt == null) { upd("Not enrolled. Accept the quest in Discord first.", 0, RunState.NOT_ENROLLED); withContext(Dispatchers.Main) { onUpdate(cur) }; return }
-            }
+            upd("Not enrolled. Accept this quest in the Discord app first.", 0, RunState.NOT_ENROLLED)
+            withContext(Dispatchers.Main) { onUpdate(cur) }
+            return
         }
+
         when (taskName) {
             "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
                 val enrollMs = parseIso(enrolledAt).takeIf { it > 0L } ?: (System.currentTimeMillis() - 60_000L)
-                upd("Spoofing video progress...", done); withContext(Dispatchers.Main) { onUpdate(cur) }
+                upd("Syncing video progress...", done)
+                withContext(Dispatchers.Main) { onUpdate(cur) }
+
                 while (true) {
-                    val maxAllowed = (System.currentTimeMillis() - enrollMs) / 1000 + 10L
-                    val nextTs     = done + 7L
+                    val elapsedSinceEnroll = (System.currentTimeMillis() - enrollMs) / 1000
+                    val maxAllowed = elapsedSinceEnroll + 10L
+                    val nextTs = done + 7L
+
                     if (maxAllowed - done >= 7L) {
-                        val sendTs = minOf(needed.toDouble(), nextTs.toDouble() + Math.random())
-                        val body   = JSONObject().put("timestamp", sendTs).toString().toRequestBody("application/json".toMediaType())
-                        val rj     = try { JSONObject(http.newCall(buildReq("https://discord.com/api/v9/quests/$questId/video-progress", token, region).post(body).build()).execute().body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
+                        val sendTs = minOf(needed.toDouble(), nextTs.toDouble() + Math.random() * 0.5)
+                        val body = JSONObject().put("timestamp", sendTs)
+                            .toString().toRequestBody("application/json".toMediaType())
+                        val rj = try {
+                            JSONObject(
+                                http.newCall(
+                                    buildReq(
+                                        "https://discord.com/api/v9/quests/$questId/video-progress",
+                                        token, region, "https://discord.com/quest-home"
+                                    ).post(body).build()
+                                ).execute().body?.string() ?: "{}"
+                            )
+                        } catch (_: Exception) { JSONObject() }
+
                         done = minOf(needed, nextTs)
                         upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
+
                         if (rj.optString("completed_at", "").isNotEmpty() || done >= needed) break
                     }
+
                     if (nextTs >= needed) break
-                    delay(1000L)
+                    delay(8_000L)
                 }
-                http.newCall(buildReq("https://discord.com/api/v9/quests/$questId/video-progress", token, region).post(JSONObject().put("timestamp", needed.toDouble()).toString().toRequestBody("application/json".toMediaType())).build()).execute()
-                done = needed; delay(800L); upd("Claiming reward...", done); withContext(Dispatchers.Main) { onUpdate(cur) }
-                val (code, _) = apiClaim(token, questId, region)
-                upd(if (code == 200) "Reward claimed!" else "Completed! Claim in Discord.", done, RunState.DONE)
+
+                http.newCall(
+                    buildReq(
+                        "https://discord.com/api/v9/quests/$questId/video-progress",
+                        token, region, "https://discord.com/quest-home"
+                    ).post(
+                        JSONObject().put("timestamp", needed.toDouble())
+                            .toString().toRequestBody("application/json".toMediaType())
+                    ).build()
+                ).execute()
+
+                done = needed
+                upd("Completed! Claim your reward in the Discord app.", done, RunState.DONE)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
+
             "PLAY_ACTIVITY" -> {
                 val channelId = apiFirstDm(token, region) ?: throw Exception("No DM channel found.")
                 val streamKey = "call:$channelId:1"
-                upd("Spoofing activity...", done); withContext(Dispatchers.Main) { onUpdate(cur) }
+                upd("Syncing activity progress...", done)
+                withContext(Dispatchers.Main) { onUpdate(cur) }
+
                 while (true) {
-                    val rb = JSONObject().put("stream_key", streamKey).put("terminal", false).toString().toRequestBody("application/json".toMediaType())
-                    val rj = try { JSONObject(http.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token, region).post(rb).build()).execute().body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
+                    val rb = JSONObject().put("stream_key", streamKey).put("terminal", false)
+                        .toString().toRequestBody("application/json".toMediaType())
+                    val rj = try {
+                        JSONObject(
+                            http.newCall(
+                                buildReq(
+                                    "https://discord.com/api/v9/quests/$questId/heartbeat",
+                                    token, region
+                                ).post(rb).build()
+                            ).execute().body?.string() ?: "{}"
+                        )
+                    } catch (_: Exception) { JSONObject() }
+
                     done = rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
-                    upd("Activity: ${done}s / ${needed}s (~${maxOf(0L,(needed-done)/60)} min left)", done); withContext(Dispatchers.Main) { onUpdate(cur) }
+                    upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
+                    withContext(Dispatchers.Main) { onUpdate(cur) }
+
                     if (done >= needed) {
-                        http.newCall(buildReq("https://discord.com/api/v9/quests/$questId/heartbeat", token, region).post(JSONObject().put("stream_key", streamKey).put("terminal", true).toString().toRequestBody("application/json".toMediaType())).build()).execute()
+                        http.newCall(
+                            buildReq(
+                                "https://discord.com/api/v9/quests/$questId/heartbeat",
+                                token, region
+                            ).post(
+                                JSONObject().put("stream_key", streamKey).put("terminal", true)
+                                    .toString().toRequestBody("application/json".toMediaType())
+                            ).build()
+                        ).execute()
                         break
                     }
                     delay(20_000L)
                 }
-                delay(800L); upd("Claiming reward...", done); withContext(Dispatchers.Main) { onUpdate(cur) }
-                val (code, _) = apiClaim(token, questId, region)
-                upd(if (code == 200) "Reward claimed!" else "Completed! Claim in Discord.", needed, RunState.DONE)
+
+                upd("Completed! Claim your reward in the Discord app.", needed, RunState.DONE)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
             }
-            else -> { upd("Task '$taskName' not supported on Android.", rs = RunState.DESKTOP_ONLY); withContext(Dispatchers.Main) { onUpdate(cur) } }
+
+            else -> {
+                upd("Task '$taskName' not supported on Android.", rs = RunState.DESKTOP_ONLY)
+                withContext(Dispatchers.Main) { onUpdate(cur) }
+            }
         }
-    } catch (e: Exception) { upd("Error: ${e.message}", rs = RunState.ERROR); withContext(Dispatchers.Main) { onUpdate(cur) } }
+    } catch (e: Exception) {
+        upd("Error: ${e.message}", rs = RunState.ERROR)
+        withContext(Dispatchers.Main) { onUpdate(cur) }
+    }
 }
 
 class QuestActivity : ComponentActivity() {
@@ -404,8 +527,21 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
         try {
             val (list, orbs) = apiFetch(token, region)
             states.addAll(list.map { q ->
-                val rs = when { q.completedAt != null && q.claimedAt == null -> RunState.DONE; q.taskName !in MOBILE -> RunState.DESKTOP_ONLY; q.enrolledAt == null -> RunState.NOT_ENROLLED; else -> RunState.IDLE }
-                QuestState(quest = q, runState = rs, progress = q.secondsDone, log = when (rs) { RunState.DONE -> "Completed! Tap to claim."; RunState.DESKTOP_ONLY -> "Requires Desktop app."; else -> "" })
+                val rs = when {
+                    q.completedAt != null && q.claimedAt == null -> RunState.DONE
+                    q.taskName !in MOBILE -> RunState.DESKTOP_ONLY
+                    q.enrolledAt == null  -> RunState.NOT_ENROLLED
+                    else -> RunState.IDLE
+                }
+                QuestState(
+                    quest = q, runState = rs, progress = q.secondsDone,
+                    log = when (rs) {
+                        RunState.DONE         -> "Completed! Claim in the Discord app."
+                        RunState.DESKTOP_ONLY -> "Requires Desktop app."
+                        RunState.NOT_ENROLLED -> "Accept the quest in the Discord app first."
+                        else -> ""
+                    }
+                )
             })
             orbBalance = orbs
         } catch (e: Exception) { fetchError = e.message }
@@ -418,29 +554,36 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     if (fInGame) displayed = displayed.filter { it.quest.rewardType != "orbs" && it.quest.rewardType != "decor" }
     if (fWatch)  displayed = displayed.filter { it.quest.taskName.contains("WATCH") }
     if (fPlay)   displayed = displayed.filter { it.quest.taskName.contains("PLAY") || it.quest.taskName.contains("STREAM") }
-    displayed = when (sortMode) { 1 -> displayed.sortedByDescending { it.quest.expiresMs }; 2 -> displayed.sortedBy { it.quest.expiresMs }; 3 -> displayed.filter { it.quest.enrolledAt != null }; else -> displayed }
+    displayed = when (sortMode) {
+        1    -> displayed.sortedByDescending { it.quest.expiresMs }
+        2    -> displayed.sortedBy { it.quest.expiresMs }
+        3    -> displayed.filter { it.quest.enrolledAt != null }
+        else -> displayed
+    }
     val filterCount = listOf(fOrbs, fDecor, fInGame, fWatch, fPlay).count { it }
 
     Box(Modifier.fillMaxSize().background(DC.Bg)) {
         Column(Modifier.fillMaxSize()) {
-            QuestHeader(orbBalance = orbBalance, region = region, onBack = onBack,
+            QuestHeader(
+                orbBalance = orbBalance, region = region, onBack = onBack,
                 onFilter = { showFilters = true }, onCollect = { showCollect = true },
                 onRegion = { showRegion = true }, onRefresh = { refreshKey++ },
                 filterCount = filterCount,
-                canCompleteAll = states.any { it.runState == RunState.IDLE || it.runState == RunState.NOT_ENROLLED },
+                canCompleteAll = states.any { it.runState == RunState.IDLE },
                 onCompleteAll = {
                     CoroutineScope(Dispatchers.IO).launch {
                         states.forEachIndexed { idx, st ->
-                            if (st.runState == RunState.IDLE || st.runState == RunState.NOT_ENROLLED)
+                            if (st.runState == RunState.IDLE)
                                 runComplete(token, region, st) { upd -> if (idx < states.size) states[idx] = upd }
                         }
                     }
                 }
             )
             when {
-                loading          -> LoadingPane()
+                loading            -> LoadingPane()
                 fetchError != null -> ErrorPane(fetchError!!) { refreshKey++ }
-                else             -> QuestList(displayed, token, region,
+                else               -> QuestList(
+                    displayed, token, region,
                     onUpdate = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd },
                     onWatch  = { videoQuest = it },
                     onMore   = { moreQuest  = it }
@@ -635,13 +778,9 @@ private fun QuestCard(state: QuestState, token: String, region: Region, onUpdate
                             }
                         }
                     }
-                    state.runState == RunState.DONE && q.completedAt != null && q.claimedAt == null -> {
-                        PrimaryBtn("Claim Reward", accent, Icons.Outlined.CardGiftcard, Modifier.weight(1f)) {
-                            scope.launch(Dispatchers.IO) { val (code, _) = apiClaim(token, q.id, region); withContext(Dispatchers.Main) { onUpdate(state.copy(runState = if (code == 200) RunState.DONE else state.runState, log = if (code == 200) "Reward claimed!" else "Claim failed ($code)")) } }
-                        }
-                    }
                     state.runState == RunState.DONE -> StateChip(accent, Icons.Outlined.CheckCircle, "Completed!", Modifier.weight(1f))
                     state.runState == RunState.DESKTOP_ONLY -> StateChip(DC.Warning, Icons.Outlined.Computer, "Desktop Only", Modifier.weight(1f))
+                    state.runState == RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.InfoOutlined, "Accept in Discord", Modifier.weight(1f))
                     else -> {
                         val isVideo = q.taskName.contains("WATCH")
                         PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f), shimX) {
@@ -827,10 +966,10 @@ private fun CollectibleCard(c: CollectibleItem, gifLoader: ImageLoader, ctx: Con
 @Composable
 private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, onDismiss: () -> Unit, onComplete: (QuestState) -> Unit) {
     val scope = rememberCoroutineScope(); val needed = quest.secondsNeeded
-    var spoofDone  by remember { mutableLongStateOf(quest.secondsDone) }
-    var log        by remember { mutableStateOf("Preparing video...") }
+    var spoofDone   by remember { mutableLongStateOf(quest.secondsDone) }
+    var log         by remember { mutableStateOf("Preparing video...") }
     var spoofActive by remember { mutableStateOf(false) }
-    var completed  by remember { mutableStateOf(false) }
+    var completed   by remember { mutableStateOf(false) }
     val pct = if (needed > 0) (spoofDone.toFloat() / needed).coerceIn(0f, 1f) else 0f
     val pulse = rememberInfiniteTransition(label = "vp"); val pA by pulse.animateFloat(0.4f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "vpa")
     DisposableEffect(Unit) { onDispose { spoofActive = false } }
@@ -847,27 +986,39 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, o
                             setOnPreparedListener { mp ->
                                 mp.isLooping = true; mp.start(); log = "Watching & syncing..."; spoofActive = true
                                 scope.launch(Dispatchers.IO) {
-                                    var ea = quest.enrolledAt
+                                    val ea = quest.enrolledAt
                                     if (ea == null) {
-                                        val r = apiEnroll(token, quest.id, region)
-                                        if (r != null) { ea = r } else {
-                                            delay(800); ea = apiGetStatus(token, quest.id, region).optJSONObject("user_status")?.optString("enrolled_at")?.takeIf { it.isNotEmpty() && it != "null" }
-                                            if (ea == null) { withContext(Dispatchers.Main) { log = "Could not enroll." }; return@launch }
-                                        }
+                                        withContext(Dispatchers.Main) { log = "Accept the quest in the Discord app first." }
+                                        return@launch
                                     }
                                     val enrollMs = parseIso(ea).takeIf { it > 0L } ?: (System.currentTimeMillis() - 60_000L)
                                     while (spoofActive && spoofDone < needed) {
-                                        delay(7_000L); if (!spoofActive) break
-                                        val maxAllowed = (System.currentTimeMillis() - enrollMs) / 1000 + 10L
+                                        delay(8_000L)
+                                        if (!spoofActive) break
+                                        val elapsedSinceEnroll = (System.currentTimeMillis() - enrollMs) / 1000
+                                        val maxAllowed = elapsedSinceEnroll + 10L
                                         val nextTs = spoofDone + 7L
                                         if (maxAllowed - spoofDone >= 7L) {
-                                            val sendTs = minOf(needed.toDouble(), nextTs.toDouble() + Math.random())
-                                            val body   = JSONObject().put("timestamp", sendTs).toString().toRequestBody("application/json".toMediaType())
-                                            val rj     = try { JSONObject(http.newCall(buildReq("https://discord.com/api/v9/quests/${quest.id}/video-progress", token, region).post(body).build()).execute().body?.string() ?: "{}") } catch (_: Exception) { JSONObject() }
+                                            val sendTs = minOf(needed.toDouble(), nextTs.toDouble() + Math.random() * 0.5)
+                                            val body = JSONObject().put("timestamp", sendTs)
+                                                .toString().toRequestBody("application/json".toMediaType())
+                                            val rj = try {
+                                                JSONObject(
+                                                    http.newCall(
+                                                        buildReq(
+                                                            "https://discord.com/api/v9/quests/${quest.id}/video-progress",
+                                                            token, region, "https://discord.com/quest-home"
+                                                        ).post(body).build()
+                                                    ).execute().body?.string() ?: "{}"
+                                                )
+                                            } catch (_: Exception) { JSONObject() }
                                             spoofDone = minOf(needed, nextTs)
                                             val p = if (needed > 0) (spoofDone * 100 / needed).toInt() else 0
                                             withContext(Dispatchers.Main) { log = "${spoofDone}s / ${needed}s ($p%)" }
-                                            if (rj.optString("completed_at", "").isNotEmpty() || spoofDone >= needed) { withContext(Dispatchers.Main) { log = "Video complete! Tap Claim Reward."; completed = true }; break }
+                                            if (rj.optString("completed_at", "").isNotEmpty() || spoofDone >= needed) {
+                                                withContext(Dispatchers.Main) { log = "Done! Claim your reward in the Discord app."; completed = true }
+                                                break
+                                            }
                                         }
                                     }
                                 }
@@ -886,12 +1037,13 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, o
                     Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(DC.Border)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(pct).background(Brush.horizontalGradient(listOf(DC.Primary.copy(0.7f), DC.Primary)), RoundedCornerShape(2.dp)))
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(onClick = { spoofActive = false; onDismiss() }, modifier = Modifier.weight(1f).height(48.dp), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, DC.Border)) { Text("Close", color = DC.Muted, fontWeight = FontWeight.Bold) }
-                        Button(onClick = { spoofActive = false; scope.launch(Dispatchers.IO) { val (code, _) = apiClaim(token, quest.id, region); withContext(Dispatchers.Main) { onComplete(QuestState(quest = quest, runState = if (code == 200) RunState.DONE else RunState.ERROR, progress = needed, log = if (code == 200) "Reward claimed!" else "Claim failed ($code)")) } } },
-                            modifier = Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = DC.Primary), shape = RoundedCornerShape(12.dp)) {
-                            Icon(Icons.Outlined.CardGiftcard, null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(6.dp)); Text("Claim Reward", fontWeight = FontWeight.ExtraBold)
-                        }
+                    OutlinedButton(
+                        onClick = { spoofActive = false; onDismiss() },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, DC.Border)
+                    ) {
+                        Text("Close", color = DC.Muted, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -950,5 +1102,13 @@ private fun ErrorPane(msg: String, onRetry: () -> Unit) {
 
 private fun describeTask(name: String, seconds: Long): String {
     val m = seconds / 60; val dur = if (m < 60) "${m}min" else "${m/60}h${if (m % 60 > 0) " ${m%60}min" else ""}"
-    return when (name) { "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> "Watch a video for $dur"; "PLAY_ACTIVITY" -> "Play an activity for $dur"; "PLAY_ON_DESKTOP", "PLAY_ON_DESKTOP_V2" -> "Play on Desktop for $dur"; "STREAM_ON_DESKTOP" -> "Stream on Desktop for $dur"; "PLAY_ON_XBOX" -> "Play on Xbox for $dur"; "PLAY_ON_PLAYSTATION" -> "Play on PlayStation for $dur"; else -> name }
+    return when (name) {
+        "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> "Watch a video for $dur"
+        "PLAY_ACTIVITY"                        -> "Play an activity for $dur"
+        "PLAY_ON_DESKTOP", "PLAY_ON_DESKTOP_V2"-> "Play on Desktop for $dur"
+        "STREAM_ON_DESKTOP"                    -> "Stream on Desktop for $dur"
+        "PLAY_ON_XBOX"                         -> "Play on Xbox for $dur"
+        "PLAY_ON_PLAYSTATION"                  -> "Play on PlayStation for $dur"
+        else -> name
+    }
 }
