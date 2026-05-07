@@ -780,7 +780,7 @@ private fun QuestCard(state: QuestState, token: String, region: Region, onUpdate
                     }
                     state.runState == RunState.DONE -> StateChip(accent, Icons.Outlined.CheckCircle, "Completed!", Modifier.weight(1f))
                     state.runState == RunState.DESKTOP_ONLY -> StateChip(DC.Warning, Icons.Outlined.Computer, "Desktop Only", Modifier.weight(1f))
-                    state.runState == RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.InfoOutlined, "Accept in Discord", Modifier.weight(1f))
+                    state.runState == RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.Info, "Accept in Discord", Modifier.weight(1f))
                     else -> {
                         val isVideo = q.taskName.contains("WATCH")
                         PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f), shimX) {
