@@ -223,6 +223,7 @@ data class QuestItem(
     val publisher: String, val bannerUrl: String?, val rewardIconUrl: String?,
     val videoUrl: String?, val questLink: String?,
     val enrolledAt: String?, val completedAt: String?, val claimedAt: String?,
+    val configVersion: Int,
     val rawConfig: JSONObject
 )
 
@@ -241,18 +242,22 @@ private fun parseQuest(q: JSONObject): QuestItem? {
     val cfg = q.optJSONObject("config") ?: return null
     val us  = q.optJSONObject("user_status")
     val msg = cfg.optJSONObject("messages") ?: return null
-    val tasks    = cfg.optJSONObject("task_config")?.optJSONObject("tasks") ?: return null
+    val configVersion = cfg.optInt("config_version", cfg.optInt("configVersion", 1))
+    val taskCfgObj = cfg.optJSONObject("task_config") ?: cfg.optJSONObject("taskConfig")
+        ?: cfg.optJSONObject("taskConfigV2") ?: cfg.optJSONObject("task_config_v2")
+    val tasks = taskCfgObj?.optJSONObject("tasks") ?: return null
     val taskName = SUPPORTED.firstOrNull { tasks.has(it) } ?: return null
     val needed   = tasks.optJSONObject(taskName)?.optLong("target", 0L) ?: 0L
     val done     = us?.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", 0L) ?: 0L
     val rewardsArr = cfg.optJSONObject("rewards_config")?.optJSONArray("rewards")
+        ?: cfg.optJSONObject("rewardsConfig")?.optJSONArray("rewards")
     var reward = ""; var rewardType = "prize"
     if (rewardsArr != null && rewardsArr.length() > 0) {
         val r = rewardsArr.optJSONObject(0)
         if (r != null) {
             rewardType = when (r.optString("type", "0")) { "4" -> "orbs"; "3" -> "decor"; "2" -> "nitro"; else -> "prize" }
             reward = when (rewardType) {
-                "orbs"  -> { val qty = r.optInt("orb_quantity", 0); if (qty > 0) "$qty Discord Orbs" else r.optJSONObject("messages")?.optString("name_with_article", "") ?: "Orbs" }
+                "orbs"  -> { val qty = r.optInt("orb_quantity", r.optInt("orbQuantity", 0)); if (qty > 0) "$qty Discord Orbs" else r.optJSONObject("messages")?.optString("name_with_article", "") ?: "Orbs" }
                 "decor" -> r.optJSONObject("messages")?.optString("name_with_article", "")?.removePrefix("a ")?.removePrefix("an ") ?: "Avatar Decoration"
                 "nitro" -> "Nitro"
                 else    -> r.optJSONObject("messages")?.optString("name_with_article", "")?.removePrefix("a ")?.removePrefix("an ") ?: "In-game Reward"
@@ -260,16 +265,21 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         }
     }
     return QuestItem(
-        id = id, name = msg.optString("quest_name", ""), reward = reward, rewardType = rewardType,
-        expiresMs = parseIso(cfg.optString("expires_at", "")), taskName = taskName,
-        secondsNeeded = needed, secondsDone = done, publisher = msg.optString("game_publisher", ""),
+        id = id, name = msg.optString("quest_name", msg.optString("questName", "")), reward = reward, rewardType = rewardType,
+        expiresMs = parseIso(cfg.optString("expires_at", cfg.optString("expiresAt", ""))), taskName = taskName,
+        secondsNeeded = needed, secondsDone = done, publisher = msg.optString("game_publisher", msg.optString("gamePublisher", "")),
         bannerUrl = buildBannerUrl(id, cfg), rewardIconUrl = buildRewardIconUrl(id, cfg),
         videoUrl = buildVideoUrl(id, cfg),
         questLink = cfg.optJSONObject("application")?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" }
-                    ?: cfg.optJSONObject("cta_config")?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" },
-        enrolledAt  = us?.optString("enrolled_at")?.takeIf  { it.isNotEmpty() && it != "null" },
-        completedAt = us?.optString("completed_at")?.takeIf { it.isNotEmpty() && it != "null" },
-        claimedAt   = us?.optString("claimed_at")?.takeIf   { it.isNotEmpty() && it != "null" },
+                    ?: cfg.optJSONObject("cta_config")?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" }
+                    ?: cfg.optJSONObject("ctaConfig")?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" },
+        enrolledAt  = us?.optString("enrolled_at")?.takeIf  { it.isNotEmpty() && it != "null" }
+                      ?: us?.optString("enrolledAt")?.takeIf  { it.isNotEmpty() && it != "null" },
+        completedAt = us?.optString("completed_at")?.takeIf { it.isNotEmpty() && it != "null" }
+                      ?: us?.optString("completedAt")?.takeIf { it.isNotEmpty() && it != "null" },
+        claimedAt   = us?.optString("claimed_at")?.takeIf   { it.isNotEmpty() && it != "null" }
+                      ?: us?.optString("claimedAt")?.takeIf   { it.isNotEmpty() && it != "null" },
+        configVersion = configVersion,
         rawConfig   = cfg
     )
 }
@@ -281,7 +291,9 @@ private suspend fun apiFetch(token: String, region: Region): Pair<List<QuestItem
     ).execute()
     val body = resp.body?.string() ?: ""
     if (!resp.isSuccessful) throw Exception(try { JSONObject(body).optString("message", "HTTP ${resp.code}") } catch (_: Exception) { "HTTP ${resp.code}" })
-    val arr  = try { JSONObject(body).optJSONArray("quests") ?: JSONArray() } catch (_: Exception) { JSONArray() }
+    val parsed = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
+    val arr = parsed.optJSONArray("quests")
+        ?: try { JSONArray(body) } catch (_: Exception) { JSONArray() }
     val list = mutableListOf<QuestItem>()
     for (i in 0 until arr.length()) {
         val item = parseQuest(arr.getJSONObject(i)) ?: continue
@@ -328,6 +340,18 @@ private suspend fun apiCollectibles(token: String, region: Region): JSONArray = 
     } catch (_: Exception) { JSONArray() }
 }
 
+private suspend fun retryApi(maxAttempts: Int = 5, initialDelayMs: Long = 500, maxDelayMs: Long = 8_000L, block: suspend () -> JSONObject): JSONObject {
+    var attempt = 0; var delay = initialDelayMs
+    while (true) {
+        attempt++
+        try { return block() } catch (e: Exception) {
+            if (attempt >= maxAttempts) throw e
+            kotlinx.coroutines.delay(delay)
+            delay = minOf(maxDelayMs, delay * 2)
+        }
+    }
+}
+
 private suspend fun runComplete(token: String, region: Region, state: QuestState, onUpdate: (QuestState) -> Unit) {
     val q = state.quest; val questId = q.id; val taskName = q.taskName; val needed = q.secondsNeeded
     var done = q.secondsDone
@@ -365,15 +389,21 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
                         val body = JSONObject().put("timestamp", sendTs)
                             .toString().toRequestBody("application/json".toMediaType())
                         val rj = try {
-                            JSONObject(
-                                http.newCall(
-                                    buildReq(
-                                        "https://discord.com/api/v9/quests/$questId/video-progress",
-                                        token, region, "https://discord.com/quest-home"
-                                    ).post(body).build()
-                                ).execute().body?.string() ?: "{}"
-                            )
-                        } catch (_: Exception) { JSONObject() }
+                            retryApi {
+                                JSONObject(
+                                    http.newCall(
+                                        buildReq(
+                                            "https://discord.com/api/v9/quests/$questId/video-progress",
+                                            token, region, "https://discord.com/quest-home"
+                                        ).post(body).build()
+                                    ).execute().body?.string() ?: "{}"
+                                )
+                            }
+                        } catch (e: Exception) {
+                            upd("Error: ${e.message}", rs = RunState.ERROR)
+                            withContext(Dispatchers.Main) { onUpdate(cur) }
+                            return
+                        }
 
                         done = minOf(needed, nextTs)
                         upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
@@ -386,15 +416,21 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
                     delay(8_000L)
                 }
 
-                http.newCall(
-                    buildReq(
-                        "https://discord.com/api/v9/quests/$questId/video-progress",
-                        token, region, "https://discord.com/quest-home"
-                    ).post(
-                        JSONObject().put("timestamp", needed.toDouble())
-                            .toString().toRequestBody("application/json".toMediaType())
-                    ).build()
-                ).execute()
+                try {
+                    retryApi {
+                        JSONObject(
+                            http.newCall(
+                                buildReq(
+                                    "https://discord.com/api/v9/quests/$questId/video-progress",
+                                    token, region, "https://discord.com/quest-home"
+                                ).post(
+                                    JSONObject().put("timestamp", needed.toDouble())
+                                        .toString().toRequestBody("application/json".toMediaType())
+                                ).build()
+                            ).execute().body?.string() ?: "{}"
+                        )
+                    }
+                } catch (_: Exception) {}
 
                 done = needed
                 upd("Completed! Claim your reward in the Discord app.", done, RunState.DONE)
@@ -411,30 +447,46 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
                     val rb = JSONObject().put("stream_key", streamKey).put("terminal", false)
                         .toString().toRequestBody("application/json".toMediaType())
                     val rj = try {
-                        JSONObject(
-                            http.newCall(
-                                buildReq(
-                                    "https://discord.com/api/v9/quests/$questId/heartbeat",
-                                    token, region
-                                ).post(rb).build()
-                            ).execute().body?.string() ?: "{}"
-                        )
-                    } catch (_: Exception) { JSONObject() }
+                        retryApi {
+                            JSONObject(
+                                http.newCall(
+                                    buildReq(
+                                        "https://discord.com/api/v9/quests/$questId/heartbeat",
+                                        token, region
+                                    ).post(rb).build()
+                                ).execute().body?.string() ?: "{}"
+                            )
+                        }
+                    } catch (e: Exception) {
+                        upd("Error: ${e.message}", rs = RunState.ERROR)
+                        withContext(Dispatchers.Main) { onUpdate(cur) }
+                        return
+                    }
 
-                    done = rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
+                    done = if (q.configVersion == 1)
+                        rj.optJSONObject("user_status")?.optLong("stream_progress_seconds", done) ?: done
+                    else
+                        rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
+
                     upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
 
                     if (done >= needed) {
-                        http.newCall(
-                            buildReq(
-                                "https://discord.com/api/v9/quests/$questId/heartbeat",
-                                token, region
-                            ).post(
-                                JSONObject().put("stream_key", streamKey).put("terminal", true)
-                                    .toString().toRequestBody("application/json".toMediaType())
-                            ).build()
-                        ).execute()
+                        try {
+                            retryApi {
+                                JSONObject(
+                                    http.newCall(
+                                        buildReq(
+                                            "https://discord.com/api/v9/quests/$questId/heartbeat",
+                                            token, region
+                                        ).post(
+                                            JSONObject().put("stream_key", streamKey).put("terminal", true)
+                                                .toString().toRequestBody("application/json".toMediaType())
+                                        ).build()
+                                    ).execute().body?.string() ?: "{}"
+                                )
+                            }
+                        } catch (_: Exception) {}
                         break
                     }
                     delay(20_000L)
