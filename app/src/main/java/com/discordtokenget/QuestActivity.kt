@@ -95,6 +95,16 @@ private val REGIONS = listOf(
     Region("Spain", "ES", "es-ES", "Europe/Madrid")
 )
 
+private fun getCachedSuperProps(ctx: Context): String {
+    return ctx.getSharedPreferences("quest_app_cache", Context.MODE_PRIVATE)
+        .getString("super_props", "") ?: ""
+}
+
+private fun saveCachedSuperProps(ctx: Context, props: String) {
+    ctx.getSharedPreferences("quest_app_cache", Context.MODE_PRIVATE)
+        .edit().putString("super_props", props).apply()
+}
+
 private fun buildReq(url: String, token: String, region: Region, superProps: String, referer: String = "https://discord.com/quest-home") =
     Request.Builder().url(url).apply {
         header("Authorization",         token)
@@ -118,21 +128,21 @@ private fun buildReq(url: String, token: String, region: Region, superProps: Str
         header("Priority",              "u=1, i")
     }
 
-private suspend fun fetchDynamicSuperProps(region: Region): String = withContext(Dispatchers.IO) {
+private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String = withContext(Dispatchers.IO) {
     try {
         val htmlResp = http.newCall(Request.Builder().url("https://discord.com/login").build()).execute()
         val html = htmlResp.body?.string() ?: ""
         htmlResp.close()
         
         val jsFileRegex = Regex("""src="(/assets/client\.[a-z0-9]+\.js)"""")
-        val jsPath = jsFileRegex.find(html)?.groupValues?.get(1) ?: return@withContext ""
+        val jsPath = jsFileRegex.find(html)?.groupValues?.get(1) ?: return@withContext getCachedSuperProps(ctx)
         
         val jsResp = http.newCall(Request.Builder().url("https://discord.com$jsPath").build()).execute()
         val jsContent = jsResp.body?.string() ?: ""
         jsResp.close()
         
         val buildRegex = Regex("""client_build_number:"?(\d+)"?""")
-        val buildNumber = buildRegex.find(jsContent)?.groupValues?.get(1) ?: return@withContext ""
+        val buildNumber = buildRegex.find(jsContent)?.groupValues?.get(1) ?: return@withContext getCachedSuperProps(ctx)
         
         val json = JSONObject()
         json.put("os", "Windows")
@@ -151,9 +161,11 @@ private suspend fun fetchDynamicSuperProps(region: Region): String = withContext
         json.put("client_build_number", buildNumber.toInt())
         json.put("client_event_source", null)
         
-        Base64.encodeToString(json.toString().toByteArray(), Base64.NO_WRAP)
+        val props = Base64.encodeToString(json.toString().toByteArray(), Base64.NO_WRAP)
+        saveCachedSuperProps(ctx, props)
+        props
     } catch (_: Exception) {
-        ""
+        getCachedSuperProps(ctx)
     }
 }
 
@@ -302,6 +314,16 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String):
         ).execute().body?.string() ?: "{}"
     } catch (_: Exception) { "{}" }
     list to try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
+}
+
+private suspend fun apiGetStatus(token: String, questId: String, region: Region, superProps: String): JSONObject = withContext(Dispatchers.IO) {
+    try {
+        JSONObject(
+            http.newCall(
+                buildReq("https://discord.com/api/v9/quests/@me/$questId", token, region, superProps).build()
+            ).execute().body?.string() ?: "{}"
+        )
+    } catch (_: Exception) { JSONObject() }
 }
 
 private suspend fun apiFirstDm(token: String, region: Region, superProps: String): String? = withContext(Dispatchers.IO) {
@@ -549,7 +571,8 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     var videoQuest  by remember { mutableStateOf<QuestItem?>(null) }
     var moreQuest   by remember { mutableStateOf<QuestItem?>(null) }
     var region      by remember { mutableStateOf(REGIONS[0]) }
-    var superProps  by remember { mutableStateOf("") }
+    val ctx         = LocalContext.current
+    var superProps  by remember { mutableStateOf(getCachedSuperProps(ctx)) }
     var sortMode    by remember { mutableIntStateOf(0) }
     var fOrbs       by remember { mutableStateOf(false) }
     var fDecor      by remember { mutableStateOf(false) }
@@ -557,14 +580,25 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     var fWatch      by remember { mutableStateOf(false) }
     var fPlay       by remember { mutableStateOf(false) }
     val states      = remember { mutableStateListOf<QuestState>() }
-    val ctx         = LocalContext.current
 
     LaunchedEffect(refreshKey, region) {
         loading = true; fetchError = null; states.clear(); orbBalance = null
-        superProps = ""
         try {
-            superProps = fetchDynamicSuperProps(region)
-            val (list, orbs) = apiFetch(token, region, superProps)
+            if (superProps.isEmpty()) {
+                superProps = fetchDynamicSuperProps(ctx, region)
+            }
+            var (list, orbs) = apiFetch(token, region, superProps)
+            
+            if (list.isEmpty()) {
+                val newProps = fetchDynamicSuperProps(ctx, region)
+                if (newProps.isNotEmpty() && newProps != superProps) {
+                    superProps = newProps
+                    val retryResult = apiFetch(token, region, newProps)
+                    list = retryResult.first
+                    orbs = retryResult.second
+                }
+            }
+
             states.addAll(list.map { q ->
                 val rs = when {
                     q.completedAt != null && q.claimedAt == null -> RunState.DONE
