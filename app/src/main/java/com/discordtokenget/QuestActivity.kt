@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Base64
+import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewGroup
@@ -32,8 +33,7 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.awaitPointerEventScope
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.*
@@ -165,53 +165,57 @@ private fun generateSuperPropsJson(region: Region, buildNumber: Int): String {
 private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String = withContext(Dispatchers.IO) {
     addQuestLog("SuperProps", "Buscando builds em discord.sale/api/builds...")
     var attempts = 0
-    while (attempts < 3) {
+    var resultProps = ""
+    
+    while (attempts < 3 && resultProps.isEmpty()) {
         attempts++
         try {
             val req = Request.Builder().url("https://discord.sale/api/builds").build()
             val resp = http.newCall(req).execute()
             val body = resp.body?.string() ?: ""
-            if (!resp.isSuccessful) {
-                addQuestLog("SuperProps", "Tentativa $attempts falhou (HTTP ${resp.code})")
-                continue
-            }
-            
-            val arr = JSONObject(body).optJSONArray("builds") ?: run {
-                addQuestLog("SuperProps", "JSON sem array de builds")
-                continue
-            }
-            
-            var latestDate = 0L
-            var buildNumber = 0
-            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
-            
-            for (i in 0 until arr.length()) {
-                val b = arr.getJSONObject(i)
-                val dateStr = b.optString("build_date")
-                val date = try { sdf.parse(dateStr)?.time ?: 0L } catch (_: Exception) { 0L }
-                if (date > latestDate) {
-                    latestDate = date
-                    buildNumber = b.optInt("build_number")
+            if (resp.isSuccessful && body.isNotEmpty()) {
+                val arr = JSONObject(body).optJSONArray("builds")
+                if (arr != null) {
+                    var latestDate = 0L
+                    var buildNumber = 0
+                    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+                    
+                    for (i in 0 until arr.length()) {
+                        val b = arr.getJSONObject(i)
+                        val dateStr = b.optString("build_date")
+                        val date = try { sdf.parse(dateStr)?.time ?: 0L } catch (_: Exception) { 0L }
+                        if (date > latestDate) {
+                            latestDate = date
+                            buildNumber = b.optInt("build_number")
+                        }
+                    }
+                    
+                    if (buildNumber != 0) {
+                        addQuestLog("SuperProps", "Build mais recente encontrada: $buildNumber")
+                        val props = generateSuperPropsJson(region, buildNumber)
+                        saveCachedSuperProps(ctx, props)
+                        addQuestLog("SuperProps", "Gerado e salvo no cache com sucesso!")
+                        resultProps = props
+                    } else {
+                        addQuestLog("SuperProps", "Nenhuma build válida encontrada no JSON")
+                    }
+                } else {
+                    addQuestLog("SuperProps", "JSON sem array de builds")
                 }
+            } else {
+                addQuestLog("SuperProps", "Tentativa $attempts falhou (HTTP ${resp.code})")
             }
-            
-            if (buildNumber == 0) {
-                addQuestLog("SuperProps", "Nenhuma build válida encontrada no JSON")
-                continue
-            }
-            
-            addQuestLog("SuperProps", "Build mais recente encontrada: $buildNumber")
-            val props = generateSuperPropsJson(region, buildNumber)
-            saveCachedSuperProps(ctx, props)
-            addQuestLog("SuperProps", "Gerado e salvo no cache com sucesso!")
-            return@withContext props
         } catch (e: Exception) {
             addQuestLog("SuperProps", "Erro na tentativa $attempts: ${e.message}")
         }
     }
     
-    addQuestLog("SuperProps", "Todas as tentativas falharam. Usando cache local.")
-    return@withContext getCachedSuperProps(ctx)
+    if (resultProps.isEmpty()) {
+        addQuestLog("SuperProps", "Todas as tentativas falharam. Usando cache local.")
+        resultProps = getCachedSuperProps(ctx)
+    }
+    
+    return@withContext resultProps
 }
 
 private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).also {
@@ -350,10 +354,14 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String):
         ?: try { JSONArray(body) } catch (_: Exception) { JSONArray() }
     val list = mutableListOf<QuestItem>()
     for (i in 0 until arr.length()) {
-        val item = parseQuest(arr.getJSONObject(i)) ?: continue
-        if (item.expiresMs > 0 && item.expiresMs < now) continue
-        if (item.claimedAt != null) continue
-        list.add(item)
+        val item = parseQuest(arr.getJSONObject(i))
+        if (item != null) {
+            if (item.expiresMs <= 0 || item.expiresMs >= now) {
+                if (item.claimedAt == null) {
+                    list.add(item)
+                }
+            }
+        }
     }
     
     val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps).build()
@@ -429,8 +437,9 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                 upd("Syncing video progress...", done)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
                 var completed = false
+                var running = true
 
-                while (true) {
+                while (running) {
                     val remaining = minOf(7L, needed - done)
                     delay(remaining * 1000L)
 
@@ -456,16 +465,20 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                         addQuestLog("ERROR", "Video progress failed", e.message ?: "")
                         upd("Error: ${e.message}", rs = RunState.ERROR)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
-                        return
+                        running = false
                     }
 
-                    completed = rj.optString("completed_at", "").isNotEmpty()
-                    done = minOf(needed, timestamp)
+                    if (running) {
+                        completed = rj.optString("completed_at", "").isNotEmpty()
+                        done = minOf(needed, timestamp)
 
-                    upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
-                    withContext(Dispatchers.Main) { onUpdate(cur) }
+                        upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
+                        withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                    if (timestamp >= needed) break
+                        if (timestamp >= needed) {
+                            running = false
+                        }
+                    }
                 }
 
                 if (!completed) {
@@ -495,8 +508,9 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                 val streamKey = "call:$channelId:1"
                 upd("Syncing activity progress...", done)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
+                var running = true
 
-                while (true) {
+                while (running) {
                     val bodyStr = JSONObject().put("stream_key", streamKey).put("terminal", false).toString()
                     val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
                     addQuestLog("API", "POST /heartbeat", "Payload: $bodyStr")
@@ -515,31 +529,34 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     } catch (e: Exception) {
                         upd("Error: ${e.message}", rs = RunState.ERROR)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
-                        return
+                        running = false
                     }
 
-                    done = if (q.configVersion == 1)
-                        rj.optJSONObject("user_status")?.optLong("stream_progress_seconds", done) ?: done
-                    else
-                        rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
+                    if (running) {
+                        done = if (q.configVersion == 1)
+                            rj.optJSONObject("user_status")?.optLong("stream_progress_seconds", done) ?: done
+                        else
+                            rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
 
-                    upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
-                    withContext(Dispatchers.Main) { onUpdate(cur) }
+                        upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
+                        withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                    if (done >= needed) {
-                        try {
-                            retryApi {
-                                val finalBody = JSONObject().put("stream_key", streamKey).put("terminal", true).toString()
-                                val postReq = buildReq(
-                                    "https://discord.com/api/v9/quests/$questId/heartbeat",
-                                    token, region, superProps
-                                ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
-                                JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
-                            }
-                        } catch (_: Exception) {}
-                        break
+                        if (done >= needed) {
+                            try {
+                                retryApi {
+                                    val finalBody = JSONObject().put("stream_key", streamKey).put("terminal", true).toString()
+                                    val postReq = buildReq(
+                                        "https://discord.com/api/v9/quests/$questId/heartbeat",
+                                        token, region, superProps
+                                    ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
+                                    JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
+                                }
+                            } catch (_: Exception) {}
+                            running = false
+                        } else {
+                            delay(20_000L)
+                        }
                     }
-                    delay(20_000L)
                 }
 
                 upd("Completed! Claim your reward in the Discord app.", needed, RunState.DONE)
@@ -623,6 +640,8 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     var fPlay       by remember { mutableStateOf(false) }
     val states      = remember { mutableStateListOf<QuestState>() }
     var showDebug   by remember { mutableStateOf(false) }
+    val scope       = rememberCoroutineScope()
+    var holdJob     by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(refreshKey, region) {
         loading = true; fetchError = null; states.clear(); orbBalance = null
@@ -683,22 +702,24 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     val filterCount = listOf(fOrbs, fDecor, fInGame, fWatch, fPlay).count { it }
 
     Box(
-        Modifier.fillMaxSize().background(DC.Bg).pointerInput(Unit) {
-            var holdStart = 0L
-            awaitPointerEventScope {
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val activePointers = event.changes.count { it.pressed }
-                    if (activePointers >= 2) {
-                        if (holdStart == 0L) holdStart = System.currentTimeMillis()
-                        if (System.currentTimeMillis() - holdStart >= 6000) {
+        Modifier.fillMaxSize().background(DC.Bg).pointerInteropFilter { motionEvent ->
+            if (motionEvent.pointerCount >= 2) {
+                when (motionEvent.actionMasked) {
+                    MotionEvent.ACTION_POINTER_DOWN -> {
+                        holdJob?.cancel()
+                        holdJob = scope.launch {
+                            delay(6000)
                             showDebug = true
-                            holdStart = 0L
                         }
-                    } else {
-                        holdStart = 0L
+                    }
+                    MotionEvent.ACTION_POINTER_UP -> {
+                        holdJob?.cancel()
                     }
                 }
+                true
+            } else {
+                holdJob?.cancel()
+                false
             }
         }
     ) {
@@ -1281,47 +1302,50 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                         withContext(Dispatchers.Main) { log = "Accept the quest in the Discord app first." }
                                         return@launch
                                     }
-                                    while (spoofActive && spoofDone < needed) {
+                                    var running = true
+                                    while (running && spoofActive && spoofDone < needed) {
                                         val remaining = minOf(7L, needed - spoofDone)
                                         delay(remaining * 1000L)
-                                        if (!spoofActive) break
-
-                                        val timestamp = spoofDone + 7L
-                                        val sendTs = minOf(needed.toDouble(), timestamp.toDouble() + Math.random())
-                                        val bodyStr = JSONObject().put("timestamp", sendTs).toString()
-                                        val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
+                                        if (!spoofActive) { running = false }
                                         
-                                        addQuestLog("API", "POST /video-progress (Dialog)", "Payload: $bodyStr")
-                                        
-                                        val rj = try {
-                                            val postReq = buildReq(
-                                                "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                                                token, region, superProps, "https://discord.com/quest-home"
-                                            ).post(reqBody).build()
-                                            val resp = http.newCall(postReq).execute()
-                                            val respBody = resp.body?.string() ?: "{}"
-                                            addQuestLog("API", "Response ${resp.code} (Dialog)", respBody.take(2000))
-                                            JSONObject(respBody)
-                                        } catch (_: Exception) { JSONObject() }
+                                        if (running) {
+                                            val timestamp = spoofDone + 7L
+                                            val sendTs = minOf(needed.toDouble(), timestamp.toDouble() + Math.random())
+                                            val bodyStr = JSONObject().put("timestamp", sendTs).toString()
+                                            val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
+                                            
+                                            addQuestLog("API", "POST /video-progress (Dialog)", "Payload: $bodyStr")
+                                            
+                                            val rj = try {
+                                                val postReq = buildReq(
+                                                    "https://discord.com/api/v9/quests/${quest.id}/video-progress",
+                                                    token, region, superProps, "https://discord.com/quest-home"
+                                                ).post(reqBody).build()
+                                                val resp = http.newCall(postReq).execute()
+                                                val respBody = resp.body?.string() ?: "{}"
+                                                addQuestLog("API", "Response ${resp.code} (Dialog)", respBody.take(2000))
+                                                JSONObject(respBody)
+                                            } catch (_: Exception) { JSONObject() }
 
-                                        completed = rj.optString("completed_at", "").isNotEmpty()
-                                        spoofDone = minOf(needed, timestamp)
-                                        val p = if (needed > 0) (spoofDone * 100 / needed).toInt() else 0
-                                        withContext(Dispatchers.Main) { log = "${spoofDone}s / ${needed}s ($p%)" }
+                                            completed = rj.optString("completed_at", "").isNotEmpty()
+                                            spoofDone = minOf(needed, timestamp)
+                                            val p = if (needed > 0) (spoofDone * 100 / needed).toInt() else 0
+                                            withContext(Dispatchers.Main) { log = "${spoofDone}s / ${needed}s ($p%)" }
 
-                                        if (completed || spoofDone >= needed) {
-                                            if (!completed) {
-                                                try {
-                                                    val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
-                                                    val postReq = buildReq(
-                                                        "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                                                        token, region, superProps, "https://discord.com/quest-home"
-                                                    ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
-                                                    JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
-                                                } catch (_: Exception) {}
+                                            if (completed || spoofDone >= needed) {
+                                                if (!completed) {
+                                                    try {
+                                                        val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
+                                                        val postReq = buildReq(
+                                                            "https://discord.com/api/v9/quests/${quest.id}/video-progress",
+                                                            token, region, superProps, "https://discord.com/quest-home"
+                                                        ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
+                                                        JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
+                                                    } catch (_: Exception) {}
+                                                }
+                                                withContext(Dispatchers.Main) { log = "Done! Claim your reward in the Discord app."; completed = true }
+                                                running = false
                                             }
-                                            withContext(Dispatchers.Main) { log = "Done! Claim your reward in the Discord app."; completed = true }
-                                            break
                                         }
                                     }
                                 }
