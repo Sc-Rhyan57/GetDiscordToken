@@ -138,7 +138,7 @@ private fun buildReq(url: String, token: String, region: Region, superProps: Str
         header("Sec-Fetch-Mode",        "cors")
         header("Sec-Fetch-Site",        "same-origin")
         header("Priority",              "u=1, i")
-    }.build()
+    }
 
 private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String = withContext(Dispatchers.IO) {
     addQuestLog("SuperProps", "Iniciando busca dinâmica...")
@@ -317,7 +317,7 @@ private fun parseQuest(q: JSONObject): QuestItem? {
 
 private suspend fun apiFetch(token: String, region: Region, superProps: String): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
     val now  = System.currentTimeMillis()
-    val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all")
+    val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
     addQuestLog("API", "GET /quests/@me", "Headers:\n${req.headers}")
     val resp = http.newCall(req).execute()
     val body = resp.body?.string() ?: ""
@@ -335,7 +335,7 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String):
         list.add(item)
     }
     
-    val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps)
+    val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps).build()
     val orbBody = try {
         http.newCall(orbReq).execute().body?.string() ?: "{}"
     } catch (_: Exception) { "{}" }
@@ -344,7 +344,7 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String):
 
 private suspend fun apiGetStatus(token: String, questId: String, region: Region, superProps: String): JSONObject = withContext(Dispatchers.IO) {
     try {
-        val req = buildReq("https://discord.com/api/v9/quests/@me/$questId", token, region, superProps)
+        val req = buildReq("https://discord.com/api/v9/quests/@me/$questId", token, region, superProps).build()
         addQuestLog("API", "GET /quests/@me/$questId", "Headers:\n${req.headers}")
         val resp = http.newCall(req).execute()
         val body = resp.body?.string() ?: "{}"
@@ -358,7 +358,7 @@ private suspend fun apiGetStatus(token: String, questId: String, region: Region,
 
 private suspend fun apiFirstDm(token: String, region: Region, superProps: String): String? = withContext(Dispatchers.IO) {
     try {
-        val req = buildReq("https://discord.com/api/v9/users/@me/channels", token, region, superProps)
+        val req = buildReq("https://discord.com/api/v9/users/@me/channels", token, region, superProps).build()
         val arr = JSONArray(http.newCall(req).execute().body?.string() ?: "[]")
         if (arr.length() > 0) arr.getJSONObject(0).optString("id").takeIf { it.isNotEmpty() } else null
     } catch (_: Exception) { null }
@@ -366,7 +366,7 @@ private suspend fun apiFirstDm(token: String, region: Region, superProps: String
 
 private suspend fun apiCollectibles(token: String, region: Region, superProps: String): JSONArray = withContext(Dispatchers.IO) {
     try {
-        JSONArray(http.newCall(buildReq("https://discord.com/api/v9/users/@me/collectibles-purchases", token, region, superProps)).execute().body?.string() ?: "[]")
+        JSONArray(http.newCall(buildReq("https://discord.com/api/v9/users/@me/collectibles-purchases", token, region, superProps).build()).execute().body?.string() ?: "[]")
     } catch (_: Exception) { JSONArray() }
 }
 
