@@ -465,19 +465,17 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                         addQuestLog("ERROR", "Video progress failed", e.message ?: "")
                         upd("Error: ${e.message}", rs = RunState.ERROR)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
-                        running = false
+                        return@runComplete
                     }
 
-                    if (running) {
-                        completed = rj.optString("completed_at", "").isNotEmpty()
-                        done = minOf(needed, timestamp)
+                    completed = rj.optString("completed_at", "").isNotEmpty()
+                    done = minOf(needed, timestamp)
 
-                        upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
-                        withContext(Dispatchers.Main) { onUpdate(cur) }
+                    upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
+                    withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                        if (timestamp >= needed) {
-                            running = false
-                        }
+                    if (timestamp >= needed) {
+                        running = false
                     }
                 }
 
@@ -529,33 +527,31 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     } catch (e: Exception) {
                         upd("Error: ${e.message}", rs = RunState.ERROR)
                         withContext(Dispatchers.Main) { onUpdate(cur) }
-                        running = false
+                        return@runComplete
                     }
 
-                    if (running) {
-                        done = if (q.configVersion == 1)
-                            rj.optJSONObject("user_status")?.optLong("stream_progress_seconds", done) ?: done
-                        else
-                            rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
+                    done = if (q.configVersion == 1)
+                        rj.optJSONObject("user_status")?.optLong("stream_progress_seconds", done) ?: done
+                    else
+                        rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
 
-                        upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
-                        withContext(Dispatchers.Main) { onUpdate(cur) }
+                    upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
+                    withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                        if (done >= needed) {
-                            try {
-                                retryApi {
-                                    val finalBody = JSONObject().put("stream_key", streamKey).put("terminal", true).toString()
-                                    val postReq = buildReq(
-                                        "https://discord.com/api/v9/quests/$questId/heartbeat",
-                                        token, region, superProps
-                                    ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
-                                    JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
-                                }
-                            } catch (_: Exception) {}
-                            running = false
-                        } else {
-                            delay(20_000L)
-                        }
+                    if (done >= needed) {
+                        try {
+                            retryApi {
+                                val finalBody = JSONObject().put("stream_key", streamKey).put("terminal", true).toString()
+                                val postReq = buildReq(
+                                    "https://discord.com/api/v9/quests/$questId/heartbeat",
+                                    token, region, superProps
+                                ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
+                                JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
+                            }
+                        } catch (_: Exception) {}
+                        running = false
+                    } else {
+                        delay(20_000L)
                     }
                 }
 
@@ -618,6 +614,7 @@ private fun TosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun QuestScreen(token: String, onBack: () -> Unit) {
     var loading     by remember { mutableStateOf(true) }
