@@ -33,7 +33,8 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.awaitPointerEventScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.*
@@ -62,6 +63,8 @@ private val http = OkHttpClient.Builder()
     .readTimeout(30, TimeUnit.SECONDS)
     .writeTimeout(30, TimeUnit.SECONDS)
     .build()
+
+private const val FALLBACK_SUPER_PROPS = "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTY7IE1vYmlsZTsgcnY6MTUyLjApIEdlY2tvLzE1Mi4wIEZpcmVmb3gvMTUyLjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNTIuMCIsIm9zX3ZlcnNpb24iOiIxNiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiIiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiIiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1NjUzMTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGwsImNsaWVudF9sYXVuY2hfaWQiOiI4ZWU3ZmU2My0zYTA1LTQwOGUtOTNhNi1kOWQ2MjlkZDQ4ZWUiLCJsYXVuY2hfc2lnbmF0dXJlIjoiNTc3OGFmMDMtYjYyMi00N2E1LTk1MTItM2IzY2QwYTRjM2I4IiwiY2xpZW50X2hlYXJ0YmVhdF9zZXNzaW9uX2lkIjoiOWFhNmZlMTgtM2RkNi00OTcyLWE0YjAtZWQwNGFjNThkZWQ2IiwiY2xpZW50X2FwcF9zdGF0ZSI6ImZvY3VzZWQifQ=="
 
 private object DC {
     val Bg        = Color(0xFF0E0F13)
@@ -109,16 +112,6 @@ private fun addQuestLog(tag: String, message: String, detail: String? = null) {
     if (questLogs.size > 500) questLogs.removeAt(questLogs.size - 1)
 }
 
-private fun getCachedSuperProps(ctx: Context): String {
-    return ctx.getSharedPreferences("quest_app_cache", Context.MODE_PRIVATE)
-        .getString("super_props", "") ?: ""
-}
-
-private fun saveCachedSuperProps(ctx: Context, props: String) {
-    ctx.getSharedPreferences("quest_app_cache", Context.MODE_PRIVATE)
-        .edit().putString("super_props", props).apply()
-}
-
 private fun buildReq(url: String, token: String, region: Region, superProps: String, referer: String = "https://discord.com/quest-home") =
     Request.Builder().url(url).apply {
         header("Authorization",         token)
@@ -162,7 +155,7 @@ private fun generateSuperPropsJson(region: Region, buildNumber: Int): String {
     return Base64.encodeToString(json.toString().toByteArray(), Base64.NO_WRAP)
 }
 
-private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String = withContext(Dispatchers.IO) {
+private suspend fun fetchDynamicSuperProps(region: Region): String = withContext(Dispatchers.IO) {
     addQuestLog("SuperProps", "Buscando builds em discord.sale/api/builds...")
     var attempts = 0
     var resultProps = ""
@@ -175,7 +168,7 @@ private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String
             val body = resp.body?.string() ?: ""
             if (resp.isSuccessful && body.isNotEmpty()) {
                 val arr = JSONObject(body).optJSONArray("builds")
-                if (arr != null) {
+                if (arr != null && arr.length() > 0) {
                     var latestDate = 0L
                     var buildNumber = 0
                     val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
@@ -192,15 +185,9 @@ private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String
                     
                     if (buildNumber != 0) {
                         addQuestLog("SuperProps", "Build mais recente encontrada: $buildNumber")
-                        val props = generateSuperPropsJson(region, buildNumber)
-                        saveCachedSuperProps(ctx, props)
-                        addQuestLog("SuperProps", "Gerado e salvo no cache com sucesso!")
-                        resultProps = props
-                    } else {
-                        addQuestLog("SuperProps", "Nenhuma build válida encontrada no JSON")
+                        resultProps = generateSuperPropsJson(region, buildNumber)
+                        addQuestLog("SuperProps", "Gerado com sucesso!")
                     }
-                } else {
-                    addQuestLog("SuperProps", "JSON sem array de builds")
                 }
             } else {
                 addQuestLog("SuperProps", "Tentativa $attempts falhou (HTTP ${resp.code})")
@@ -211,8 +198,8 @@ private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String
     }
     
     if (resultProps.isEmpty()) {
-        addQuestLog("SuperProps", "Todas as tentativas falharam. Usando cache local.")
-        resultProps = getCachedSuperProps(ctx)
+        addQuestLog("SuperProps", "Todas as tentativas falharam. Usando fallback Super Properties.")
+        resultProps = FALLBACK_SUPER_PROPS
     }
     
     return@withContext resultProps
@@ -614,7 +601,6 @@ private fun TosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun QuestScreen(token: String, onBack: () -> Unit) {
     var loading     by remember { mutableStateOf(true) }
@@ -627,8 +613,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     var videoQuest  by remember { mutableStateOf<QuestItem?>(null) }
     var moreQuest   by remember { mutableStateOf<QuestItem?>(null) }
     var region      by remember { mutableStateOf(REGIONS[0]) }
-    val ctx         = LocalContext.current
-    var superProps  by remember { mutableStateOf(getCachedSuperProps(ctx)) }
+    var superProps  by remember { mutableStateOf(FALLBACK_SUPER_PROPS) }
     var sortMode    by remember { mutableIntStateOf(0) }
     var fOrbs       by remember { mutableStateOf(false) }
     var fDecor      by remember { mutableStateOf(false) }
@@ -643,14 +628,12 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     LaunchedEffect(refreshKey, region) {
         loading = true; fetchError = null; states.clear(); orbBalance = null
         try {
-            if (superProps.isEmpty()) {
-                superProps = fetchDynamicSuperProps(ctx, region)
-            }
+            superProps = fetchDynamicSuperProps(region)
             var (list, orbs) = apiFetch(token, region, superProps)
             
             if (list.isEmpty()) {
                 addQuestLog("WARN", "Quests Empty", "Tentando buscar novo SuperProps...")
-                val newProps = fetchDynamicSuperProps(ctx, region)
+                val newProps = fetchDynamicSuperProps(region)
                 if (newProps.isNotEmpty() && newProps != superProps) {
                     superProps = newProps
                     val retryResult = apiFetch(token, region, newProps)
@@ -699,24 +682,22 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     val filterCount = listOf(fOrbs, fDecor, fInGame, fWatch, fPlay).count { it }
 
     Box(
-        Modifier.fillMaxSize().background(DC.Bg).pointerInteropFilter { motionEvent ->
-            if (motionEvent.pointerCount >= 2) {
-                when (motionEvent.actionMasked) {
-                    MotionEvent.ACTION_POINTER_DOWN -> {
-                        holdJob?.cancel()
-                        holdJob = scope.launch {
-                            delay(6000)
+        Modifier.fillMaxSize().background(DC.Bg).pointerInput(Unit) {
+            var holdStart = 0L
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val activePointers = event.changes.count { it.pressed }
+                    if (activePointers >= 2) {
+                        if (holdStart == 0L) holdStart = System.currentTimeMillis()
+                        if (System.currentTimeMillis() - holdStart >= 6000) {
                             showDebug = true
+                            holdStart = 0L
                         }
-                    }
-                    MotionEvent.ACTION_POINTER_UP -> {
-                        holdJob?.cancel()
+                    } else {
+                        holdStart = 0L
                     }
                 }
-                true
-            } else {
-                holdJob?.cancel()
-                false
             }
         }
     ) {
@@ -758,7 +739,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                 onDismiss  = { videoQuest = null },
                 onComplete = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd; videoQuest = null })
         }
-        moreQuest?.let { MoreMenuSheet(it, ctx, onDismiss = { moreQuest = null }) }
+        moreQuest?.let { MoreMenuSheet(it, LocalContext.current, onDismiss = { moreQuest = null }) }
         
         if (showDebug) {
             DebugScreen(token, region, superProps, onClose = { showDebug = false }, onPropsUpdated = { superProps = it })
@@ -789,7 +770,7 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                 
                 Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     
-                    Text("Super Properties Atual no Cache:", color = DC.Primary, fontWeight = FontWeight.Bold)
+                    Text("Super Properties Atual:", color = DC.Primary, fontWeight = FontWeight.Bold)
                     Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
                         Text(currentActiveProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
                     }
@@ -800,7 +781,7 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                         }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copiar Atual") }
                         Button(onClick = {
                             scope.launch {
-                                currentActiveProps = fetchDynamicSuperProps(ctx, region)
+                                currentActiveProps = fetchDynamicSuperProps(region)
                                 onPropsUpdated(currentActiveProps)
                             }
                         }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Buscar da API") }
@@ -836,7 +817,7 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                         
                         Button(onClick = {
                             scope.launch {
-                                currentActiveProps = fetchDynamicSuperProps(ctx, region)
+                                currentActiveProps = fetchDynamicSuperProps(region)
                                 customBuildInput = try { JSONObject(String(Base64.decode(currentActiveProps, Base64.DEFAULT))).optInt("client_build_number").toString() } catch (_: Exception) { "" }
                                 generatedProps = currentActiveProps
                             }
@@ -854,6 +835,24 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                                 copiedField = "gerado"
                             }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copiar Gerado") }
                             Button(onClick = { showWarning = true }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Definir como Cache") }
+                        }
+                    }
+
+                    if (showWarning) {
+                        Card(colors = CardDefaults.cardColors(containerColor = DC.Error.copy(0.2f)), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text("Aviso", color = DC.Error, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Não é recomendado usar Super Properties personalizadas, pois o Discord pode bloquear requisições de builds antigas. Deseja continuar mesmo assim?", color = DC.SubText, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = {
+                                        currentActiveProps = generatedProps
+                                        onPropsUpdated(generatedProps)
+                                        showWarning = false
+                                        addQuestLog("SuperProps", "Substituído pelo valor customizado manualmente!")
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Definir mesmo assim") }
+                                    OutlinedButton(onClick = { showWarning = false }) { Text("Cancelar") }
+                                }
+                            }
                         }
                     }
 
@@ -888,28 +887,6 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                 }
             }
         }
-    }
-
-    if (showWarning) {
-        AlertDialog(
-            onDismissRequest = { showWarning = false },
-            title = { Text("Aviso", color = DC.Warning, fontWeight = FontWeight.Bold) },
-            text = { Text("Não é recomendado usar Super Properties personalizadas, pois o Discord pode bloquear requisições de builds antigas. Deseja continuar mesmo assim?") },
-            confirmButton = {
-                Button(onClick = {
-                    saveCachedSuperProps(ctx, generatedProps)
-                    currentActiveProps = generatedProps
-                    onPropsUpdated(generatedProps)
-                    showWarning = false
-                    addQuestLog("SuperProps", "Cache substituído pelo valor customizado manualmente!")
-                }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) {
-                    Text("Definir mesmo assim")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showWarning = false }) { Text("Cancelar") }
-            }
-        )
     }
 }
 
