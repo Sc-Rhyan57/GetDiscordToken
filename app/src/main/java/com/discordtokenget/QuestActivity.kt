@@ -8,6 +8,7 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Base64
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewGroup
@@ -79,7 +80,7 @@ data class Region(val label: String, val flag: String, val locale: String, val t
 private val REGIONS = listOf(
     Region(
         "Brazil", "BR", "pt-BR", "America/Sao_Paulo",
-        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyZXJfY3VycmVudCI6Imh0dHBzOi8vZGlzY29yZC5jb20vIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiZGlzY29yZC5jb20iLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1Mzk5NTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGx9"
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzE0Ny4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTQ3LjAuMC4wIiwib3NfdmVyc2lvbiI6IjEwIiwicmVmZXJyZXIiOiIiLCJyZWZlcnJpbmdfZG9tYWluIjoiIiwicmVmZXJyaW5nX2N1cnJlbnQiOiJodHRwczovL2Rpc2NvcmQuY29tLyIsInJlZmVycmluZ19kb21haW5fY3VycmVudCI6ImRpc2NvcmQuY29tIiwicmVsZWFzZV9jaGFubmVsIjoic3RhYmxlIiwiY2xpZW50X2J1aWxkX251bWJlciI6NTM5OTUxLCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsfQ=="
     ),
     Region(
         "United States", "US", "en-US", "America/New_York",
@@ -131,7 +132,7 @@ private val REGIONS = listOf(
     ),
     Region(
         "Mexico", "MX", "es-419", "America/Mexico_City",
-        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVzLTQxOSIsImhhc19jbGllbnRfbW9kcyI6ZmFsc2UsImJyb3dzZXJfdXNlcl9hZ2VudCI6Ik1vemlsbGEvNS4wIChXaW5kb3dzIE5UIDEwLjA7IFdpbjY0OyB4NjQpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIENocm9tZS8xNDcuMC4wLjAgU2FmYXJpLzUzNy4zNiIsImJyb3dzZXJfdmVyc2lvbiI6IjE0Ny4wLjAuMCIsIm9zX3ZlcnNpb24iOiIxMCIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiJodHRwczovL2Rpc2NvcmQuY29tLyIsInJlZmVycmluZ19kb21haW5fY3VycmVudCI6ImRpc2NvcmQuY29tIiwicmVsZWFzZV9jaGFubmVsIjoic3RhYmxlIiwiY2xpZW50X2J1aWxkX251bWJlciI6NTM5OTUxLCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsfQ=="
+        "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVzLTQxOSIsImhhc19jbGllbnRfbW9kZXMiOmZhbHNlLCJicm93c2VyX3VzZXJfYWdlbnQiOiJNb3ppbGxhLzUuMCAoV2luZG93cyBOVCAxMC4wOyBXaW42NDsgeDY0KSBBcHBsZVdlYktpdC81MzcuMzYgKEtIVE1MLCBsaWtlIEdlY2tvKSBDaHJvbWUvMTQ3LjAuMC4wIFNhZmFyaS81MzcuMzYiLCJicm93c2VyX3ZlcnNpb24iOiIxNDcuMC4wLjAiLCJvc192ZXJzaW9uIjoiMTAiLCJyZWZlcnJlciI6IiIsInJlZmVycmluZ19kb21haW4iOiIiLCJyZWZlcnJlcl9jdXJyZW50IjoiaHR0cHM6Ly9kaXNjb3JkLmNvbS8iLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiJkaXNjb3JkLmNvbSIsInJlbGVhc2VfY2hhbm5lbCI6InN0YWJsZSIsImNsaWVudF9idWlsZF9udW1iZXIiOjUzOTk1MSwiY2xpZW50X2V2ZW50X3NvdXJjZSI6bnVsbH0="
     ),
     Region(
         "Spain", "ES", "es-ES", "Europe/Madrid",
@@ -139,7 +140,7 @@ private val REGIONS = listOf(
     ),
 )
 
-private fun buildReq(url: String, token: String, region: Region, referer: String = "https://discord.com/quest-home") =
+private fun buildReq(url: String, token: String, region: Region, superProps: String, referer: String = "https://discord.com/quest-home") =
     Request.Builder().url(url).apply {
         header("Authorization",         token)
         header("Content-Type",          "application/json")
@@ -147,7 +148,7 @@ private fun buildReq(url: String, token: String, region: Region, referer: String
         header("Accept-Language",       "${region.locale};q=0.9,en;q=0.8")
         header("Accept-Encoding",       "gzip, deflate, br, zstd")
         header("User-Agent",            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
-        header("X-Super-Properties",    region.superProps)
+        header("X-Super-Properties",    superProps)
         header("X-Discord-Locale",      region.locale)
         header("X-Discord-Timezone",    region.timezone)
         header("X-Debug-Options",       "bugReporterEnabled")
@@ -161,6 +162,45 @@ private fun buildReq(url: String, token: String, region: Region, referer: String
         header("Sec-Fetch-Site",        "same-origin")
         header("Priority",              "u=1, i")
     }
+
+private suspend fun fetchDynamicSuperProps(region: Region): String = withContext(Dispatchers.IO) {
+    try {
+        val htmlResp = http.newCall(Request.Builder().url("https://discord.com/login").build()).execute()
+        val html = htmlResp.body?.string() ?: ""
+        htmlResp.close()
+        
+        val jsFileRegex = Regex("""src="(/assets/client\.[a-z0-9]+\.js)"""")
+        val jsPath = jsFileRegex.find(html)?.groupValues?.get(1) ?: return@withContext region.superProps
+        
+        val jsResp = http.newCall(Request.Builder().url("https://discord.com$jsPath").build()).execute()
+        val jsContent = jsResp.body?.string() ?: ""
+        jsResp.close()
+        
+        val buildRegex = Regex("""client_build_number:"?(\d+)"?""")
+        val buildNumber = buildRegex.find(jsContent)?.groupValues?.get(1) ?: return@withContext region.superProps
+        
+        val json = JSONObject()
+        json.put("os", "Windows")
+        json.put("browser", "Chrome")
+        json.put("device", "")
+        json.put("system_locale", region.locale)
+        json.put("has_client_mods", false)
+        json.put("browser_user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
+        json.put("browser_version", "147.0.0.0")
+        json.put("os_version", "10")
+        json.put("referrer", "")
+        json.put("referring_domain", "")
+        json.put("referrer_current", "https://discord.com/")
+        json.put("referring_domain_current", "discord.com")
+        json.put("release_channel", "stable")
+        json.put("client_build_number", buildNumber.toInt())
+        json.put("client_event_source", null)
+        
+        Base64.encodeToString(json.toString().toByteArray(), Base64.NO_WRAP)
+    } catch (_: Exception) {
+        region.superProps
+    }
+}
 
 private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).also {
     it.timeZone = TimeZone.getTimeZone("UTC")
@@ -284,10 +324,10 @@ private fun parseQuest(q: JSONObject): QuestItem? {
     )
 }
 
-private suspend fun apiFetch(token: String, region: Region): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
+private suspend fun apiFetch(token: String, region: Region, superProps: String): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
     val now  = System.currentTimeMillis()
     val resp = http.newCall(
-        buildReq("https://discord.com/api/v9/quests/@me", token, region, "https://discord.com/quest-home?tab=all").build()
+        buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
     ).execute()
     val body = resp.body?.string() ?: ""
     if (!resp.isSuccessful) throw Exception(try { JSONObject(body).optString("message", "HTTP ${resp.code}") } catch (_: Exception) { "HTTP ${resp.code}" })
@@ -303,38 +343,38 @@ private suspend fun apiFetch(token: String, region: Region): Pair<List<QuestItem
     }
     val orbBody = try {
         http.newCall(
-            buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region).build()
+            buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps).build()
         ).execute().body?.string() ?: "{}"
     } catch (_: Exception) { "{}" }
     list to try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
 }
 
-private suspend fun apiGetStatus(token: String, questId: String, region: Region): JSONObject = withContext(Dispatchers.IO) {
+private suspend fun apiGetStatus(token: String, questId: String, region: Region, superProps: String): JSONObject = withContext(Dispatchers.IO) {
     try {
         JSONObject(
             http.newCall(
-                buildReq("https://discord.com/api/v9/quests/@me/$questId", token, region).build()
+                buildReq("https://discord.com/api/v9/quests/@me/$questId", token, region, superProps).build()
             ).execute().body?.string() ?: "{}"
         )
     } catch (_: Exception) { JSONObject() }
 }
 
-private suspend fun apiFirstDm(token: String, region: Region): String? = withContext(Dispatchers.IO) {
+private suspend fun apiFirstDm(token: String, region: Region, superProps: String): String? = withContext(Dispatchers.IO) {
     try {
         val arr = JSONArray(
             http.newCall(
-                buildReq("https://discord.com/api/v9/users/@me/channels", token, region).build()
+                buildReq("https://discord.com/api/v9/users/@me/channels", token, region, superProps).build()
             ).execute().body?.string() ?: "[]"
         )
         if (arr.length() > 0) arr.getJSONObject(0).optString("id").takeIf { it.isNotEmpty() } else null
     } catch (_: Exception) { null }
 }
 
-private suspend fun apiCollectibles(token: String, region: Region): JSONArray = withContext(Dispatchers.IO) {
+private suspend fun apiCollectibles(token: String, region: Region, superProps: String): JSONArray = withContext(Dispatchers.IO) {
     try {
         JSONArray(
             http.newCall(
-                buildReq("https://discord.com/api/v9/users/@me/collectibles-purchases", token, region).build()
+                buildReq("https://discord.com/api/v9/users/@me/collectibles-purchases", token, region, superProps).build()
             ).execute().body?.string() ?: "[]"
         )
     } catch (_: Exception) { JSONArray() }
@@ -352,7 +392,7 @@ private suspend fun retryApi(maxAttempts: Int = 5, initialDelayMs: Long = 500, m
     }
 }
 
-private suspend fun runComplete(token: String, region: Region, state: QuestState, onUpdate: (QuestState) -> Unit) {
+private suspend fun runComplete(token: String, region: Region, superProps: String, state: QuestState, onUpdate: (QuestState) -> Unit) {
     val q = state.quest; val questId = q.id; val taskName = q.taskName; val needed = q.secondsNeeded
     var done = q.secondsDone
     var cur  = state.copy(runState = RunState.RUNNING, log = "Starting...", progress = done)
@@ -393,7 +433,7 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
                                 http.newCall(
                                     buildReq(
                                         "https://discord.com/api/v9/quests/$questId/video-progress",
-                                        token, region, "https://discord.com/quest-home"
+                                        token, region, superProps, "https://discord.com/quest-home"
                                     ).post(body).build()
                                 ).execute().body?.string() ?: "{}"
                             )
@@ -420,7 +460,7 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
                                 http.newCall(
                                     buildReq(
                                         "https://discord.com/api/v9/quests/$questId/video-progress",
-                                        token, region, "https://discord.com/quest-home"
+                                        token, region, superProps, "https://discord.com/quest-home"
                                     ).post(
                                         JSONObject().put("timestamp", needed.toDouble())
                                             .toString().toRequestBody("application/json".toMediaType())
@@ -437,7 +477,7 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
             }
 
             "PLAY_ACTIVITY" -> {
-                val channelId = apiFirstDm(token, region) ?: throw Exception("No DM channel found.")
+                val channelId = apiFirstDm(token, region, superProps) ?: throw Exception("No DM channel found.")
                 val streamKey = "call:$channelId:1"
                 upd("Syncing activity progress...", done)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
@@ -451,7 +491,7 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
                                 http.newCall(
                                     buildReq(
                                         "https://discord.com/api/v9/quests/$questId/heartbeat",
-                                        token, region
+                                        token, region, superProps
                                     ).post(rb).build()
                                 ).execute().body?.string() ?: "{}"
                             )
@@ -477,7 +517,7 @@ private suspend fun runComplete(token: String, region: Region, state: QuestState
                                     http.newCall(
                                         buildReq(
                                             "https://discord.com/api/v9/quests/$questId/heartbeat",
-                                            token, region
+                                            token, region, superProps
                                         ).post(
                                             JSONObject().put("stream_key", streamKey).put("terminal", true)
                                                 .toString().toRequestBody("application/json".toMediaType())
@@ -564,6 +604,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     var videoQuest  by remember { mutableStateOf<QuestItem?>(null) }
     var moreQuest   by remember { mutableStateOf<QuestItem?>(null) }
     var region      by remember { mutableStateOf(REGIONS[0]) }
+    var superProps  by remember { mutableStateOf(region.superProps) }
     var sortMode    by remember { mutableIntStateOf(0) }
     var fOrbs       by remember { mutableStateOf(false) }
     var fDecor      by remember { mutableStateOf(false) }
@@ -575,8 +616,10 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
 
     LaunchedEffect(refreshKey, region) {
         loading = true; fetchError = null; states.clear(); orbBalance = null
+        superProps = region.superProps
         try {
-            val (list, orbs) = apiFetch(token, region)
+            superProps = fetchDynamicSuperProps(region)
+            val (list, orbs) = apiFetch(token, region, superProps)
             states.addAll(list.map { q ->
                 val rs = when {
                     q.completedAt != null && q.claimedAt == null -> RunState.DONE
@@ -625,7 +668,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                     CoroutineScope(Dispatchers.IO).launch {
                         states.forEachIndexed { idx, st ->
                             if (st.runState == RunState.IDLE)
-                                runComplete(token, region, st) { upd -> if (idx < states.size) states[idx] = upd }
+                                runComplete(token, region, superProps, st) { upd -> if (idx < states.size) states[idx] = upd }
                         }
                     }
                 }
@@ -634,7 +677,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                 loading            -> LoadingPane()
                 fetchError != null -> ErrorPane(fetchError!!) { refreshKey++ }
                 else               -> QuestList(
-                    displayed, token, region,
+                    displayed, token, region, superProps,
                     onUpdate = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd },
                     onWatch  = { videoQuest = it },
                     onMore   = { moreQuest  = it }
@@ -646,9 +689,9 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
             onReset   = { sortMode = 0; fOrbs = false; fDecor = false; fInGame = false; fWatch = false; fPlay = false; showFilters = false },
             onDismiss = { showFilters = false })
         if (showRegion) RegionSheet(region, onSelect = { region = it; showRegion = false; refreshKey++ }, onDismiss = { showRegion = false })
-        if (showCollect) CollectiblesScreen(token, region, onDismiss = { showCollect = false })
+        if (showCollect) CollectiblesScreen(token, region, superProps, onDismiss = { showCollect = false })
         videoQuest?.let { q ->
-            VideoPlayerDialog(q, token, region,
+            VideoPlayerDialog(q, token, region, superProps,
                 onDismiss  = { videoQuest = null },
                 onComplete = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd; videoQuest = null })
         }
@@ -733,7 +776,7 @@ private fun TopBarBtn(icon: ImageVector, onClick: () -> Unit) {
 
 @Composable
 private fun QuestList(
-    displayed: List<QuestState>, token: String, region: Region,
+    displayed: List<QuestState>, token: String, region: Region, superProps: String,
     onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit
 ) {
     if (displayed.isEmpty()) {
@@ -748,13 +791,13 @@ private fun QuestList(
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Spacer(Modifier.height(10.dp)) }
-        items(displayed, key = { it.quest.id }) { state -> QuestCard(state, token, region, onUpdate, onWatch, onMore) }
+        items(displayed, key = { it.quest.id }) { state -> QuestCard(state, token, region, superProps, onUpdate, onWatch, onMore) }
         item { Spacer(Modifier.height(32.dp)) }
     }
 }
 
 @Composable
-private fun QuestCard(state: QuestState, token: String, region: Region, onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit) {
+private fun QuestCard(state: QuestState, token: String, region: Region, superProps: String, onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit) {
     val ctx   = LocalContext.current
     val q     = state.quest
     val scope = rememberCoroutineScope()
@@ -835,7 +878,7 @@ private fun QuestCard(state: QuestState, token: String, region: Region, onUpdate
                     else -> {
                         val isVideo = q.taskName.contains("WATCH")
                         PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f), shimX) {
-                            scope.launch(Dispatchers.IO) { runComplete(token, region, state, onUpdate) }
+                            scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
                         }
                         if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
                     }
@@ -947,13 +990,13 @@ private fun BottomSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.
 }
 
 @Composable
-private fun CollectiblesScreen(token: String, region: Region, onDismiss: () -> Unit) {
+private fun CollectiblesScreen(token: String, region: Region, superProps: String, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     var loading by remember { mutableStateOf(true) }
     var items   by remember { mutableStateOf(listOf<CollectibleItem>()) }
     val gifLoader = remember(ctx) { ImageLoader.Builder(ctx).components { if (Build.VERSION.SDK_INT >= 28) add(ImageDecoderDecoder.Factory()) else add(GifDecoder.Factory()) }.build() }
     LaunchedEffect(Unit) {
-        val arr  = apiCollectibles(token, region)
+        val arr  = apiCollectibles(token, region, superProps)
         val list = mutableListOf<CollectibleItem>()
         for (i in 0 until arr.length()) {
             try {
@@ -1015,7 +1058,7 @@ private fun CollectibleCard(c: CollectibleItem, gifLoader: ImageLoader, ctx: Con
 }
 
 @Composable
-private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, onDismiss: () -> Unit, onComplete: (QuestState) -> Unit) {
+private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, superProps: String, onDismiss: () -> Unit, onComplete: (QuestState) -> Unit) {
     val scope = rememberCoroutineScope(); val needed = quest.secondsNeeded
     var spoofDone   by remember { mutableLongStateOf(quest.secondsDone) }
     var log         by remember { mutableStateOf("Preparing video...") }
@@ -1056,7 +1099,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, o
                                                 http.newCall(
                                                     buildReq(
                                                         "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                                                        token, region, "https://discord.com/quest-home"
+                                                        token, region, superProps, "https://discord.com/quest-home"
                                                     ).post(body).build()
                                                 ).execute().body?.string() ?: "{}"
                                             )
@@ -1074,7 +1117,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, o
                                                         http.newCall(
                                                             buildReq(
                                                                 "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                                                                token, region, "https://discord.com/quest-home"
+                                                                token, region, superProps, "https://discord.com/quest-home"
                                                             ).post(
                                                                 JSONObject().put("timestamp", needed.toDouble())
                                                                     .toString().toRequestBody("application/json".toMediaType())
