@@ -978,7 +978,11 @@ private fun loadQuestsCache(ctx: Context): String? {
 
 private suspend fun apiFetch(token: String, region: Region, superProps: String, ctx: Context): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
     var attempts = 0
-    while (true) {
+    var list = emptyList<QuestItem>()
+    var orbs: Int? = null
+
+    var rateLimited = true
+    while (rateLimited) {
         attempts++
         val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
         addQuestLog("API", "GET /quests/@me", "Headers:\n${req.headers}")
@@ -991,6 +995,7 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String, 
             delay(retryAfter * 1000 + 500)
             continue
         }
+        rateLimited = false
         
         addQuestLog("API", "Response ${resp.code}", body.take(2000))
         if (!resp.isSuccessful) throw Exception(try { JSONObject(body).optString("message", "HTTP ${resp.code}") } catch (_: Exception) { "HTTP ${resp.code}" })
@@ -998,15 +1003,16 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String, 
         saveQuestsCache(ctx, body)
         stopHooking.value = true
 
-        val list = parseQuestsFromJson(body)
+        list = parseQuestsFromJson(body)
 
         val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps).build()
         val orbBody = try {
             http.newCall(orbReq).execute().body?.string() ?: "{}"
         } catch (_: Exception) { "{}" }
-        val orbs = try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
-        return@withContext Pair(list, orbs)
+        orbs = try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
     }
+    
+    Pair(list, orbs)
 }
 
 private suspend fun apiFirstDm(token: String, region: Region, superProps: String): String? = withContext(Dispatchers.IO) {
@@ -2303,7 +2309,11 @@ private fun CollectibleCard(c: CollectibleItem, gifLoader: ImageLoader, ctx: Con
             }
             if (c.summary.isNotEmpty()) { HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border); Text(c.summary, fontSize = 11.sp, color = DC.SubText, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) }
             HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border)
-            Text("Purchased ${fmtShort(parseIso(c.purchasedAt))}${if (c.expiresAt != null) "  ·  Expires ${fmtShort(parseIso(c.expiresAt))}" else ""}", fontSize = 10.sp, color = DC.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)")
+            
+            val purchasedDate = fmtShort(parseIso(c.purchasedAt))
+            val expiresDate = if (c.expiresAt != null) fmtShort(parseIso(c.expiresAt)) else null
+            val dateText = if (expiresDate != null) "Purchased $purchasedDate  ·  Expires $expiresDate" else "Purchased $purchasedDate"
+            Text(dateText, fontSize = 10.sp, color = DC.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
         }
     }
 }
