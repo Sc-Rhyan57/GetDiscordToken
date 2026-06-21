@@ -419,104 +419,164 @@ private const val HOOK_JS = """
 private const val QUEST_COMPLETE_JS = """
 (function() {
     try {
-        var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+        delete window.$;
+        let wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
         webpackChunkdiscord_app.pop();
 
-        var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
-        var api = Object.values(wpRequire.c).find(x => x?.exports?.Bo?.get)?.exports.Bo;
-        var ChannelStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getAllThreadsForParent)?.exports.A;
+        let ApplicationStreamingStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getStreamerActiveStreamMetadata)?.exports?.A;
+        let RunningGameStore = Object.values(wpRequire.c).find(x => x?.exports?.Ay?.getRunningGames)?.exports?.Ay;
+        let QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports?.A;
+        let ChannelStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getAllThreadsForParent)?.exports?.A;
+        let GuildChannelStore = Object.values(wpRequire.c).find(x => x?.exports?.Ay?.getSFWDefaultChannel)?.exports?.Ay;
+        let FluxDispatcher = Object.values(wpRequire.c).find(x => x?.exports?.h?.__proto__?.flushWaitQueue)?.exports?.h;
+        let api = Object.values(wpRequire.c).find(x => x?.exports?.Bo?.get)?.exports?.Bo;
 
-        if (!QuestsStore) { AndroidHook.onConsoleLog('ERROR', 'QuestsStore not found'); return; }
-        if (!api) { AndroidHook.onConsoleLog('ERROR', 'API module not found'); return; }
+        if (!QuestsStore || !api) { AndroidHook.onConsoleLog('ERROR', 'Modules not found'); return; }
 
-        var supportedTasks = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"];
-        var questId = '__QUEST_ID__';
+        const supportedTasks = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"];
+        let quest = QuestsStore.quests.get('__QUEST_ID__');
+        if (!quest) { AndroidHook.onConsoleLog('ERROR', 'Quest not found'); return; }
 
-        var quest = null;
-        try {
-            quest = QuestsStore.quests.get(questId);
-        } catch(e) {}
+        let isApp = typeof DiscordNative !== "undefined";
 
-        if (!quest) {
-            var quests = Array.from(QuestsStore.quests.values());
-            for (var i = 0; i < quests.length; i++) {
-                if (quests[i].id === questId) { quest = quests[i]; break; }
-            }
+        if(quest.userStatus?.completedAt) {
+            AndroidHook.onConsoleLog('SUCCESS', 'Quest already completed');
+            return;
         }
 
-        if (!quest) { AndroidHook.onConsoleLog('ERROR', 'Quest not found: ' + questId); return; }
+        const pid = Math.floor(Math.random() * 30000) + 1000;
+        const applicationId = quest.config.application.id;
+        const applicationName = quest.config.application.name;
+        const questName = quest.config.messages.questName;
+        const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
+        const taskName = supportedTasks.find(x => taskConfig.tasks[x] != null);
+        const secondsNeeded = taskConfig.tasks[taskName].target;
+        let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
 
-        var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
-        var taskName = supportedTasks.find(function(x) { return taskConfig.tasks[x] != null; });
-        if (!taskName) { AndroidHook.onConsoleLog('ERROR', 'No supported task found'); return; }
+        if(taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
+            const speed = 7;
+            let completed = false;
+            let fn = async () => {
+                while(true) {
+                    const remaining = Math.min(speed, secondsNeeded - secondsDone);
+                    await new Promise(resolve => setTimeout(resolve, remaining * 1000));
 
-        var secondsNeeded = taskConfig.tasks[taskName].target;
-        var secondsDone = (quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] && quest.userStatus.progress[taskName].value) || 0;
-
-        AndroidHook.onConsoleLog('INFO', 'Starting quest: ' + questId + ' task: ' + taskName + ' needed: ' + secondsNeeded + ' done: ' + secondsDone);
-
-        if (taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
-            var speed = 7;
-            (async function() {
-                while (secondsDone < secondsNeeded) {
-                    var remaining = Math.min(speed, secondsNeeded - secondsDone);
-                    await new Promise(function(resolve) { setTimeout(resolve, remaining * 1000); });
-
-                    var timestamp = secondsDone + speed;
-                    var res = await api.post({
-                        url: '/quests/' + questId + '/video-progress',
-                        body: { timestamp: Math.min(secondsNeeded, timestamp + Math.random()) }
-                    });
-
-                    var completed = res.body && res.body.completed_at != null;
+                    const timestamp = secondsDone + speed;
+                    const res = await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())}});
+                    completed = res.body.completed_at != null;
                     secondsDone = Math.min(secondsNeeded, timestamp);
                     AndroidHook.onConsoleLog('INFO', 'Video progress: ' + secondsDone + '/' + secondsNeeded);
 
-                    if (timestamp >= secondsNeeded) break;
-                }
-
-                await api.post({
-                    url: '/quests/' + questId + '/video-progress',
-                    body: { timestamp: secondsNeeded }
-                });
-
-                AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + questId);
-            })();
-        } else if (taskName === "PLAY_ACTIVITY") {
-            if (!ChannelStore) { AndroidHook.onConsoleLog('ERROR', 'ChannelStore not found'); return; }
-            var channelId = ChannelStore.getSortedPrivateChannels()[0] && ChannelStore.getSortedPrivateChannels()[0].id;
-            if (!channelId) { AndroidHook.onConsoleLog('ERROR', 'No channel found'); return; }
-            var streamKey = 'call:' + channelId + ':1';
-
-            (async function() {
-                while (secondsDone < secondsNeeded) {
-                    var res = await api.post({
-                        url: '/quests/' + questId + '/heartbeat',
-                        body: { stream_key: streamKey, terminal: false }
-                    });
-
-                    var progress = res.body && res.body.progress && res.body.progress.PLAY_ACTIVITY ? res.body.progress.PLAY_ACTIVITY.value : secondsDone;
-                    secondsDone = progress;
-                    AndroidHook.onConsoleLog('INFO', 'Activity progress: ' + progress + '/' + secondsNeeded);
-
-                    await new Promise(function(resolve) { setTimeout(resolve, 20 * 1000); });
-
-                    if (progress >= secondsNeeded) {
-                        await api.post({
-                            url: '/quests/' + questId + '/heartbeat',
-                            body: { stream_key: streamKey, terminal: true }
-                        });
+                    if(timestamp >= secondsNeeded) {
                         break;
                     }
                 }
-
-                AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + questId);
-            })();
-        } else {
-            AndroidHook.onConsoleLog('WARN', 'Task ' + taskName + ' is not supported on mobile');
+                if(!completed) {
+                    const finalRes = await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: secondsNeeded}});
+                    completed = finalRes.body.completed_at != null;
+                }
+                if(completed) {
+                    AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + quest.id);
+                } else {
+                    AndroidHook.onConsoleLog('ERROR', 'Failed to complete quest');
+                }
+            };
+            fn();
+            AndroidHook.onConsoleLog('INFO', `Spoofing video for ${questName}.`);
+        } else if(taskName === "PLAY_ON_DESKTOP") {
+            if(!isApp) {
+                AndroidHook.onConsoleLog('ERROR', "This no longer works in browser for non-video quests.");
+            } else {
+                api.get({url: `/applications/public?application_ids=${applicationId}`}).then(res => {
+                    const appData = res.body[0]
+                    const exeName = appData.executables?.find(x => x.os === "win32")?.name?.replace(">","") ?? appData.name.replace(/[\/\\:*?"<>|]/g, "")
+                    
+                    const fakeGame = {
+                        cmdLine: `C:\\Program Files\\${appData.name}\\${exeName}`,
+                        exeName,
+                        exePath: `c:/program files/${appData.name.toLowerCase()}/${exeName}`,
+                        hidden: false,
+                        isLauncher: false,
+                        id: applicationId,
+                        name: appData.name,
+                        pid: pid,
+                        pidPath: [pid],
+                        processName: appData.name,
+                        start: Date.now(),
+                    }
+                    const realGames = RunningGameStore.getRunningGames()
+                    const fakeGames = [fakeGame]
+                    const realGetRunningGames = RunningGameStore.getRunningGames
+                    const realGetGameForPID = RunningGameStore.getGameForPID
+                    RunningGameStore.getRunningGames = () => fakeGames
+                    RunningGameStore.getGameForPID = (pid) => fakeGames.find(x => x.pid === pid)
+                    FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: fakeGames})
+                    
+                    let fn = data => {
+                        let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress.PLAY_ON_DESKTOP.value)
+                        AndroidHook.onConsoleLog('INFO', `Quest progress: ${progress}/${secondsNeeded}`)
+                        
+                        if(progress >= secondsNeeded) {
+                            AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + quest.id)
+                            RunningGameStore.getRunningGames = realGetRunningGames
+                            RunningGameStore.getGameForPID = realGetGameForPID
+                            FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: []})
+                            FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
+                        }
+                    }
+                    FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
+                    AndroidHook.onConsoleLog('INFO', `Spoofed your game to ${applicationName}.`)
+                })
+            }
+        } else if(taskName === "STREAM_ON_DESKTOP") {
+            if(!isApp) {
+                AndroidHook.onConsoleLog('ERROR', "This no longer works in browser for non-video quests.")
+            } else {
+                let realFunc = ApplicationStreamingStore.getStreamerActiveStreamMetadata
+                ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => ({
+                    id: applicationId,
+                    pid,
+                    sourceName: null
+                })
+                
+                let fn = data => {
+                    let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress.STREAM_ON_DESKTOP.value)
+                    AndroidHook.onConsoleLog('INFO', `Quest progress: ${progress}/${secondsNeeded}`)
+                    
+                    if(progress >= secondsNeeded) {
+                        AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + quest.id)
+                        ApplicationStreamingStore.getStreamerActiveStreamMetadata = realFunc
+                        FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
+                    }
+                }
+                FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
+                AndroidHook.onConsoleLog('INFO', `Spoofed your stream to ${applicationName}.`)
+            }
+        } else if(taskName === "PLAY_ACTIVITY") {
+            const channelId = ChannelStore.getSortedPrivateChannels()[0]?.id ?? Object.values(GuildChannelStore.getAllGuilds()).find(x => x != null && x.VOCAL.length > 0).VOCAL[0].channel.id
+            const streamKey = `call:${channelId}:1`
+            
+            let fn = async () => {
+                AndroidHook.onConsoleLog('INFO', "Completing quest " + questName)
+                
+                while(true) {
+                    const res = await api.post({url: `/quests/${quest.id}/heartbeat`, body: {stream_key: streamKey, terminal: false}})
+                    const progress = res.body.progress.PLAY_ACTIVITY.value
+                    AndroidHook.onConsoleLog('INFO', `Quest progress: ${progress}/${secondsNeeded}`)
+                    
+                    await new Promise(resolve => setTimeout(resolve, 20 * 1000))
+                    
+                    if(progress >= secondsNeeded) {
+                        await api.post({url: `/quests/${quest.id}/heartbeat`, body: {stream_key: streamKey, terminal: true}})
+                        break
+                    }
+                }
+                AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + quest.id)
+            }
+            fn()
         }
     } catch(e) {
-        AndroidHook.onConsoleLog('ERROR', 'Quest completion error: ' + e.message);
+        AndroidHook.onConsoleLog('ERROR', 'Quest completion error: ' + e.message)
     }
 })();
 """
@@ -1115,7 +1175,6 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
             "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
                 upd("Syncing video progress...", done)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
-                var completed = false
                 var running = true
 
                 while (running) {
@@ -1147,39 +1206,38 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                         return@runComplete
                     }
 
-                    completed = rj.optString("completed_at", "").isNotEmpty()
-                    done = minOf(needed, timestamp)
-
-                    if (done >= needed) completed = true
+                    var completed = rj.optString("completed_at", "").isNotEmpty()
+                    done = rj.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", done) ?: done
 
                     upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                    if (timestamp >= needed || completed) {
+                    if (timestamp >= needed || done >= needed) {
+                        if (!completed) {
+                            try {
+                                val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
+                                addQuestLog("API", "POST /video-progress (Final)", "Payload: $finalBody")
+                                val postReq = buildReq(
+                                    "https://discord.com/api/v9/quests/$questId/video-progress",
+                                    token, region, superProps, "https://discord.com/quest-home"
+                                ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
+                                val resp = http.newCall(postReq).execute()
+                                val respBody = resp.body?.string() ?: "{}"
+                                addQuestLog("API", "Response ${resp.code}", respBody.take(2000))
+                                val finalJson = JSONObject(respBody)
+                                completed = finalJson.optString("completed_at", "").isNotEmpty()
+                                done = finalJson.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", done) ?: done
+                            } catch (_: Exception) {}
+                        }
                         running = false
+                        if (completed) {
+                            upd("Completed! Claim your reward in the Discord app.", needed, RunState.DONE)
+                        } else {
+                            upd("Failed to complete. Try again.", needed, RunState.ERROR)
+                        }
+                        withContext(Dispatchers.Main) { onUpdate(cur) }
                     }
                 }
-
-                if (!completed) {
-                    try {
-                        retryApi {
-                            val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
-                            addQuestLog("API", "POST /video-progress (Final)", "Payload: $finalBody")
-                            val postReq = buildReq(
-                                "https://discord.com/api/v9/quests/$questId/video-progress",
-                                token, region, superProps, "https://discord.com/quest-home"
-                            ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
-                            val resp = http.newCall(postReq).execute()
-                            val respBody = resp.body?.string() ?: "{}"
-                            addQuestLog("API", "Response ${resp.code}", respBody.take(2000))
-                            JSONObject(respBody)
-                        }
-                    } catch (_: Exception) {}
-                }
-
-                done = needed
-                upd("Completed! Claim your reward in the Discord app.", done, RunState.DONE)
-                withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
             "PLAY_ACTIVITY" -> {
@@ -1233,13 +1291,12 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                             }
                         } catch (_: Exception) {}
                         running = false
+                        upd("Completed! Claim your reward in the Discord app.", needed, RunState.DONE)
+                        withContext(Dispatchers.Main) { onUpdate(cur) }
                     } else {
                         delay(20_000L)
                     }
                 }
-
-                upd("Completed! Claim your reward in the Discord app.", needed, RunState.DONE)
-                withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
             else -> {
@@ -2537,7 +2594,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                             } catch (_: Exception) { JSONObject() }
 
                                             completed = rj.optString("completed_at", "").isNotEmpty()
-                                            spoofDone = minOf(needed, timestamp)
+                                            spoofDone = rj.optJSONObject("progress")?.optJSONObject(quest.taskName)?.optLong("value", spoofDone) ?: minOf(needed, timestamp)
                                             if (spoofDone >= needed) completed = true
                                             val p = if (needed > 0) (spoofDone * 100 / needed).toInt() else 0
                                             withContext(Dispatchers.Main) { log = "${spoofDone}s / ${needed}s ($p%)" }
