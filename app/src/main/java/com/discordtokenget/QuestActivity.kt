@@ -1376,7 +1376,7 @@ private fun MoreMenuSheet(quest: QuestItem, ctx: Context, onDismiss: () -> Unit)
 @Composable
 private fun MoreItem(label: String, icon: ImageVector, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(icon, null, tint = DC.SubText, modifier = Modifier.size(16.dp)
+        Icon(icon, null, tint = DC.SubText, modifier = Modifier.size(16.dp))
         Text(label, fontSize = 14.sp, color = DC.White, modifier = Modifier.weight(1f))
     }
 }
