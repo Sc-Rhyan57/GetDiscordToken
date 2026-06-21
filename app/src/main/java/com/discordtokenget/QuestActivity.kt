@@ -583,7 +583,7 @@ class QuestActivity : ComponentActivity() {
 @Composable
 private fun TosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
     Dialog(onDismissRequest = onDecline, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxWidth(0.92f).clip(RoundedCornerShape(20.dp)).background(DC.Card).border(1.dp, DC.Warning.copy(0.3f), RoundedCornerShape(20.dp).padding(24.dp)) {
+        Box(Modifier.fillMaxWidth(0.92f).clip(RoundedCornerShape(20.dp)).background(DC.Card).border(1.dp, DC.Warning.copy(0.3f), RoundedCornerShape(20.dp)).padding(24.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.size(44.dp).background(DC.Warning.copy(0.12f), CircleShape), Alignment.Center) { Icon(Icons.Outlined.Warning, null, tint = DC.Warning, modifier = Modifier.size(22.dp)) }
