@@ -33,8 +33,7 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.awaitPointerEventScope
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.*
@@ -682,23 +681,22 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     val filterCount = listOf(fOrbs, fDecor, fInGame, fWatch, fPlay).count { it }
 
     Box(
-        Modifier.fillMaxSize().background(DC.Bg).pointerInput(Unit) {
-            var holdStart = 0L
-            awaitPointerEventScope {
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val activePointers = event.changes.count { it.pressed }
-                    if (activePointers >= 2) {
-                        if (holdStart == 0L) holdStart = System.currentTimeMillis()
-                        if (System.currentTimeMillis() - holdStart >= 6000) {
+        Modifier.fillMaxSize().background(DC.Bg).pointerInteropFilter { motionEvent ->
+            when (motionEvent.actionMasked) {
+                MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (motionEvent.pointerCount >= 2) {
+                        holdJob?.cancel()
+                        holdJob = scope.launch {
+                            delay(6000)
                             showDebug = true
-                            holdStart = 0L
                         }
-                    } else {
-                        holdStart = 0L
                     }
                 }
+                MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    holdJob?.cancel()
+                }
             }
+            false
         }
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -834,7 +832,7 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                                 clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", generatedProps))
                                 copiedField = "gerado"
                             }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copiar Gerado") }
-                            Button(onClick = { showWarning = true }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Definir como Cache") }
+                            Button(onClick = { showWarning = true }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Definir como Atual") }
                         }
                     }
 
