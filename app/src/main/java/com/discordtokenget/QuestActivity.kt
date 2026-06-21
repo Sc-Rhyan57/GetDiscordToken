@@ -978,8 +978,6 @@ private fun loadQuestsCache(ctx: Context): String? {
 
 private suspend fun apiFetch(token: String, region: Region, superProps: String, ctx: Context): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
     var attempts = 0
-    var retryDelay = 0L
-    
     while (true) {
         attempts++
         val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
@@ -1006,7 +1004,8 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String, 
         val orbBody = try {
             http.newCall(orbReq).execute().body?.string() ?: "{}"
         } catch (_: Exception) { "{}" }
-        return@withContext list to try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
+        val orbs = try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
+        return@withContext Pair(list, orbs)
     }
 }
 
@@ -1174,7 +1173,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                                 val postReq = buildReq(
                                     "https://discord.com/api/v9/quests/$questId/heartbeat",
                                     token, region, superProps
-                                ).post(finalBody.toRequestBody("application/json".toMediaType()).build()
+                                ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
                                 JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
                             }
                         } catch (_: Exception) {}
@@ -2304,7 +2303,7 @@ private fun CollectibleCard(c: CollectibleItem, gifLoader: ImageLoader, ctx: Con
             }
             if (c.summary.isNotEmpty()) { HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border); Text(c.summary, fontSize = 11.sp, color = DC.SubText, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) }
             HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border)
-            Text("Purchased ${fmtShort(parseIso(c.purchasedAt))}${if (c.expiresAt != null) "  ·  Expires ${fmtShort(parseIso(c.expiresAt))}" else ""}", fontSize = 10.sp, color = DC.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+            Text("Purchased ${fmtShort(parseIso(c.purchasedAt))}${if (c.expiresAt != null) "  ·  Expires ${fmtShort(parseIso(c.expiresAt))}" else ""}", fontSize = 10.sp, color = DC.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)")
         }
     }
 }
