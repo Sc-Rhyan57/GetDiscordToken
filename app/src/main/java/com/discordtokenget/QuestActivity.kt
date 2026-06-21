@@ -1174,7 +1174,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                                 val postReq = buildReq(
                                     "https://discord.com/api/v9/quests/$questId/heartbeat",
                                     token, region, superProps
-                                ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
+                                ).post(finalBody.toRequestBody("application/json".toMediaType()).build()
                                 JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
                             }
                         } catch (_: Exception) {}
@@ -2164,14 +2164,17 @@ private fun FiltersSheet(
         Spacer(Modifier.height(16.dp))
         SheetSection("Rewards")
         SheetGroup {
-            CheckRow("Orbs", to) { to = !to }; HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f)
-            CheckRow("Avatar decoration", td) { td = !td }; HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
+            CheckRow("Orbs", to) { to = !to }
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
+            CheckRow("Avatar decoration", td) { td = !td }
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
             CheckRow("In-game rewards", ti) { ti = !ti }
         }
         Spacer(Modifier.height(16.dp))
         SheetSection("Quest type")
         SheetGroup {
-            CheckRow("Play", tp) { tp = !tp }; HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
+            CheckRow("Play", tp) { tp = !tp }
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
             CheckRow("Watch", tw) { tw = !tw }
         }
         Spacer(Modifier.height(24.dp))
@@ -2301,7 +2304,7 @@ private fun CollectibleCard(c: CollectibleItem, gifLoader: ImageLoader, ctx: Con
             }
             if (c.summary.isNotEmpty()) { HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border); Text(c.summary, fontSize = 11.sp, color = DC.SubText, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) }
             HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border)
-            Text("Purchased ${fmtShort(parseIso(c.purchasedAt))}${if (c.expiresAt != null) "  ·  Expires ${fmtShort(parseIso(c.expiresAt))}" else ""}", fontSize = 10.sp, color = DC.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)")
+            Text("Purchased ${fmtShort(parseIso(c.purchasedAt))}${if (c.expiresAt != null) "  ·  Expires ${fmtShort(parseIso(c.expiresAt))}" else ""}", fontSize = 10.sp, color = DC.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
         }
     }
 }
