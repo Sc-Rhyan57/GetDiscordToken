@@ -8,20 +8,14 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.util.Base64
-import android.view.SurfaceHolder
-import android.view.SurfaceView
-import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.*
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -33,11 +27,9 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.*
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
@@ -63,7 +55,7 @@ private val http = OkHttpClient.Builder()
     .writeTimeout(30, TimeUnit.SECONDS)
     .build()
 
-private const val FALLBACK_SUPER_PROPS = "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTY7IE1vYmlsZTsgcnY6MTUyLjApIEdlY2tvLzE1Mi4wIEZpcmVmb3gvMTUyLjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNTIuMCIsIm9zX3ZlcnNpb24iOiIxNiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiIiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiIiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1NjUzMTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGwsImNsaWVudF9sYXVuY2hfaWQiOiI4ZWU3ZmU2My0zYTA1LTQwOGUtOTNhNi1kOWQ2MjlkZDQ4ZWUiLCJsYXVuY2hfc2lnbmF0dXJlIjoiNTc3OGFmMDMtYjYyMi00N2E1LTk1MTItM2IzY2QwYTRjM2I4IiwiY2xpZW50X2hlYXJ0YmVhdF9zZXNzaW9uX2lkIjoiOWFhNmZlMTgtM2RkNi00OTcyLWE0YjAtZWQwNGFjNThkZWQ2IiwiY2xpZW50X2FwcF9zdGF0ZSI6ImZvY3VzZWQifQ=="
+private const val EXACT_SUPER_PROPS = "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTY7IE1vYmlsZTsgcnY6MTUyLjApIEdlY2tvLzE1Mi4wIEZpcmVmb3gvMTUyLjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNTIuMCIsIm9zX3ZlcnNpb24iOiIxNiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiIiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiIiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1NjUzMTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGwsImNsaWVudF9sYXVuY2hfaWQiOiI4ZWU3ZmU2My0zYTA1LTQwOGUtOTNhNi1kOWQ2MjlkZDQ4ZWUiLCJsYXVuY2hfc2lnbmF0dXJlIjoiNTc3OGFmMDMtYjYyMi00N2E1LTk1MTItM2IzY2QwYTRjM2I4IiwiY2xpZW50X2hlYXJ0YmVhdF9zZXNzaW9uX2lkIjoiOWFhNmZlMTgtM2RkNi00OTcyLWE0YjAtZWQwNGFjNThkZWQ2IiwiY2xpZW50X2FwcF9zdGF0ZSI6ImZvY3VzZWQifQ=="
 
 private object DC {
     val Bg        = Color(0xFF0E0F13)
@@ -111,109 +103,22 @@ private fun addQuestLog(tag: String, message: String, detail: String? = null) {
     if (questLogs.size > 500) questLogs.removeAt(questLogs.size - 1)
 }
 
-private fun getCachedSuperProps(ctx: Context): String {
-    return ctx.getSharedPreferences("quest_app_cache", Context.MODE_PRIVATE)
-        .getString("super_props", FALLBACK_SUPER_PROPS) ?: FALLBACK_SUPER_PROPS
-}
-
-private fun saveCachedSuperProps(ctx: Context, props: String) {
-    ctx.getSharedPreferences("quest_app_cache", Context.MODE_PRIVATE)
-        .edit().putString("super_props", props).apply()
-}
-
-private fun buildReq(url: String, token: String, region: Region, superProps: String, referer: String = "https://discord.com/quest-home") =
+private fun buildReq(url: String, token: String, region: Region, referer: String = "https://discord.com/quest-home") =
     Request.Builder().url(url).apply {
         header("Authorization",         token)
         header("Content-Type",          "application/json")
         header("Accept",                "*/*")
         header("Accept-Language",       "${region.locale};q=0.9,en;q=0.8")
         header("Accept-Encoding",       "gzip, deflate, br, zstd")
-        header("User-Agent",            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
-        header("X-Super-Properties",    superProps)
+        header("User-Agent",            "Mozilla/5.0 (Android 16; Mobile; rv:152.0) Gecko/152.0 Firefox/152.0")
+        header("X-Super-Properties",    EXACT_SUPER_PROPS)
         header("X-Discord-Locale",      region.locale)
         header("X-Discord-Timezone",    region.timezone)
         header("X-Debug-Options",       "bugReporterEnabled")
         header("Referer",               referer)
         header("Origin",                "https://discord.com")
-        header("Sec-Ch-Ua",             "\"Google Chrome\";v=\"147\", \"Not.A/Brand\";v=\"8\", \"Chromium\";v=\"147\"")
-        header("Sec-Ch-Ua-Mobile",      "?0")
-        header("Sec-Ch-Ua-Platform",    "\"Windows\"")
-        header("Sec-Fetch-Dest",        "empty")
-        header("Sec-Fetch-Mode",        "cors")
-        header("Sec-Fetch-Site",        "same-origin")
         header("Priority",              "u=1, i")
     }
-
-private fun generateSuperPropsJson(region: Region, buildNumber: Int): String {
-    val json = JSONObject()
-    json.put("os", "Windows")
-    json.put("browser", "Chrome")
-    json.put("device", "")
-    json.put("system_locale", region.locale)
-    json.put("has_client_mods", false)
-    json.put("browser_user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
-    json.put("browser_version", "147.0.0.0")
-    json.put("os_version", "10")
-    json.put("referrer", "")
-    json.put("referring_domain", "")
-    json.put("referrer_current", "https://discord.com/")
-    json.put("referring_domain_current", "discord.com")
-    json.put("release_channel", "stable")
-    json.put("client_build_number", buildNumber)
-    json.put("client_event_source", null)
-    return Base64.encodeToString(json.toString().toByteArray(), Base64.NO_WRAP)
-}
-
-private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String = withContext(Dispatchers.IO) {
-    addQuestLog("SuperProps", "Buscando builds em discord.sale/api/builds...")
-    var attempts = 0
-    var resultProps = ""
-    
-    while (attempts < 3 && resultProps.isEmpty()) {
-        attempts++
-        try {
-            val req = Request.Builder().url("https://discord.sale/api/builds").build()
-            val resp = http.newCall(req).execute()
-            val body = resp.body?.string() ?: ""
-            if (resp.isSuccessful && body.isNotEmpty()) {
-                val arr = JSONObject(body).optJSONArray("builds")
-                if (arr != null && arr.length() > 0) {
-                    var latestDate = 0L
-                    var buildNumber = 0
-                    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
-                    
-                    for (i in 0 until arr.length()) {
-                        val b = arr.getJSONObject(i)
-                        val dateStr = b.optString("build_date")
-                        val date = try { sdf.parse(dateStr)?.time ?: 0L } catch (_: Exception) { 0L }
-                        if (date > latestDate) {
-                            latestDate = date
-                            buildNumber = b.optInt("build_number")
-                        }
-                    }
-                    
-                    if (buildNumber != 0) {
-                        addQuestLog("SuperProps", "Build mais recente encontrada: $buildNumber")
-                        resultProps = generateSuperPropsJson(region, buildNumber)
-                        saveCachedSuperProps(ctx, resultProps)
-                        addQuestLog("SuperProps", "Gerado e salvo no cache com sucesso!")
-                    }
-                }
-            } else {
-                addQuestLog("SuperProps", "Tentativa $attempts falhou (HTTP ${resp.code})")
-            }
-        } catch (e: Exception) {
-            addQuestLog("SuperProps", "Erro na tentativa $attempts: ${e.message}")
-        }
-    }
-    
-    if (resultProps.isEmpty()) {
-        addQuestLog("SuperProps", "Todas as tentativas falharam. Usando cache local.")
-        resultProps = getCachedSuperProps(ctx)
-    }
-    
-    return@withContext resultProps
-}
 
 private val isoFmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).also {
     it.timeZone = TimeZone.getTimeZone("UTC")
@@ -337,9 +242,9 @@ private fun parseQuest(q: JSONObject): QuestItem? {
     )
 }
 
-private suspend fun apiFetch(token: String, region: Region, superProps: String): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
+private suspend fun apiFetch(token: String, region: Region): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
     val now  = System.currentTimeMillis()
-    val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
+    val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, "https://discord.com/quest-home?tab=all").build()
     addQuestLog("API", "GET /quests/@me", "Headers:\n${req.headers}")
     val resp = http.newCall(req).execute()
     val body = resp.body?.string() ?: ""
@@ -361,24 +266,24 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String):
         }
     }
     
-    val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps).build()
+    val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region).build()
     val orbBody = try {
         http.newCall(orbReq).execute().body?.string() ?: "{}"
     } catch (_: Exception) { "{}" }
     list to try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
 }
 
-private suspend fun apiFirstDm(token: String, region: Region, superProps: String): String? = withContext(Dispatchers.IO) {
+private suspend fun apiFirstDm(token: String, region: Region): String? = withContext(Dispatchers.IO) {
     try {
-        val req = buildReq("https://discord.com/api/v9/users/@me/channels", token, region, superProps).build()
+        val req = buildReq("https://discord.com/api/v9/users/@me/channels", token, region).build()
         val arr = JSONArray(http.newCall(req).execute().body?.string() ?: "[]")
         if (arr.length() > 0) arr.getJSONObject(0).optString("id").takeIf { it.isNotEmpty() } else null
     } catch (_: Exception) { null }
 }
 
-private suspend fun apiCollectibles(token: String, region: Region, superProps: String): JSONArray = withContext(Dispatchers.IO) {
+private suspend fun apiCollectibles(token: String, region: Region): JSONArray = withContext(Dispatchers.IO) {
     try {
-        JSONArray(http.newCall(buildReq("https://discord.com/api/v9/users/@me/collectibles-purchases", token, region, superProps).build()).execute().body?.string() ?: "[]")
+        JSONArray(http.newCall(buildReq("https://discord.com/api/v9/users/@me/collectibles-purchases", token, region).build()).execute().body?.string() ?: "[]")
     } catch (_: Exception) { JSONArray() }
 }
 
@@ -394,7 +299,7 @@ private suspend fun retryApi(maxAttempts: Int = 5, initialDelayMs: Long = 500, m
     }
 }
 
-private suspend fun runComplete(token: String, region: Region, superProps: String, state: QuestState, onUpdate: (QuestState) -> Unit) {
+private suspend fun runComplete(token: String, region: Region, state: QuestState, onUpdate: (QuestState) -> Unit) {
     val q = state.quest; val questId = q.id; val taskName = q.taskName; val needed = q.secondsNeeded
     var done = q.secondsDone
     var cur  = state.copy(runState = RunState.RUNNING, log = "Starting...", progress = done)
@@ -437,7 +342,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                         retryApi {
                             val postReq = buildReq(
                                 "https://discord.com/api/v9/quests/$questId/video-progress",
-                                token, region, superProps, "https://discord.com/quest-home"
+                                token, region, "https://discord.com/quest-home"
                             ).post(reqBody).build()
                             val postResp = http.newCall(postReq).execute()
                             val postBody = postResp.body?.string() ?: "{}"
@@ -469,7 +374,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                             addQuestLog("API", "POST /video-progress (Final)", "Payload: $finalBody")
                             val postReq = buildReq(
                                 "https://discord.com/api/v9/quests/$questId/video-progress",
-                                token, region, superProps, "https://discord.com/quest-home"
+                                token, region, "https://discord.com/quest-home"
                             ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
                             val resp = http.newCall(postReq).execute()
                             val respBody = resp.body?.string() ?: "{}"
@@ -485,7 +390,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
             }
 
             "PLAY_ACTIVITY" -> {
-                val channelId = apiFirstDm(token, region, superProps) ?: throw Exception("No DM channel found.")
+                val channelId = apiFirstDm(token, region) ?: throw Exception("No DM channel found.")
                 val streamKey = "call:$channelId:1"
                 upd("Syncing activity progress...", done)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
@@ -500,7 +405,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                         retryApi {
                             val postReq = buildReq(
                                 "https://discord.com/api/v9/quests/$questId/heartbeat",
-                                token, region, superProps
+                                token, region
                             ).post(reqBody).build()
                             val resp = http.newCall(postReq).execute()
                             val respBody = resp.body?.string() ?: "{}"
@@ -527,7 +432,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                                 val finalBody = JSONObject().put("stream_key", streamKey).put("terminal", true).toString()
                                 val postReq = buildReq(
                                     "https://discord.com/api/v9/quests/$questId/heartbeat",
-                                    token, region, superProps
+                                    token, region
                                 ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
                                 JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
                             }
@@ -609,8 +514,6 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     var videoQuest  by remember { mutableStateOf<QuestItem?>(null) }
     var moreQuest   by remember { mutableStateOf<QuestItem?>(null) }
     var region      by remember { mutableStateOf(REGIONS[0]) }
-    val ctx         = LocalContext.current
-    var superProps  by remember { mutableStateOf(getCachedSuperProps(ctx)) }
     var sortMode    by remember { mutableIntStateOf(0) }
     var fOrbs       by remember { mutableStateOf(false) }
     var fDecor      by remember { mutableStateOf(false) }
@@ -619,23 +522,14 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     var fPlay       by remember { mutableStateOf(false) }
     val states      = remember { mutableStateListOf<QuestState>() }
     var showDebug   by remember { mutableStateOf(false) }
+    
+    var titleClicks by remember { mutableIntStateOf(0) }
+    var lastClickTime by remember { mutableStateOf(0L) }
 
     LaunchedEffect(refreshKey, region) {
         loading = true; fetchError = null; states.clear(); orbBalance = null
         try {
-            var (list, orbs) = apiFetch(token, region, superProps)
-            
-            if (list.isEmpty()) {
-                addQuestLog("WARN", "Quests Empty", "Tentando buscar novo SuperProps...")
-                val newProps = fetchDynamicSuperProps(ctx, region)
-                if (newProps.isNotEmpty() && newProps != superProps) {
-                    superProps = newProps
-                    val retryResult = apiFetch(token, region, newProps)
-                    list = retryResult.first
-                    orbs = retryResult.second
-                }
-            }
-
+            val (list, orbs) = apiFetch(token, region)
             states.addAll(list.map { q ->
                 val rs = when {
                     q.completedAt != null && q.claimedAt == null -> RunState.DONE
@@ -687,8 +581,18 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                     CoroutineScope(Dispatchers.IO).launch {
                         states.forEachIndexed { idx, st ->
                             if (st.runState == RunState.IDLE)
-                                runComplete(token, region, superProps, st) { upd -> if (idx < states.size) states[idx] = upd }
+                                runComplete(token, region, st) { upd -> if (idx < states.size) states[idx] = upd }
                         }
+                    }
+                },
+                onTitleClick = {
+                    val now = System.currentTimeMillis()
+                    if (now - lastClickTime > 2000) titleClicks = 0
+                    lastClickTime = now
+                    titleClicks++
+                    if (titleClicks >= 4) {
+                        titleClicks = 0
+                        showDebug = true
                     }
                 }
             )
@@ -696,7 +600,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                 loading            -> LoadingPane()
                 fetchError != null -> ErrorPane(fetchError!!) { refreshKey++ }
                 else               -> QuestList(
-                    displayed, token, region, superProps,
+                    displayed, token, region,
                     onUpdate = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd },
                     onWatch  = { videoQuest = it },
                     onMore   = { moreQuest  = it }
@@ -707,132 +611,41 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
             sortMode = sortMode, fOrbs = fOrbs, fDecor = fDecor, fInGame = fInGame, fWatch = fWatch, fPlay = fPlay,
             onApply   = { sm, o, d, ig, w, p -> sortMode = sm; fOrbs = o; fDecor = d; fInGame = ig; fWatch = w; fPlay = p; showFilters = false },
             onReset   = { sortMode = 0; fOrbs = false; fDecor = false; fInGame = false; fWatch = false; fPlay = false },
-            onDismiss = { showFilters = false },
-            onShowDebug = { showFilters = false; showDebug = true }
+            onDismiss = { showFilters = false }
         )
         if (showRegion) RegionSheet(region, onSelect = { region = it; showRegion = false; refreshKey++ }, onDismiss = { showRegion = false })
-        if (showCollect) CollectiblesScreen(token, region, superProps, onDismiss = { showCollect = false })
+        if (showCollect) CollectiblesScreen(token, region, onDismiss = { showCollect = false })
         videoQuest?.let { q ->
-            VideoPlayerDialog(q, token, region, superProps,
+            VideoPlayerDialog(q, token, region,
                 onDismiss  = { videoQuest = null },
                 onComplete = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd; videoQuest = null })
         }
         moreQuest?.let { MoreMenuSheet(it, LocalContext.current, onDismiss = { moreQuest = null }) }
         
         if (showDebug) {
-            DebugScreen(token, region, superProps, onClose = { showDebug = false }, onPropsUpdated = { superProps = it })
+            DebugScreen(token, region, onClose = { showDebug = false })
         }
     }
 }
 
 @Composable
-private fun DebugScreen(token: String, region: Region, activeProps: String, onClose: () -> Unit, onPropsUpdated: (String) -> Unit) {
-    val ctx = LocalContext.current
+private fun DebugScreen(token: String, region: Region, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    
-    var currentActiveProps by remember { mutableStateOf(activeProps) }
-    var customBuildInput by remember { mutableStateOf("") }
-    var generatedProps by remember { mutableStateOf("") }
     var testResult by remember { mutableStateOf("") }
-    var showWarning by remember { mutableStateOf(false) }
-    var copiedField by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(DC.Bg)) {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().background(DC.Surface).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White) }
-                    Text("Debug & Testes", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = DC.White)
+                    Text("Debug & Logs", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = DC.White)
                 }
                 
                 Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     
-                    Text("Super Properties Atual no Cache:", color = DC.Primary, fontWeight = FontWeight.Bold)
+                    Text("X-Super-Properties (Fixo do YAY.txt):", color = DC.Primary, fontWeight = FontWeight.Bold)
                     Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
-                        Text(currentActiveProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", currentActiveProps))
-                            copiedField = "ativo"
-                        }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copiar Atual") }
-                        Button(onClick = {
-                            scope.launch {
-                                currentActiveProps = fetchDynamicSuperProps(ctx, region)
-                                onPropsUpdated(currentActiveProps)
-                            }
-                        }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Buscar da API") }
-                    }
-                    
-                    if (copiedField.isNotEmpty()) {
-                        Text("Copiado para a área de transferência!", color = DC.Success, fontSize = 12.sp)
-                    }
-
-                    HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
-                    
-                    Text("Gerador de Super Properties:", color = DC.Warning, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = customBuildInput,
-                        onValueChange = { customBuildInput = it.filter { c -> c.isDigit() } },
-                        label = { Text("Client Build Number") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            scope.launch {
-                                val build = customBuildInput.toIntOrNull()
-                                if (build != null) {
-                                    generatedProps = generateSuperPropsJson(region, build)
-                                    addQuestLog("SuperProps", "Gerado customizado para build $build")
-                                } else {
-                                    addQuestLog("ERROR", "Build inválida")
-                                }
-                            }
-                        }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Gerar") }
-                        
-                        Button(onClick = {
-                            scope.launch {
-                                currentActiveProps = fetchDynamicSuperProps(ctx, region)
-                                customBuildInput = try { JSONObject(String(Base64.decode(currentActiveProps, Base64.DEFAULT))).optInt("client_build_number").toString() } catch (_: Exception) { "" }
-                                generatedProps = currentActiveProps
-                            }
-                        }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Puxar Build Mais Recente") }
-                    }
-                    
-                    if (generatedProps.isNotEmpty()) {
-                        Text("Props Gerado:", color = DC.Success, fontWeight = FontWeight.Bold)
-                        Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
-                            Text(generatedProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", generatedProps))
-                                copiedField = "gerado"
-                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copiar Gerado") }
-                            Button(onClick = { showWarning = true }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Definir como Cache") }
-                        }
-                    }
-
-                    if (showWarning) {
-                        Card(colors = CardDefaults.cardColors(containerColor = DC.Error.copy(0.2f)), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text("Aviso", color = DC.Error, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("Não é recomendado usar Super Properties personalizadas, pois o Discord pode bloquear requisições de builds antigas. Deseja continuar mesmo assim?", color = DC.SubText, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick = {
-                                        saveCachedSuperProps(ctx, generatedProps)
-                                        currentActiveProps = generatedProps
-                                        onPropsUpdated(generatedProps)
-                                        showWarning = false
-                                        addQuestLog("SuperProps", "Cache substituído pelo valor customizado manualmente!")
-                                    }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Definir mesmo assim") }
-                                    OutlinedButton(onClick = { showWarning = false }) { Text("Cancelar") }
-                                }
-                            }
-                        }
+                        Text(EXACT_SUPER_PROPS, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
                     }
 
                     HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
@@ -841,7 +654,7 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                     Button(onClick = {
                         scope.launch {
                             try {
-                                val (list, orbs) = apiFetch(token, region, currentActiveProps)
+                                val (list, orbs) = apiFetch(token, region)
                                 testResult = "Sucesso! Quests: ${list.size}, Orbs: $orbs"
                             } catch (e: Exception) {
                                 testResult = "Erro: ${e.message}"
@@ -874,7 +687,8 @@ private fun QuestHeader(
     orbBalance: Int?, region: Region,
     onBack: () -> Unit, onFilter: () -> Unit, onCollect: () -> Unit,
     onRegion: () -> Unit, onRefresh: () -> Unit,
-    filterCount: Int, canCompleteAll: Boolean, onCompleteAll: () -> Unit
+    filterCount: Int, canCompleteAll: Boolean, onCompleteAll: () -> Unit,
+    onTitleClick: () -> Unit
 ) {
     Box(Modifier.fillMaxWidth().height(240.dp)) {
         AndroidView(
@@ -917,7 +731,13 @@ private fun QuestHeader(
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("${region.flag}  ${region.label}", fontSize = 11.sp, color = DC.Muted, fontWeight = FontWeight.Medium)
-                Text("Quests", fontWeight = FontWeight.ExtraBold, fontSize = 28.sp, color = DC.White)
+                Text(
+                    "Quests", 
+                    fontWeight = FontWeight.ExtraBold, 
+                    fontSize = 28.sp, 
+                    color = DC.White,
+                    modifier = Modifier.clickable { onTitleClick() }
+                )
                 if (orbBalance != null && orbBalance > 0) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Box(Modifier.size(6.dp).background(DC.OrbViolet, CircleShape))
@@ -946,7 +766,7 @@ private fun TopBarBtn(icon: ImageVector, onClick: () -> Unit) {
 
 @Composable
 private fun QuestList(
-    displayed: List<QuestState>, token: String, region: Region, superProps: String,
+    displayed: List<QuestState>, token: String, region: Region,
     onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit
 ) {
     if (displayed.isEmpty()) {
@@ -961,13 +781,13 @@ private fun QuestList(
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Spacer(Modifier.height(10.dp)) }
-        items(displayed, key = { it.quest.id }) { state -> QuestCard(state, token, region, superProps, onUpdate, onWatch, onMore) }
+        items(displayed, key = { it.quest.id }) { state -> QuestCard(state, token, region, onUpdate, onWatch, onMore) }
         item { Spacer(Modifier.height(32.dp)) }
     }
 }
 
 @Composable
-private fun QuestCard(state: QuestState, token: String, region: Region, superProps: String, onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit) {
+private fun QuestCard(state: QuestState, token: String, region: Region, onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit) {
     val ctx   = LocalContext.current
     val q     = state.quest
     val scope = rememberCoroutineScope()
@@ -1048,7 +868,7 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                     else -> {
                         val isVideo = q.taskName.contains("WATCH")
                         PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f), shimX) {
-                            scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
+                            scope.launch(Dispatchers.IO) { runComplete(token, region, state, onUpdate) }
                         }
                         if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
                     }
@@ -1083,12 +903,10 @@ private fun FiltersSheet(
     sortMode: Int, fOrbs: Boolean, fDecor: Boolean, fInGame: Boolean, fWatch: Boolean, fPlay: Boolean,
     onApply: (Int, Boolean, Boolean, Boolean, Boolean, Boolean) -> Unit, 
     onReset: () -> Unit, 
-    onDismiss: () -> Unit,
-    onShowDebug: () -> Unit
+    onDismiss: () -> Unit
 ) {
     var ts by remember { mutableIntStateOf(sortMode) }; var to by remember { mutableStateOf(fOrbs) }; var td by remember { mutableStateOf(fDecor) }
     var ti by remember { mutableStateOf(fInGame) }; var tw by remember { mutableStateOf(fWatch) }; var tp by remember { mutableStateOf(fPlay) }
-    val scope = rememberCoroutineScope()
     
     BottomSheet(onDismiss) {
         SheetHandle()
@@ -1112,18 +930,7 @@ private fun FiltersSheet(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(
                 onClick = { onReset() },
-                modifier = Modifier.weight(1f).height(52.dp).pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = {
-                            val job = scope.launch {
-                                delay(4000)
-                                onShowDebug()
-                            }
-                            tryAwaitRelease()
-                            job.cancel()
-                        }
-                    )
-                },
+                modifier = Modifier.weight(1f).height(52.dp),
                 shape = RoundedCornerShape(26.dp),
                 border = BorderStroke(1.dp, DC.Border)
             ) { Text("Reset", color = DC.Muted, fontWeight = FontWeight.Bold) }
@@ -1184,13 +991,13 @@ private fun BottomSheet(onDismiss: () -> Unit, content: @Composable ColumnScope.
 }
 
 @Composable
-private fun CollectiblesScreen(token: String, region: Region, superProps: String, onDismiss: () -> Unit) {
+private fun CollectiblesScreen(token: String, region: Region, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     var loading by remember { mutableStateOf(true) }
     var items   by remember { mutableStateOf(listOf<CollectibleItem>()) }
     val gifLoader = remember(ctx) { ImageLoader.Builder(ctx).components { if (Build.VERSION.SDK_INT >= 28) add(ImageDecoderDecoder.Factory()) else add(GifDecoder.Factory()) }.build() }
     LaunchedEffect(Unit) {
-        val arr  = apiCollectibles(token, region, superProps)
+        val arr  = apiCollectibles(token, region)
         val list = mutableListOf<CollectibleItem>()
         for (i in 0 until arr.length()) {
             try {
@@ -1252,7 +1059,7 @@ private fun CollectibleCard(c: CollectibleItem, gifLoader: ImageLoader, ctx: Con
 }
 
 @Composable
-private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, superProps: String, onDismiss: () -> Unit, onComplete: (QuestState) -> Unit) {
+private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, onDismiss: () -> Unit, onComplete: (QuestState) -> Unit) {
     val scope = rememberCoroutineScope(); val needed = quest.secondsNeeded
     var spoofDone   by remember { mutableLongStateOf(quest.secondsDone) }
     var log         by remember { mutableStateOf("Preparing video...") }
@@ -1296,7 +1103,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                             val rj = try {
                                                 val postReq = buildReq(
                                                     "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                                                    token, region, superProps, "https://discord.com/quest-home"
+                                                    token, region, "https://discord.com/quest-home"
                                                 ).post(reqBody).build()
                                                 val resp = http.newCall(postReq).execute()
                                                 val respBody = resp.body?.string() ?: "{}"
@@ -1315,7 +1122,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                                         val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
                                                         val postReq = buildReq(
                                                             "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                                                            token, region, superProps, "https://discord.com/quest-home"
+                                                            token, region, "https://discord.com/quest-home"
                                                         ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
                                                         JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
                                                     } catch (_: Exception) {}
