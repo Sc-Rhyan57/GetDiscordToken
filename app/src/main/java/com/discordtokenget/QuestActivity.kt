@@ -416,6 +416,7 @@ private const val HOOK_JS = """
 })();
 """
 
+// Js Method -- By @aamiaa( https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb )
 private const val QUEST_COMPLETE_JS = """
 (function() {
     try {
@@ -1150,6 +1151,7 @@ private suspend fun claimReward(token: String, region: Region, superProps: Strin
     return@withContext Pair(json, null)
 }
 
+// NATIVE METHOD -- by @Sc-rhyan57
 private suspend fun runComplete(token: String, region: Region, superProps: String, state: QuestState, onUpdate: (QuestState) -> Unit) {
     val q = state.quest; val questId = q.id; val taskName = q.taskName; val needed = q.secondsNeeded
     var done = q.secondsDone
@@ -1207,12 +1209,12 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     }
 
                     var completed = rj.optString("completed_at", "").isNotEmpty()
-                    done = rj.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", done) ?: done
+                    done = minOf(needed, timestamp)
 
                     upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                    if (timestamp >= needed || done >= needed) {
+                    if (timestamp >= needed) {
                         if (!completed) {
                             try {
                                 val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
@@ -1226,7 +1228,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                                 addQuestLog("API", "Response ${resp.code}", respBody.take(2000))
                                 val finalJson = JSONObject(respBody)
                                 completed = finalJson.optString("completed_at", "").isNotEmpty()
-                                done = finalJson.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", done) ?: done
+                                done = needed
                             } catch (_: Exception) {}
                         }
                         running = false
