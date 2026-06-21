@@ -2431,7 +2431,7 @@ private fun RegionSheet(current: Region, onSelect: (Region) -> Unit, onDismiss: 
                 Row(Modifier.fillMaxWidth().clickable { onSelect(reg) }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(reg.flag, fontSize = 14.sp, color = DC.SubText, fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
                     Text(reg.label, color = DC.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    if (reg.locale == current.locale && reg.timezone == current.timezone) Icon(Icons.Outlined.Check, null, tint = DC.Primary, modifier = Modifier.size(16.dp)
+                    if (reg.locale == current.locale && reg.timezone == current.timezone) Icon(Icons.Outlined.Check, null, tint = DC.Primary, modifier = Modifier.size(16.dp))
                 }
                 if (idx < REGIONS.lastIndex) HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
             }
