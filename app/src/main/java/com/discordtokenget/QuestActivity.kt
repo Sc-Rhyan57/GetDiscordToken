@@ -1115,6 +1115,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
             "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
                 upd("Syncing video progress...", done)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
+                var completed = false
                 var running = true
 
                 while (running) {
@@ -1146,38 +1147,37 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                         return@runComplete
                     }
 
-                    var completed = rj.optString("completed_at", "").isNotEmpty()
+                    completed = rj.optString("completed_at", "").isNotEmpty()
                     done = minOf(needed, timestamp)
 
                     upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
 
                     if (timestamp >= needed) {
-                        if (!completed) {
-                            try {
-                                val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
-                                addQuestLog("API", "POST /video-progress (Final)", "Payload: $finalBody")
-                                val postReq = buildReq(
-                                    "https://discord.com/api/v9/quests/$questId/video-progress",
-                                    token, region, superProps, "https://discord.com/quest-home"
-                                ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
-                                val resp = http.newCall(postReq).execute()
-                                val respBody = resp.body?.string() ?: "{}"
-                                addQuestLog("API", "Response ${resp.code}", respBody.take(2000))
-                                val finalJson = JSONObject(respBody)
-                                completed = finalJson.optString("completed_at", "").isNotEmpty()
-                                done = needed
-                            } catch (_: Exception) {}
-                        }
                         running = false
-                        if (completed) {
-                            upd("Completed! Claim your reward in the Discord app.", needed, RunState.DONE)
-                        } else {
-                            upd("Failed to complete. Try again.", needed, RunState.ERROR)
-                        }
-                        withContext(Dispatchers.Main) { onUpdate(cur) }
                     }
                 }
+
+                if (!completed) {
+                    try {
+                        retryApi {
+                            val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
+                            addQuestLog("API", "POST /video-progress (Final)", "Payload: $finalBody")
+                            val postReq = buildReq(
+                                "https://discord.com/api/v9/quests/$questId/video-progress",
+                                token, region, superProps, "https://discord.com/quest-home"
+                            ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
+                            val resp = http.newCall(postReq).execute()
+                            val respBody = resp.body?.string() ?: "{}"
+                            addQuestLog("API", "Response ${resp.code}", respBody.take(2000))
+                            JSONObject(respBody)
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                done = needed
+                upd("Completed! Claim your reward in the Discord app.", done, RunState.DONE)
+                withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
             "PLAY_ACTIVITY" -> {
@@ -1214,8 +1214,6 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     else
                         rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
 
-                    if (done >= needed) running = false
-
                     upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
 
@@ -1231,12 +1229,13 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                             }
                         } catch (_: Exception) {}
                         running = false
-                        upd("Completed! Claim your reward in the Discord app.", needed, RunState.DONE)
-                        withContext(Dispatchers.Main) { onUpdate(cur) }
                     } else {
                         delay(20_000L)
                     }
                 }
+
+                upd("Completed! Claim your reward in the Discord app.", needed, RunState.DONE)
+                withContext(Dispatchers.Main) { onUpdate(cur) }
             }
 
             else -> {
@@ -2334,14 +2333,14 @@ private fun FiltersSheet(
             CheckRow("Orbs", to) { to = !to }
             HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
             CheckRow("Avatar decoration", td) { td = !td }
-            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f)
             CheckRow("In-game rewards", ti) { ti = !ti }
         }
         Spacer(Modifier.height(16.dp))
         SheetSection("Quest type")
         SheetGroup {
             CheckRow("Play", tp) { tp = !tp }
-            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f)
             CheckRow("Watch", tw) { tw = !tw }
         }
         Spacer(Modifier.height(24.dp))
