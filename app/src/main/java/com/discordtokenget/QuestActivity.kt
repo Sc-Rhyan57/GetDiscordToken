@@ -389,7 +389,7 @@ private const val HOOK_JS = """
                     if (typeof a === 'object') {
                         try { return JSON.stringify(a); } catch(e) { return String(a); }
                     }
-                    return String(a);
+                    return String(a)
                 }).join(' ');
                 safeCall(function() { AndroidHook.onConsoleLog(level.toUpperCase(), args); });
                 return orig.apply(console, arguments);
@@ -2191,8 +2191,8 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                     else -> {
                         val isVideo = q.taskName.contains("WATCH")
                         var showCompleteMenu by remember { mutableStateOf(false) }
-                        Box {
-                            PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f), shimX) {
+                        Box(modifier = Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f)) {
+                            PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.fillMaxSize(), shimX) {
                                 showCompleteMenu = true
                             }
                             DropdownMenu(
