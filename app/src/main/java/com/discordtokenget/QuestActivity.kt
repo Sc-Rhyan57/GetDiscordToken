@@ -416,7 +416,6 @@ private const val HOOK_JS = """
 })();
 """
 
-// Js Method -- By @aamiaa( https://gist.github.com/aamiaa/204cd9d42013ded9faf646fae7f89fbb )
 private const val QUEST_COMPLETE_JS = """
 (function() {
     try {
@@ -1151,7 +1150,6 @@ private suspend fun claimReward(token: String, region: Region, superProps: Strin
     return@withContext Pair(json, null)
 }
 
-// NATIVE METHOD -- by @Sc-rhyan57
 private suspend fun runComplete(token: String, region: Region, superProps: String, state: QuestState, onUpdate: (QuestState) -> Unit) {
     val q = state.quest; val questId = q.id; val taskName = q.taskName; val needed = q.secondsNeeded
     var done = q.secondsDone
@@ -2596,7 +2594,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                             } catch (_: Exception) { JSONObject() }
 
                                             completed = rj.optString("completed_at", "").isNotEmpty()
-                                            spoofDone = rj.optJSONObject("progress")?.optJSONObject(quest.taskName)?.optLong("value", spoofDone) ?: minOf(needed, timestamp)
+                                            spoofDone = minOf(needed, timestamp)
                                             if (spoofDone >= needed) completed = true
                                             val p = if (needed > 0) (spoofDone * 100 / needed).toInt() else 0
                                             withContext(Dispatchers.Main) { log = "${spoofDone}s / ${needed}s ($p%)" }
