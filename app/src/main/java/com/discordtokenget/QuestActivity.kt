@@ -419,7 +419,7 @@ private const val HOOK_JS = """
 private const val QUEST_COMPLETE_JS = """
 (function() {
     try {
-        delete window.$;
+        delete window.\$;
         let wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
         webpackChunkdiscord_app.pop();
 
@@ -462,7 +462,7 @@ private const val QUEST_COMPLETE_JS = """
                     await new Promise(resolve => setTimeout(resolve, remaining * 1000));
 
                     const timestamp = secondsDone + speed;
-                    const res = await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())}});
+                    const res = await api.post({url: '/quests/' + quest.id + '/video-progress', body: {timestamp: Math.min(secondsNeeded, timestamp + Math.random())}});
                     completed = res.body.completed_at != null;
                     secondsDone = Math.min(secondsNeeded, timestamp);
                     AndroidHook.onConsoleLog('INFO', 'Video progress: ' + secondsDone + '/' + secondsNeeded);
@@ -472,7 +472,7 @@ private const val QUEST_COMPLETE_JS = """
                     }
                 }
                 if(!completed) {
-                    const finalRes = await api.post({url: `/quests/${quest.id}/video-progress`, body: {timestamp: secondsNeeded}});
+                    const finalRes = await api.post({url: '/quests/' + quest.id + '/video-progress', body: {timestamp: secondsNeeded}});
                     completed = finalRes.body.completed_at != null;
                 }
                 if(completed) {
@@ -482,19 +482,19 @@ private const val QUEST_COMPLETE_JS = """
                 }
             };
             fn();
-            AndroidHook.onConsoleLog('INFO', `Spoofing video for ${questName}.`);
+            AndroidHook.onConsoleLog('INFO', 'Spoofing video for ' + questName + '.');
         } else if(taskName === "PLAY_ON_DESKTOP") {
             if(!isApp) {
                 AndroidHook.onConsoleLog('ERROR', "This no longer works in browser for non-video quests.");
             } else {
-                api.get({url: `/applications/public?application_ids=${applicationId}`}).then(res => {
+                api.get({url: '/applications/public?application_ids=' + applicationId}).then(res => {
                     const appData = res.body[0]
                     const exeName = appData.executables?.find(x => x.os === "win32")?.name?.replace(">","") ?? appData.name.replace(/[\/\\:*?"<>|]/g, "")
                     
                     const fakeGame = {
-                        cmdLine: `C:\\Program Files\\${appData.name}\\${exeName}`,
+                        cmdLine: 'C:\\Program Files\\' + appData.name + '\\' + exeName,
                         exeName,
-                        exePath: `c:/program files/${appData.name.toLowerCase()}/${exeName}`,
+                        exePath: 'c:/program files/' + appData.name.toLowerCase() + '/' + exeName,
                         hidden: false,
                         isLauncher: false,
                         id: applicationId,
@@ -514,7 +514,7 @@ private const val QUEST_COMPLETE_JS = """
                     
                     let fn = data => {
                         let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress.PLAY_ON_DESKTOP.value)
-                        AndroidHook.onConsoleLog('INFO', `Quest progress: ${progress}/${secondsNeeded}`)
+                        AndroidHook.onConsoleLog('INFO', 'Quest progress: ' + progress + '/' + secondsNeeded)
                         
                         if(progress >= secondsNeeded) {
                             AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + quest.id)
@@ -525,7 +525,7 @@ private const val QUEST_COMPLETE_JS = """
                         }
                     }
                     FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
-                    AndroidHook.onConsoleLog('INFO', `Spoofed your game to ${applicationName}.`)
+                    AndroidHook.onConsoleLog('INFO', 'Spoofed your game to ' + applicationName + '.')
                 })
             }
         } else if(taskName === "STREAM_ON_DESKTOP") {
@@ -541,7 +541,7 @@ private const val QUEST_COMPLETE_JS = """
                 
                 let fn = data => {
                     let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress.STREAM_ON_DESKTOP.value)
-                    AndroidHook.onConsoleLog('INFO', `Quest progress: ${progress}/${secondsNeeded}`)
+                    AndroidHook.onConsoleLog('INFO', 'Quest progress: ' + progress + '/' + secondsNeeded)
                     
                     if(progress >= secondsNeeded) {
                         AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + quest.id)
@@ -550,24 +550,24 @@ private const val QUEST_COMPLETE_JS = """
                     }
                 }
                 FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
-                AndroidHook.onConsoleLog('INFO', `Spoofed your stream to ${applicationName}.`)
+                AndroidHook.onConsoleLog('INFO', 'Spoofed your stream to ' + applicationName + '.')
             }
         } else if(taskName === "PLAY_ACTIVITY") {
             const channelId = ChannelStore.getSortedPrivateChannels()[0]?.id ?? Object.values(GuildChannelStore.getAllGuilds()).find(x => x != null && x.VOCAL.length > 0).VOCAL[0].channel.id
-            const streamKey = `call:${channelId}:1`
+            const streamKey = 'call:' + channelId + ':1'
             
             let fn = async () => {
                 AndroidHook.onConsoleLog('INFO', "Completing quest " + questName)
                 
                 while(true) {
-                    const res = await api.post({url: `/quests/${quest.id}/heartbeat`, body: {stream_key: streamKey, terminal: false}})
+                    const res = await api.post({url: '/quests/' + quest.id + '/heartbeat', body: {stream_key: streamKey, terminal: false}})
                     const progress = res.body.progress.PLAY_ACTIVITY.value
-                    AndroidHook.onConsoleLog('INFO', `Quest progress: ${progress}/${secondsNeeded}`)
+                    AndroidHook.onConsoleLog('INFO', 'Quest progress: ' + progress + '/' + secondsNeeded)
                     
                     await new Promise(resolve => setTimeout(resolve, 20 * 1000))
                     
                     if(progress >= secondsNeeded) {
-                        await api.post({url: `/quests/${quest.id}/heartbeat`, body: {stream_key: streamKey, terminal: true}})
+                        await api.post({url: '/quests/' + quest.id + '/heartbeat', body: {stream_key: streamKey, terminal: true}})
                         break
                     }
                 }
@@ -1009,7 +1009,7 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         enrolledAt  = us?.optString("enrolled_at")?.takeIf  { it.isNotEmpty() && it != "null" }
                       ?: us?.optString("enrolledAt")?.takeIf  { it.isNotEmpty() && it != "null" },
         completedAt = us?.optString("completed_at")?.takeIf { it.isNotEmpty() && it != "null" }
-                      ?: us?.optString("completedAt")?.takeIf { it.isNotEmpty() && it != "null" },
+                      ?: us?.optString("completedAt")?.takeIf { it.isNotEmpty() and it != "null" },
         claimedAt   = us?.optString("claimed_at")?.takeIf   { it.isNotEmpty() && it != "null" }
                       ?: us?.optString("claimedAt")?.takeIf   { it.isNotEmpty() && it != "null" },
         configVersion = configVersion,
@@ -2369,7 +2369,7 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
 }
 @Composable private fun StateChip(color: Color, icon: ImageVector, label: String, mod: Modifier) {
     Box(mod.height(46.dp).clip(RoundedCornerShape(12.dp)).background(color.copy(0.1f)).border(1.dp, color.copy(0.2f), RoundedCornerShape(12.dp)), Alignment.Center) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Icon(icon, null, tint = color, modifier = Modifier.size(14.dp)); Text(label, fontWeight = FontWeight.ExtraBold, color = color, fontSize = 13.sp) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Icon(icon, null, tint = color, modifier = Modifier.size(14.dp); Text(label, fontWeight = FontWeight.ExtraBold, color = color, fontSize = 13.sp) }
     }
 }
 
