@@ -133,37 +133,55 @@ private val pendingHttpRequests = mutableMapOf<String, HttpHookLog>()
 private var capturedSuperProps = mutableStateOf("")
 private var capturedBuildNumber = mutableStateOf(0)
 private var webViewReady = mutableStateOf(false)
+private var stopHooking = mutableStateOf(false)
+private var currentToken = ""
+
+private fun sanitizeText(text: String): String {
+    if (currentToken.isEmpty()) return text
+    return text.replace(currentToken, "[REDACTED BY DGT]")
+        .replace("\"token\":\"[^\"]+\"".toRegex(), "\"token\":\"[REDACTED BY DGT]\"")
+}
 
 private fun addQuestLog(tag: String, message: String, detail: String? = null) {
     val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
-    questLogs.add(0, QuestLog(ts, tag, message, detail))
+    val safeMsg = sanitizeText(message)
+    val safeDet = detail?.let { sanitizeText(it) }
+    questLogs.add(0, QuestLog(ts, tag, safeMsg, safeDet))
     if (questLogs.size > 500) questLogs.removeAt(questLogs.size - 1)
 }
 
 private fun addHttpHookLog(isRequest: Boolean, method: String, url: String, headers: String, body: String?, status: Int = 0, respHeaders: String = "", respBody: String = "") {
+    if (stopHooking.value) return
     val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+    val safeHeaders = sanitizeText(headers)
+    val safeBody = body?.let { sanitizeText(it) }
+    val safeRespHeaders = sanitizeText(respHeaders)
+    val safeRespBody = sanitizeText(respBody)
+
     if (isRequest) {
         val id = ++hookLogIdCounter
-        val log = HttpHookLog(id, ts, method, url, headers, body, 0, "", "")
+        val log = HttpHookLog(id, ts, method, url, safeHeaders, safeBody, 0, "", "")
         val key = "$method:$url"
         pendingHttpRequests[key] = log
     } else {
         val key = "$method:$url"
         val pending = pendingHttpRequests.remove(key)
         if (pending != null) {
-            val complete = pending.copy(responseStatus = status, responseHeaders = respHeaders, responseBody = respBody)
+            val complete = pending.copy(responseStatus = status, responseHeaders = safeRespHeaders, responseBody = safeRespBody)
             httpHookLogs.add(0, complete)
         } else {
             val id = ++hookLogIdCounter
-            httpHookLogs.add(0, HttpHookLog(id, ts, method, url, "", "", status, respHeaders, respBody))
+            httpHookLogs.add(0, HttpHookLog(id, ts, method, url, "", "", status, safeRespHeaders, safeRespBody))
         }
         if (httpHookLogs.size > 200) httpHookLogs.removeAt(httpHookLogs.size - 1)
     }
 }
 
 private fun addConsoleLog(level: String, message: String) {
+    if (stopHooking.value && level != "SUCCESS" && level != "ERROR") return
     val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
-    consoleLogs.add(0, ConsoleLogEntry(ts, level, message))
+    val safeMsg = sanitizeText(message)
+    consoleLogs.add(0, ConsoleLogEntry(ts, level, safeMsg))
     if (consoleLogs.size > 300) consoleLogs.removeAt(consoleLogs.size - 1)
 }
 
@@ -564,6 +582,9 @@ class QuestWebLoader(private val ctx: Context, private val token: String) {
                         addHttpHookLog(false, method, url, "", "", status, headers, body)
                         addQuestLog("HTTP", "Response $status $url", body.take(2000))
                         if (url.contains("/quests/@me") || url.contains("/quests?")) {
+                            if (status == 200) {
+                                stopHooking.value = true
+                            }
                             scope.launch {
                                 onQuestData?.invoke(body)
                             }
@@ -664,6 +685,7 @@ class QuestWebLoader(private val ctx: Context, private val token: String) {
     fun getWebView(): WebView? = webView
 
     fun reload() {
+        stopHooking.value = false
         mainHandler.post {
             webView?.reload()
         }
@@ -720,7 +742,6 @@ private fun buildReq(url: String, token: String, region: Region, superProps: Str
         header("Content-Type",          "application/json")
         header("Accept",                "*/*")
         header("Accept-Language",       "${region.locale};q=0.9,en;q=0.8")
-        header("Accept-Encoding",       "gzip, deflate, br, zstd")
         header("User-Agent",            "Mozilla/5.0 (Android 16; Mobile; rv:152.0) Gecko/152.0 Firefox/152.0")
         header("X-Super-Properties",    superProps)
         header("X-Discord-Locale",      region.locale)
@@ -947,21 +968,46 @@ private fun parseQuestsFromJson(body: String): List<QuestItem> {
     return list
 }
 
-private suspend fun apiFetch(token: String, region: Region, superProps: String): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
-    val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
-    addQuestLog("API", "GET /quests/@me", "Headers:\n${req.headers}")
-    val resp = http.newCall(req).execute()
-    val body = resp.body?.string() ?: ""
-    addQuestLog("API", "Response ${resp.code}", body.take(2000))
-    if (!resp.isSuccessful) throw Exception(try { JSONObject(body).optString("message", "HTTP ${resp.code}") } catch (_: Exception) { "HTTP ${resp.code}" })
+private fun saveQuestsCache(ctx: Context, body: String) {
+    ctx.getSharedPreferences("quest_cache", Context.MODE_PRIVATE).edit().putString("quests", body).apply()
+}
 
-    val list = parseQuestsFromJson(body)
+private fun loadQuestsCache(ctx: Context): String? {
+    return ctx.getSharedPreferences("quest_cache", Context.MODE_PRIVATE).getString("quests", null)
+}
 
-    val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps).build()
-    val orbBody = try {
-        http.newCall(orbReq).execute().body?.string() ?: "{}"
-    } catch (_: Exception) { "{}" }
-    list to try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
+private suspend fun apiFetch(token: String, region: Region, superProps: String, ctx: Context): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
+    var attempts = 0
+    var retryDelay = 0L
+    
+    while (true) {
+        attempts++
+        val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
+        addQuestLog("API", "GET /quests/@me", "Headers:\n${req.headers}")
+        val resp = http.newCall(req).execute()
+        val body = resp.body?.string() ?: ""
+        
+        if (resp.code == 429) {
+            val retryAfter = try { JSONObject(body).optDouble("retry_after", 5.0).toLong() } catch (_: Exception) { 5L }
+            addQuestLog("WARN", "Rate Limited", "429 Too Many Requests. Retrying in $retryAfter seconds...")
+            delay(retryAfter * 1000 + 500)
+            continue
+        }
+        
+        addQuestLog("API", "Response ${resp.code}", body.take(2000))
+        if (!resp.isSuccessful) throw Exception(try { JSONObject(body).optString("message", "HTTP ${resp.code}") } catch (_: Exception) { "HTTP ${resp.code}" })
+
+        saveQuestsCache(ctx, body)
+        stopHooking.value = true
+
+        val list = parseQuestsFromJson(body)
+
+        val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps).build()
+        val orbBody = try {
+            http.newCall(orbReq).execute().body?.string() ?: "{}"
+        } catch (_: Exception) { "{}" }
+        return@withContext list to try { JSONObject(orbBody).optInt("balance", -1).takeIf { it >= 0 } } catch (_: Exception) { null }
+    }
 }
 
 private suspend fun apiFirstDm(token: String, region: Region, superProps: String): String? = withContext(Dispatchers.IO) {
@@ -1050,10 +1096,12 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     completed = rj.optString("completed_at", "").isNotEmpty()
                     done = minOf(needed, timestamp)
 
+                    if (done >= needed) completed = true
+
                     upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                    if (timestamp >= needed) {
+                    if (timestamp >= needed || completed) {
                         running = false
                     }
                 }
@@ -1114,6 +1162,8 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     else
                         rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
 
+                    if (done >= needed) running = false
+
                     upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
 
@@ -1161,6 +1211,7 @@ class QuestActivity : ComponentActivity() {
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
         val token = intent.getStringExtra(EXTRA_TOKEN) ?: run { finish(); return }
+        currentToken = token
         loadLogsFromCache(this)
         webLoader = QuestWebLoader(this, token)
         setContent {
@@ -1238,7 +1289,47 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
     val capturedBuild by capturedBuildNumber
     val wvReady by webViewReady
 
+    LaunchedEffect(capturedBuild) {
+        if (capturedBuild > 0) {
+            val prefs = ctx.getSharedPreferences("quest_app_cache", Context.MODE_PRIVATE)
+            val lastBuild = prefs.getInt("last_build", 0)
+            if (lastBuild != 0 && lastBuild != capturedBuild) {
+                addQuestLog("UPDATE", "Discord Updated!", "The client updated! Version b: $lastBuild --> version a: $capturedBuild")
+            }
+            if (lastBuild != capturedBuild) {
+                prefs.edit().putInt("last_build", capturedBuild).apply()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
+        val cached = loadQuestsCache(ctx)
+        if (cached != null) {
+            try {
+                val list = withContext(Dispatchers.Default) { parseQuestsFromJson(cached) }
+                states.clear()
+                states.addAll(list.map { q ->
+                    val rs = when {
+                        q.completedAt != null || (q.secondsNeeded > 0 && q.secondsDone >= q.secondsNeeded) -> RunState.DONE
+                        q.taskName !in MOBILE -> RunState.DESKTOP_ONLY
+                        q.enrolledAt == null  -> RunState.NOT_ENROLLED
+                        else -> RunState.IDLE
+                    }
+                    QuestState(
+                        quest = q, runState = rs, progress = q.secondsDone,
+                        log = when (rs) {
+                            RunState.DONE         -> "Completed! Claim in the Discord app."
+                            RunState.DESKTOP_ONLY -> "Requires Desktop app."
+                            RunState.NOT_ENROLLED -> "Accept the quest in the Discord app first."
+                            else -> ""
+                        }
+                    )
+                })
+                loading = false
+                addQuestLog("Cache", "Loaded quests from cache")
+            } catch (_: Exception) {}
+        }
+
         webLoader?.onQuestData = { body ->
             try {
                 val list = withContext(Dispatchers.Default) { parseQuestsFromJson(body) }
@@ -1246,7 +1337,7 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
                     states.clear()
                     states.addAll(list.map { q ->
                         val rs = when {
-                            q.completedAt != null && q.claimedAt == null -> RunState.DONE
+                            q.completedAt != null || (q.secondsNeeded > 0 && q.secondsDone >= q.secondsNeeded) -> RunState.DONE
                             q.taskName !in MOBILE -> RunState.DESKTOP_ONLY
                             q.enrolledAt == null  -> RunState.NOT_ENROLLED
                             else -> RunState.IDLE
@@ -1282,17 +1373,18 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
     }
 
     LaunchedEffect(refreshKey, region) {
-        if (refreshKey > 0 || !wvReady) {
+        if (refreshKey > 0 || loading) {
+            stopHooking.value = false
             loading = true; fetchError = null; states.clear(); orbBalance = null
             try {
-                var (list, orbs) = apiFetch(token, region, superProps)
+                var (list, orbs) = apiFetch(token, region, superProps, ctx)
 
                 if (list.isEmpty()) {
                     addQuestLog("WARN", "Quests Empty", "Trying to fetch new SuperProps...")
                     val newProps = fetchDynamicSuperProps(ctx, region)
                     if (newProps.isNotEmpty() && newProps != superProps) {
                         superProps = newProps
-                        val retryResult = apiFetch(token, region, newProps)
+                        val retryResult = apiFetch(token, region, newProps, ctx)
                         list = retryResult.first
                         orbs = retryResult.second
                     }
@@ -1300,7 +1392,7 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
 
                 states.addAll(list.map { q ->
                     val rs = when {
-                        q.completedAt != null && q.claimedAt == null -> RunState.DONE
+                        q.completedAt != null || (q.secondsNeeded > 0 && q.secondsDone >= q.secondsNeeded) -> RunState.DONE
                         q.taskName !in MOBILE -> RunState.DESKTOP_ONLY
                         q.enrolledAt == null  -> RunState.NOT_ENROLLED
                         else -> RunState.IDLE
@@ -1324,17 +1416,19 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
         }
     }
 
-    var displayed = states.toList()
-    if (fOrbs)   displayed = displayed.filter { it.quest.rewardType == "orbs" }
-    if (fDecor)  displayed = displayed.filter { it.quest.rewardType == "decor" }
-    if (fInGame) displayed = displayed.filter { it.quest.rewardType != "orbs" && it.quest.rewardType != "decor" }
-    if (fWatch)  displayed = displayed.filter { it.quest.taskName.contains("WATCH") }
-    if (fPlay)   displayed = displayed.filter { it.quest.taskName.contains("PLAY") || it.quest.taskName.contains("STREAM") }
-    displayed = when (sortMode) {
-        1    -> displayed.sortedByDescending { it.quest.expiresMs }
-        2    -> displayed.sortedBy { it.quest.expiresMs }
-        3    -> displayed.filter { it.quest.enrolledAt != null }
-        else -> displayed
+    val displayed = remember(states.toList(), sortMode, fOrbs, fDecor, fInGame, fWatch, fPlay) {
+        var d = states.toList()
+        if (fOrbs)   d = d.filter { it.quest.rewardType == "orbs" }
+        if (fDecor)  d = d.filter { it.quest.rewardType == "decor" }
+        if (fInGame) d = d.filter { it.quest.rewardType != "orbs" && it.quest.rewardType != "decor" }
+        if (fWatch)  d = d.filter { it.quest.taskName.contains("WATCH") }
+        if (fPlay)   d = d.filter { it.quest.taskName.contains("PLAY") || it.quest.taskName.contains("STREAM") }
+        when (sortMode) {
+            1    -> d.sortedByDescending { it.quest.expiresMs }
+            2    -> d.sortedBy { it.quest.expiresMs }
+            3    -> d.filter { it.quest.enrolledAt != null }
+            else -> d
+        }
     }
     val filterCount = listOf(fOrbs, fDecor, fInGame, fWatch, fPlay).count { it }
 
@@ -1444,34 +1538,37 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                     DebugTab("SuperProps", logTab == 3) { logTab = 3 }
                 }
 
-                Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                when (logTab) {
+                    0 -> {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                val sb = StringBuilder()
+                                httpHookLogs.forEach { log ->
+                                    sb.appendLine("${log.timestamp} ${log.method} ${log.url}")
+                                    sb.appendLine("Status: ${log.responseStatus}")
+                                    if (log.requestHeaders.isNotEmpty()) sb.appendLine("Request Headers:\n${log.requestHeaders}")
+                                    if (log.requestBody != null) sb.appendLine("Request Body: ${log.requestBody}")
+                                    if (log.responseHeaders.isNotEmpty()) sb.appendLine("Response Headers:\n${log.responseHeaders}")
+                                    if (log.responseBody.isNotEmpty()) sb.appendLine("Response Body:\n${log.responseBody.take(5000)}")
+                                    sb.appendLine("---")
+                                }
+                                if (sb.length > 400_000) {
+                                    sb.setLength(400_000)
+                                    sb.append("\n\n... LOGS TRUNCATED DUE TO SIZE LIMIT ...")
+                                }
+                                clipboard.setPrimaryClip(ClipData.newPlainText("HTTP Logs", sb.toString()))
+                                copiedField = "http"
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                            Button(onClick = {
+                                saveLogsToCache(ctx)
+                                copiedField = "saved"
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                        }
+                        if (copiedField == "http") Text("HTTP logs copied!", color = DC.Success, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp))
+                        if (copiedField == "saved") Text("Logs saved to cache!", color = DC.Success, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp))
 
-                    when (logTab) {
-                        0 -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = {
-                                    val sb = StringBuilder()
-                                    httpHookLogs.forEach { log ->
-                                        sb.appendLine("${log.timestamp} ${log.method} ${log.url}")
-                                        sb.appendLine("Status: ${log.responseStatus}")
-                                        if (log.requestHeaders.isNotEmpty()) sb.appendLine("Request Headers:\n${log.requestHeaders}")
-                                        if (log.requestBody != null) sb.appendLine("Request Body: ${log.requestBody}")
-                                        if (log.responseHeaders.isNotEmpty()) sb.appendLine("Response Headers:\n${log.responseHeaders}")
-                                        if (log.responseBody.isNotEmpty()) sb.appendLine("Response Body:\n${log.responseBody.take(5000)}")
-                                        sb.appendLine("---")
-                                    }
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("HTTP Logs", sb.toString()))
-                                    copiedField = "http"
-                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
-                                Button(onClick = {
-                                    saveLogsToCache(ctx)
-                                    copiedField = "saved"
-                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
-                            }
-                            if (copiedField == "http") Text("HTTP logs copied!", color = DC.Success, fontSize = 12.sp)
-                            if (copiedField == "saved") Text("Logs saved to cache!", color = DC.Success, fontSize = 12.sp)
-
-                            httpHookLogs.forEach { log ->
+                        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(httpHookLogs) { log ->
                                 var expanded by remember { mutableStateOf(false) }
                                 val statusColor = when {
                                     log.responseStatus in 200..299 -> DC.Success
@@ -1539,23 +1636,26 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                                     }
                                 }
                             }
-                            if (httpHookLogs.isEmpty()) {
-                                Text("No HTTP logs yet. Load the WebView to capture requests.", color = DC.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
-                            }
                         }
+                    }
 
-                        1 -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = {
-                                    val sb = StringBuilder()
-                                    consoleLogs.forEach { log -> sb.appendLine("[${log.timestamp}] ${log.level}: ${log.message}") }
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("Console Logs", sb.toString()))
-                                    copiedField = "console"
-                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
-                                Button(onClick = { saveLogsToCache(ctx) }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
-                            }
-                            if (copiedField == "console") Text("Console logs copied!", color = DC.Success, fontSize = 12.sp)
-                            consoleLogs.forEach { log ->
+                    1 -> {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                val sb = StringBuilder()
+                                consoleLogs.forEach { log -> sb.appendLine("[${log.timestamp}] ${log.level}: ${log.message}") }
+                                if (sb.length > 400_000) {
+                                    sb.setLength(400_000)
+                                    sb.append("\n\n... LOGS TRUNCATED DUE TO SIZE LIMIT ...")
+                                }
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Console Logs", sb.toString()))
+                                copiedField = "console"
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                            Button(onClick = { saveLogsToCache(ctx) }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                        }
+                        if (copiedField == "console") Text("Console logs copied!", color = DC.Success, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp))
+                        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(consoleLogs) { log ->
                                 val levelColor = when (log.level) {
                                     "ERROR" -> DC.Error
                                     "WARN" -> DC.Warning
@@ -1577,26 +1677,29 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                                     }
                                 }
                             }
-                            if (consoleLogs.isEmpty()) {
-                                Text("No console logs yet.", color = DC.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
-                            }
                         }
+                    }
 
-                        2 -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(onClick = {
-                                    val sb = StringBuilder()
-                                    questLogs.forEach { log ->
-                                        sb.appendLine("[${log.timestamp}] ${log.tag}: ${log.message}")
-                                        log.detail?.let { sb.appendLine("  Detail: $it") }
-                                    }
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("System Logs", sb.toString()))
-                                    copiedField = "system"
-                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
-                                Button(onClick = { saveLogsToCache(ctx) }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
-                            }
-                            if (copiedField == "system") Text("System logs copied!", color = DC.Success, fontSize = 12.sp)
-                            questLogs.forEach { log ->
+                    2 -> {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                val sb = StringBuilder()
+                                questLogs.forEach { log ->
+                                    sb.appendLine("[${log.timestamp}] ${log.tag}: ${log.message}")
+                                    log.detail?.let { sb.appendLine("  Detail: $it") }
+                                }
+                                if (sb.length > 400_000) {
+                                    sb.setLength(400_000)
+                                    sb.append("\n\n... LOGS TRUNCATED DUE TO SIZE LIMIT ...")
+                                }
+                                clipboard.setPrimaryClip(ClipData.newPlainText("System Logs", sb.toString()))
+                                copiedField = "system"
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                            Button(onClick = { saveLogsToCache(ctx) }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                        }
+                        if (copiedField == "system") Text("System logs copied!", color = DC.Success, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp))
+                        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(questLogs) { log ->
                                 Card(colors = CardDefaults.cardColors(containerColor = DC.Card), modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(8.dp)) {
                                         Text("[${log.timestamp}] ${log.tag}: ${log.message}", color = DC.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
@@ -1606,12 +1709,11 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                                     }
                                 }
                             }
-                            if (questLogs.isEmpty()) {
-                                Text("No system logs yet.", color = DC.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
-                            }
                         }
+                    }
 
-                        3 -> {
+                    3 -> {
+                        Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (capturedProps.isNotEmpty()) {
                                 Text("Captured from WebView (Build: $capturedBuild):", color = DC.Success, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
@@ -1709,7 +1811,7 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                             Button(onClick = {
                                 scope.launch {
                                     try {
-                                        val (list, orbs) = apiFetch(token, region, currentActiveProps)
+                                        val (list, orbs) = apiFetch(token, region, currentActiveProps, ctx)
                                         testResult = "Success! Quests: ${list.size}, Orbs: $orbs"
                                     } catch (e: Exception) {
                                         testResult = "Error: ${e.message}"
@@ -1971,6 +2073,49 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                             SecondaryBtn("JS Hook", Icons.Outlined.Code, Modifier.weight(0.45f)) {
                                 webLoader.executeQuestJS(q.id)
                                 addQuestLog("JS", "Quest completion JS injected for ${q.id}")
+                                onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
+                                
+                                scope.launch {
+                                    while (isActive) {
+                                        delay(5000)
+                                        webLoader.executeCustomJS("""
+                                            (function() {
+                                                try {
+                                                    var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+                                                    webpackChunkdiscord_app.pop();
+                                                    var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
+                                                    var quest = QuestsStore.quests.get('${q.id}');
+                                                    if (!quest) return JSON.stringify({error: "not found"});
+                                                    var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
+                                                    var taskName = Object.keys(taskConfig.tasks)[0];
+                                                    var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
+                                                    var completed = quest.userStatus && quest.userStatus.completed_at != null;
+                                                    return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
+                                                } catch(e) { return JSON.stringify({error: e.message}); }
+                                            })();
+                                        """.trimIndent()) { res ->
+                                            if (res != "null" && res.isNotEmpty()) {
+                                                try {
+                                                    val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
+                                                    if (cleanRes != "null" && cleanRes.isNotEmpty()) {
+                                                        val json = JSONObject(cleanRes)
+                                                        if (json.has("progress")) {
+                                                            val p = json.getLong("progress")
+                                                            val n = json.getLong("needed")
+                                                            val c = json.getBoolean("completed")
+                                                            if (c || p >= n) {
+                                                                onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
+                                                                this.cancel()
+                                                            } else {
+                                                                onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
+                                                            }
+                                                        }
+                                                    }
+                                                } catch (_: Exception) {}
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
@@ -2019,7 +2164,7 @@ private fun FiltersSheet(
         Spacer(Modifier.height(16.dp))
         SheetSection("Rewards")
         SheetGroup {
-            CheckRow("Orbs", to) { to = !to }; HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
+            CheckRow("Orbs", to) { to = !to }; HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f)
             CheckRow("Avatar decoration", td) { td = !td }; HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
             CheckRow("In-game rewards", ti) { ti = !ti }
         }
@@ -2156,7 +2301,7 @@ private fun CollectibleCard(c: CollectibleItem, gifLoader: ImageLoader, ctx: Con
             }
             if (c.summary.isNotEmpty()) { HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border); Text(c.summary, fontSize = 11.sp, color = DC.SubText, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) }
             HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border)
-            Text("Purchased ${fmtShort(parseIso(c.purchasedAt))}${if (c.expiresAt != null) "  ·  Expires ${fmtShort(parseIso(c.expiresAt))}" else ""}", fontSize = 10.sp, color = DC.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+            Text("Purchased ${fmtShort(parseIso(c.purchasedAt))}${if (c.expiresAt != null) "  ·  Expires ${fmtShort(parseIso(c.expiresAt))}" else ""}", fontSize = 10.sp, color = DC.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)")
         }
     }
 }
@@ -2216,6 +2361,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
 
                                             completed = rj.optString("completed_at", "").isNotEmpty()
                                             spoofDone = minOf(needed, timestamp)
+                                            if (spoofDone >= needed) completed = true
                                             val p = if (needed > 0) (spoofDone * 100 / needed).toInt() else 0
                                             withContext(Dispatchers.Main) { log = "${spoofDone}s / ${needed}s ($p%)" }
 
@@ -2315,7 +2461,10 @@ private fun ErrorPane(msg: String, onRetry: () -> Unit) {
 }
 
 private fun describeTask(name: String, seconds: Long): String {
-    val m = seconds / 60; val dur = if (m < 60) "${m}min" else "${m/60}h${if (m % 60 > 0) " ${m%60}min" else ""}"
+    val dur = if (seconds < 60) "${seconds}s" else {
+        val m = seconds / 60
+        if (m < 60) "${m}min" else "${m/60}h${if (m % 60 > 0) " ${m%60}min" else ""}"
+    }
     return when (name) {
         "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> "Watch a video for $dur"
         "PLAY_ACTIVITY"                        -> "Play an activity for $dur"
