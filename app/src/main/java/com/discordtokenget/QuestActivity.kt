@@ -433,11 +433,11 @@ private const val QUEST_COMPLETE_JS = """
 
         if (!QuestsStore || !api) { AndroidHook.onConsoleLog('ERROR', 'Modules not found'); return; }
 
-        const supportedTasks = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"];
+        const supportedTasks = [\"WATCH_VIDEO\", \"PLAY_ON_DESKTOP\", \"STREAM_ON_DESKTOP\", \"PLAY_ACTIVITY\", \"WATCH_VIDEO_ON_MOBILE\"];
         let quest = QuestsStore.quests.get('__QUEST_ID__');
         if (!quest) { AndroidHook.onConsoleLog('ERROR', 'Quest not found'); return; }
 
-        let isApp = typeof DiscordNative !== "undefined";
+        let isApp = typeof DiscordNative !== \"undefined\";
 
         if(quest.userStatus?.completedAt) {
             AndroidHook.onConsoleLog('SUCCESS', 'Quest already completed');
@@ -453,7 +453,7 @@ private const val QUEST_COMPLETE_JS = """
         const secondsNeeded = taskConfig.tasks[taskName].target;
         let secondsDone = quest.userStatus?.progress?.[taskName]?.value ?? 0;
 
-        if(taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
+        if(taskName === \"WATCH_VIDEO\" || taskName === \"WATCH_VIDEO_ON_MOBILE\") {
             const speed = 7;
             let completed = false;
             let fn = async () => {
@@ -483,13 +483,13 @@ private const val QUEST_COMPLETE_JS = """
             };
             fn();
             AndroidHook.onConsoleLog('INFO', 'Spoofing video for ' + questName + '.');
-        } else if(taskName === "PLAY_ON_DESKTOP") {
+        } else if(taskName === \"PLAY_ON_DESKTOP\") {
             if(!isApp) {
-                AndroidHook.onConsoleLog('ERROR', "This no longer works in browser for non-video quests.");
+                AndroidHook.onConsoleLog('ERROR', \"This no longer works in browser for non-video quests.\");
             } else {
                 api.get({url: '/applications/public?application_ids=' + applicationId}).then(res => {
                     const appData = res.body[0]
-                    const exeName = appData.executables?.find(x => x.os === "win32")?.name?.replace(">","") ?? appData.name.replace(/[\/\\:*?"<>|]/g, "")
+                    const exeName = appData.executables?.find(x => x.os === \"win32\")?.name?.replace(\">\",\"\") ?? appData.name.replace(/[\/\\:\*?\"<>|]/g, \"\")
                     
                     const fakeGame = {
                         cmdLine: 'C:\\Program Files\\' + appData.name + '\\' + exeName,
@@ -510,7 +510,7 @@ private const val QUEST_COMPLETE_JS = """
                     const realGetGameForPID = RunningGameStore.getGameForPID
                     RunningGameStore.getRunningGames = () => fakeGames
                     RunningGameStore.getGameForPID = (pid) => fakeGames.find(x => x.pid === pid)
-                    FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: realGames, added: [fakeGame], games: fakeGames})
+                    FluxDispatcher.dispatch({type: \"RUNNING_GAMES_CHANGE\", removed: realGames, added: [fakeGame], games: fakeGames})
                     
                     let fn = data => {
                         let progress = quest.config.configVersion === 1 ? data.userStatus.streamProgressSeconds : Math.floor(data.userStatus.progress.PLAY_ON_DESKTOP.value)
@@ -520,17 +520,17 @@ private const val QUEST_COMPLETE_JS = """
                             AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + quest.id)
                             RunningGameStore.getRunningGames = realGetRunningGames
                             RunningGameStore.getGameForPID = realGetGameForPID
-                            FluxDispatcher.dispatch({type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: []})
-                            FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
+                            FluxDispatcher.dispatch({type: \"RUNNING_GAMES_CHANGE\", removed: [fakeGame], added: [], games: []})
+                            FluxDispatcher.unsubscribe(\"QUESTS_SEND_HEARTBEAT_SUCCESS\", fn)
                         }
                     }
-                    FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
+                    FluxDispatcher.subscribe(\"QUESTS_SEND_HEARTBEAT_SUCCESS\", fn)
                     AndroidHook.onConsoleLog('INFO', 'Spoofed your game to ' + applicationName + '.')
                 })
             }
-        } else if(taskName === "STREAM_ON_DESKTOP") {
+        } else if(taskName === \"STREAM_ON_DESKTOP\") {
             if(!isApp) {
-                AndroidHook.onConsoleLog('ERROR', "This no longer works in browser for non-video quests.")
+                AndroidHook.onConsoleLog('ERROR', \"This no longer works in browser for non-video quests.\")
             } else {
                 let realFunc = ApplicationStreamingStore.getStreamerActiveStreamMetadata
                 ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => ({
@@ -546,18 +546,18 @@ private const val QUEST_COMPLETE_JS = """
                     if(progress >= secondsNeeded) {
                         AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + quest.id)
                         ApplicationStreamingStore.getStreamerActiveStreamMetadata = realFunc
-                        FluxDispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
+                        FluxDispatcher.unsubscribe(\"QUESTS_SEND_HEARTBEAT_SUCCESS\", fn)
                     }
                 }
-                FluxDispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", fn)
+                FluxDispatcher.subscribe(\"QUESTS_SEND_HEARTBEAT_SUCCESS\", fn)
                 AndroidHook.onConsoleLog('INFO', 'Spoofed your stream to ' + applicationName + '.')
             }
-        } else if(taskName === "PLAY_ACTIVITY") {
+        } else if(taskName === \"PLAY_ACTIVITY\") {
             const channelId = ChannelStore.getSortedPrivateChannels()[0]?.id ?? Object.values(GuildChannelStore.getAllGuilds()).find(x => x != null && x.VOCAL.length > 0).VOCAL[0].channel.id
             const streamKey = 'call:' + channelId + ':1'
             
             let fn = async () => {
-                AndroidHook.onConsoleLog('INFO', "Completing quest " + questName)
+                AndroidHook.onConsoleLog('INFO', \"Completing quest \" + questName)
                 
                 while(true) {
                     const res = await api.post({url: '/quests/' + quest.id + '/heartbeat', body: {stream_key: streamKey, terminal: false}})
@@ -1009,7 +1009,7 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         enrolledAt  = us?.optString("enrolled_at")?.takeIf  { it.isNotEmpty() && it != "null" }
                       ?: us?.optString("enrolledAt")?.takeIf  { it.isNotEmpty() && it != "null" },
         completedAt = us?.optString("completed_at")?.takeIf { it.isNotEmpty() && it != "null" }
-                      ?: us?.optString("completedAt")?.takeIf { it.isNotEmpty() and it != "null" },
+                      ?: us?.optString("completedAt")?.takeIf { it.isNotEmpty() && it != "null" },
         claimedAt   = us?.optString("claimed_at")?.takeIf   { it.isNotEmpty() && it != "null" }
                       ?: us?.optString("claimedAt")?.takeIf   { it.isNotEmpty() && it != "null" },
         configVersion = configVersion,
@@ -2005,11 +2005,11 @@ private fun CaptchaDialog(sitekey: String, rqdata: String, onTokenReceived: (Str
                             val html = """
                                 <html>
                                 <head>
-                                    <script src="https://js.hcaptcha.com/1/api.js?render=explicit" async defer></script>
+                                    <script src=\"https://js.hcaptcha.com/1/api.js?render=explicit\" async defer></script>
                                     <style>body{margin:0;padding:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#1e1f22;}</style>
                                 </head>
                                 <body>
-                                    <div id="hcaptcha-container"></div>
+                                    <div id=\"hcaptcha-container\"></div>
                                     <script>
                                         hcaptcha.render('hcaptcha-container', {
                                             sitekey: '$sitekey',
@@ -2369,7 +2369,7 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
 }
 @Composable private fun StateChip(color: Color, icon: ImageVector, label: String, mod: Modifier) {
     Box(mod.height(46.dp).clip(RoundedCornerShape(12.dp)).background(color.copy(0.1f)).border(1.dp, color.copy(0.2f), RoundedCornerShape(12.dp)), Alignment.Center) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Icon(icon, null, tint = color, modifier = Modifier.size(14.dp); Text(label, fontWeight = FontWeight.ExtraBold, color = color, fontSize = 13.sp) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) { Icon(icon, null, tint = color, modifier = Modifier.size(14.dp)); Text(label, fontWeight = FontWeight.ExtraBold, color = color, fontSize = 13.sp) }
     }
 }
 
