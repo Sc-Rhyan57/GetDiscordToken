@@ -533,8 +533,9 @@ class WebHookInterface(
 class QuestWebLoader(private val ctx: Context, private val token: String) {
     private var webView: WebView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    var onQuestData: ((String) -> Unit)? = null
+    var onQuestData: (suspend (String) -> Unit)? = null
     var onSuperProps: ((String) -> Unit)? = null
     var onPageLoaded: (() -> Unit)? = null
 
@@ -553,30 +554,40 @@ class QuestWebLoader(private val ctx: Context, private val token: String) {
 
             val hookInterface = WebHookInterface(
                 onReq = { method, url, headers, body ->
-                    addHttpHookLog(true, method, url, headers, body.takeIf { it.isNotEmpty() })
-                    addQuestLog("HTTP", "$method $url", "Headers:\n$headers" + if (body.isNotEmpty()) "\nBody: $body" else "")
+                    mainHandler.post {
+                        addHttpHookLog(true, method, url, headers, body.takeIf { it.isNotEmpty() })
+                        addQuestLog("HTTP", "$method $url", "Headers:\n$headers" + if (body.isNotEmpty()) "\nBody: $body" else "")
+                    }
                 },
                 onResp = { method, url, status, headers, body ->
-                    addHttpHookLog(false, method, url, "", "", status, headers, body)
-                    addQuestLog("HTTP", "Response $status $url", body.take(2000))
-                    if (url.contains("/quests/@me") || url.contains("/quests?")) {
-                        onQuestData?.invoke(body)
+                    mainHandler.post {
+                        addHttpHookLog(false, method, url, "", "", status, headers, body)
+                        addQuestLog("HTTP", "Response $status $url", body.take(2000))
+                        if (url.contains("/quests/@me") || url.contains("/quests?")) {
+                            scope.launch {
+                                onQuestData?.invoke(body)
+                            }
+                        }
                     }
                 },
                 onConsole = { level, message ->
-                    addConsoleLog(level, message)
+                    mainHandler.post {
+                        addConsoleLog(level, message)
+                    }
                 },
                 onProps = { props ->
-                    capturedSuperProps.value = props
-                    try {
-                        val json = JSONObject(String(Base64.decode(props, Base64.NO_WRAP)))
-                        val build = json.optInt("client_build_number", 0)
-                        if (build > 0) {
-                            capturedBuildNumber.value = build
-                            addQuestLog("SuperProps", "Captured build: $build", "Full: $props")
-                        }
-                    } catch (_: Exception) {}
-                    onSuperProps?.invoke(props)
+                    mainHandler.post {
+                        capturedSuperProps.value = props
+                        try {
+                            val json = JSONObject(String(Base64.decode(props, Base64.NO_WRAP)))
+                            val build = json.optInt("client_build_number", 0)
+                            if (build > 0) {
+                                capturedBuildNumber.value = build
+                                addQuestLog("SuperProps", "Captured build: $build", "Full: $props")
+                            }
+                        } catch (_: Exception) {}
+                        onSuperProps?.invoke(props)
+                    }
                 }
             )
 
@@ -675,6 +686,7 @@ class QuestWebLoader(private val ctx: Context, private val token: String) {
     }
 
     fun destroy() {
+        scope.cancel()
         mainHandler.post {
             webView?.apply {
                 stopLoading()
@@ -1167,7 +1179,10 @@ class QuestActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        saveLogsToCache(this)
+        val ctx = this
+        Thread {
+            saveLogsToCache(ctx)
+        }.start()
         webLoader?.destroy()
     }
 }
@@ -1226,7 +1241,7 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
     LaunchedEffect(Unit) {
         webLoader?.onQuestData = { body ->
             try {
-                val list = parseQuestsFromJson(body)
+                val list = withContext(Dispatchers.Default) { parseQuestsFromJson(body) }
                 withContext(Dispatchers.Main) {
                     states.clear()
                     states.addAll(list.map { q ->
@@ -1257,7 +1272,9 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
         webLoader?.onSuperProps = { props ->
             if (props.isNotEmpty()) {
                 superProps = props
-                saveCachedSuperProps(ctx, props)
+                CoroutineScope(Dispatchers.IO).launch {
+                    saveCachedSuperProps(ctx, props)
+                }
             }
         }
 
