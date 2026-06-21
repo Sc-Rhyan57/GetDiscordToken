@@ -389,7 +389,7 @@ private const val HOOK_JS = """
                     if (typeof a === 'object') {
                         try { return JSON.stringify(a); } catch(e) { return String(a); }
                     }
-                    return String(a)
+                    return String(a);
                 }).join(' ');
                 safeCall(function() { AndroidHook.onConsoleLog(level.toUpperCase(), args); });
                 return orig.apply(console, arguments);
@@ -2211,47 +2211,49 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                                     enabled = webLoader != null && webViewReady.value,
                                     onClick = {
                                         showCompleteMenu = false
-                                        webLoader?.executeQuestJS(q.id)
-                                        addQuestLog("JS", "Quest completion JS injected for ${q.id}")
-                                        onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
-                                        
-                                        scope.launch {
-                                            while (isActive) {
-                                                delay(5000)
-                                                webLoader.executeCustomJS("""
-                                                    (function() {
-                                                        try {
-                                                            var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
-                                                            webpackChunkdiscord_app.pop();
-                                                            var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
-                                                            var quest = QuestsStore.quests.get('${q.id}');
-                                                            if (!quest) return JSON.stringify({error: "not found"});
-                                                            var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
-                                                            var taskName = Object.keys(taskConfig.tasks)[0];
-                                                            var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
-                                                            var completed = quest.userStatus && quest.userStatus.completed_at != null;
-                                                            return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
-                                                        } catch(e) { return JSON.stringify({error: e.message}); }
-                                                    })();
-                                                """.trimIndent()) { res ->
-                                                    if (res != "null" && res.isNotEmpty()) {
-                                                        try {
-                                                            val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
-                                                            if (cleanRes != "null" && cleanRes.isNotEmpty()) {
-                                                                val json = JSONObject(cleanRes)
-                                                                if (json.has("progress")) {
-                                                                    val p = json.getLong("progress")
-                                                                    val n = json.getLong("needed")
-                                                                    val c = json.getBoolean("completed")
-                                                                    if (c || p >= n) {
-                                                                        onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
-                                                                        this.cancel()
-                                                                    } else {
-                                                                        onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
+                                        webLoader?.let { loader ->
+                                            loader.executeQuestJS(q.id)
+                                            addQuestLog("JS", "Quest completion JS injected for ${q.id}")
+                                            onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
+                                            
+                                            scope.launch {
+                                                while (isActive) {
+                                                    delay(5000)
+                                                    loader.executeCustomJS("""
+                                                        (function() {
+                                                            try {
+                                                                var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+                                                                webpackChunkdiscord_app.pop();
+                                                                var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
+                                                                var quest = QuestsStore.quests.get('${q.id}');
+                                                                if (!quest) return JSON.stringify({error: "not found"});
+                                                                var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
+                                                                var taskName = Object.keys(taskConfig.tasks)[0];
+                                                                var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
+                                                                var completed = quest.userStatus && quest.userStatus.completed_at != null;
+                                                                return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
+                                                            } catch(e) { return JSON.stringify({error: e.message}); }
+                                                        })();
+                                                    """.trimIndent()) { res ->
+                                                        if (res != "null" && res.isNotEmpty()) {
+                                                            try {
+                                                                val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
+                                                                if (cleanRes != "null" && cleanRes.isNotEmpty()) {
+                                                                    val json = JSONObject(cleanRes)
+                                                                    if (json.has("progress")) {
+                                                                        val p = json.getLong("progress")
+                                                                        val n = json.getLong("needed")
+                                                                        val c = json.getBoolean("completed")
+                                                                        if (c || p >= n) {
+                                                                            onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
+                                                                            this.cancel()
+                                                                        } else {
+                                                                            onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
+                                                                        }
                                                                     }
                                                                 }
-                                                            }
-                                                        } catch (_: Exception) {}
+                                                            } catch (_: Exception) {}
+                                                        }
                                                     }
                                                 }
                                             }
