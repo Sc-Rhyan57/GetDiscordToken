@@ -138,21 +138,25 @@ private fun buildReq(url: String, token: String, region: Region, superProps: Str
 
 private fun generateSuperPropsJson(region: Region, buildNumber: Int): String {
     val json = JSONObject()
-    json.put("os", "Windows")
-    json.put("browser", "Chrome")
-    json.put("device", "")
+    json.put("os", "Android")
+    json.put("browser", "Android Mobile")
+    json.put("device", "Android")
     json.put("system_locale", region.locale)
     json.put("has_client_mods", false)
-    json.put("browser_user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36")
-    json.put("browser_version", "147.0.0.0")
-    json.put("os_version", "10")
+    json.put("browser_user_agent", "Mozilla/5.0 (Android 16; Mobile; rv:152.0) Gecko/152.0 Firefox/152.0")
+    json.put("browser_version", "152.0")
+    json.put("os_version", "16")
     json.put("referrer", "")
     json.put("referring_domain", "")
-    json.put("referrer_current", "https://discord.com/")
-    json.put("referring_domain_current", "discord.com")
+    json.put("referrer_current", "")
+    json.put("referring_domain_current", "")
     json.put("release_channel", "stable")
     json.put("client_build_number", buildNumber)
     json.put("client_event_source", null)
+    json.put("client_launch_id", UUID.randomUUID().toString())
+    json.put("launch_signature", UUID.randomUUID().toString())
+    json.put("client_heartbeat_session_id", UUID.randomUUID().toString())
+    json.put("client_app_state", "focused")
     return Base64.encodeToString(json.toString().toByteArray(), Base64.NO_WRAP)
 }
 
@@ -1372,7 +1376,7 @@ private fun MoreMenuSheet(quest: QuestItem, ctx: Context, onDismiss: () -> Unit)
 @Composable
 private fun MoreItem(label: String, icon: ImageVector, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(icon, null, tint = DC.SubText, modifier = Modifier.size(16.dp))
+        Icon(icon, null, tint = DC.SubText, modifier = Modifier.size(16.dp)
         Text(label, fontSize = 14.sp, color = DC.White, modifier = Modifier.weight(1f))
     }
 }
