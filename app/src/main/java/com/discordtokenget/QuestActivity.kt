@@ -4,14 +4,24 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
@@ -51,6 +61,7 @@ import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.*
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -101,7 +112,27 @@ private val REGIONS = listOf(
 )
 
 data class QuestLog(val timestamp: String, val tag: String, val message: String, val detail: String? = null)
+data class HttpHookLog(
+    val id: Long,
+    val timestamp: String,
+    val method: String,
+    val url: String,
+    val requestHeaders: String,
+    val requestBody: String?,
+    val responseStatus: Int,
+    val responseHeaders: String,
+    val responseBody: String
+)
+data class ConsoleLogEntry(val timestamp: String, val level: String, val message: String)
+
 private val questLogs = mutableStateListOf<QuestLog>()
+private val httpHookLogs = mutableStateListOf<HttpHookLog>()
+private val consoleLogs = mutableStateListOf<ConsoleLogEntry>()
+private var hookLogIdCounter = 0L
+private val pendingHttpRequests = mutableMapOf<String, HttpHookLog>()
+private var capturedSuperProps = mutableStateOf("")
+private var capturedBuildNumber = mutableStateOf(0)
+private var webViewReady = mutableStateOf(false)
 
 private fun addQuestLog(tag: String, message: String, detail: String? = null) {
     val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
@@ -109,7 +140,559 @@ private fun addQuestLog(tag: String, message: String, detail: String? = null) {
     if (questLogs.size > 500) questLogs.removeAt(questLogs.size - 1)
 }
 
+private fun addHttpHookLog(isRequest: Boolean, method: String, url: String, headers: String, body: String?, status: Int = 0, respHeaders: String = "", respBody: String = "") {
+    val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+    if (isRequest) {
+        val id = ++hookLogIdCounter
+        val log = HttpHookLog(id, ts, method, url, headers, body, 0, "", "")
+        val key = "$method:$url"
+        pendingHttpRequests[key] = log
+    } else {
+        val key = "$method:$url"
+        val pending = pendingHttpRequests.remove(key)
+        if (pending != null) {
+            val complete = pending.copy(responseStatus = status, responseHeaders = respHeaders, responseBody = respBody)
+            httpHookLogs.add(0, complete)
+        } else {
+            val id = ++hookLogIdCounter
+            httpHookLogs.add(0, HttpHookLog(id, ts, method, url, "", "", status, respHeaders, respBody))
+        }
+        if (httpHookLogs.size > 200) httpHookLogs.removeAt(httpHookLogs.size - 1)
+    }
+}
+
+private fun addConsoleLog(level: String, message: String) {
+    val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+    consoleLogs.add(0, ConsoleLogEntry(ts, level, message))
+    if (consoleLogs.size > 300) consoleLogs.removeAt(consoleLogs.size - 1)
+}
+
+private fun saveLogsToCache(ctx: Context) {
+    try {
+        val dir = File(ctx.cacheDir, "quest_logs")
+        dir.mkdirs()
+
+        val httpFile = File(dir, "http_logs.json")
+        val httpArray = JSONArray()
+        httpHookLogs.forEach { log ->
+            val obj = JSONObject()
+            obj.put("timestamp", log.timestamp)
+            obj.put("method", log.method)
+            obj.put("url", log.url)
+            obj.put("requestHeaders", log.requestHeaders)
+            obj.put("requestBody", log.requestBody ?: "")
+            obj.put("responseStatus", log.responseStatus)
+            obj.put("responseHeaders", log.responseHeaders)
+            obj.put("responseBody", log.responseBody)
+            httpArray.put(obj)
+        }
+        httpFile.writeText(httpArray.toString())
+
+        val consoleFile = File(dir, "console_logs.json")
+        val consoleArray = JSONArray()
+        consoleLogs.forEach { log ->
+            val obj = JSONObject()
+            obj.put("timestamp", log.timestamp)
+            obj.put("level", log.level)
+            obj.put("message", log.message)
+            consoleArray.put(obj)
+        }
+        consoleFile.writeText(consoleArray.toString())
+
+        val questFile = File(dir, "quest_logs.json")
+        val questArray = JSONArray()
+        questLogs.forEach { log ->
+            val obj = JSONObject()
+            obj.put("timestamp", log.timestamp)
+            obj.put("tag", log.tag)
+            obj.put("message", log.message)
+            log.detail?.let { obj.put("detail", it) }
+            questArray.put(obj)
+        }
+        questFile.writeText(questArray.toString())
+    } catch (_: Exception) {}
+}
+
+private fun loadLogsFromCache(ctx: Context) {
+    try {
+        val dir = File(ctx.cacheDir, "quest_logs")
+
+        val httpFile = File(dir, "http_logs.json")
+        if (httpFile.exists()) {
+            val arr = JSONArray(httpFile.readText())
+            for (i in arr.length() - 1 downTo 0) {
+                val o = arr.getJSONObject(i)
+                httpHookLogs.add(HttpHookLog(
+                    ++hookLogIdCounter,
+                    o.optString("timestamp"),
+                    o.optString("method"),
+                    o.optString("url"),
+                    o.optString("requestHeaders"),
+                    o.optString("requestBody").takeIf { it.isNotEmpty() },
+                    o.optInt("responseStatus"),
+                    o.optString("responseHeaders"),
+                    o.optString("responseBody")
+                ))
+            }
+        }
+
+        val consoleFile = File(dir, "console_logs.json")
+        if (consoleFile.exists()) {
+            val arr = JSONArray(consoleFile.readText())
+            for (i in arr.length() - 1 downTo 0) {
+                val o = arr.getJSONObject(i)
+                consoleLogs.add(ConsoleLogEntry(o.optString("timestamp"), o.optString("level"), o.optString("message")))
+            }
+        }
+
+        val questFile = File(dir, "quest_logs.json")
+        if (questFile.exists()) {
+            val arr = JSONArray(questFile.readText())
+            for (i in arr.length() - 1 downTo 0) {
+                val o = arr.getJSONObject(i)
+                questLogs.add(QuestLog(o.optString("timestamp"), o.optString("tag"), o.optString("message"), o.optString("detail").takeIf { it.isNotEmpty() }))
+            }
+        }
+    } catch (_: Exception) {}
+}
+
+private fun clearLogsCache(ctx: Context) {
+    try {
+        val dir = File(ctx.cacheDir, "quest_logs")
+        dir.deleteRecursively()
+    } catch (_: Exception) {}
+    httpHookLogs.clear()
+    consoleLogs.clear()
+    questLogs.clear()
+    pendingHttpRequests.clear()
+}
+
+private const val HOOK_JS = """
+(function() {
+    try {
+        var TOKEN = '__TOKEN_PLACEHOLDER__';
+        try {
+            var existing = localStorage.getItem('token');
+            if (!existing || JSON.parse(existing) !== TOKEN) {
+                localStorage.setItem('token', JSON.stringify(TOKEN));
+            }
+        } catch(e) {}
+
+        function safeCall(fn) {
+            try { fn(); } catch(e) {}
+        }
+
+        var origOpen = XMLHttpRequest.prototype.open;
+        var origSend = XMLHttpRequest.prototype.send;
+        var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+
+        XMLHttpRequest.prototype.open = function(method, url) {
+            this.__hookMethod = method;
+            this.__hookUrl = url;
+            this.__hookHeaders = {};
+            return origOpen.apply(this, arguments);
+        };
+
+        XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+            if (this.__hookHeaders) this.__hookHeaders[name] = value;
+            if (name === 'X-Super-Properties' && value) {
+                safeCall(function() { AndroidHook.onSuperProps(value); });
+            }
+            return origSetHeader.apply(this, arguments);
+        };
+
+        XMLHttpRequest.prototype.send = function(body) {
+            var self = this;
+            var method = this.__hookMethod || 'GET';
+            var url = this.__hookUrl || '';
+            var headers = JSON.stringify(this.__hookHeaders || {});
+            var bodyStr = body ? (typeof body === 'string' ? body : String(body)) : '';
+
+            safeCall(function() { AndroidHook.onHttpRequest(method, url, headers, bodyStr); });
+
+            this.addEventListener('load', function() {
+                safeCall(function() {
+                    var respHeaders = self.getAllResponseHeaders() || '';
+                    var respBody = self.responseText || '';
+                    AndroidHook.onHttpResponse(method, url, self.status || 0, respHeaders, respBody);
+                });
+            });
+
+            this.addEventListener('error', function() {
+                safeCall(function() {
+                    AndroidHook.onHttpResponse(method, url, 0, '', 'Network Error');
+                });
+            });
+
+            return origSend.apply(this, arguments);
+        };
+
+        var origFetch = window.fetch;
+        window.fetch = function(input, init) {
+            var url = typeof input === 'string' ? input : (input && input.url) || '';
+            var method = (init && init.method) || (input && input.method) || 'GET';
+
+            var headerObj = {};
+            var rawHeaders = (init && init.headers) || (input && input.headers);
+            if (rawHeaders) {
+                if (rawHeaders instanceof Headers) {
+                    rawHeaders.forEach(function(v, k) { headerObj[k] = v; });
+                } else if (typeof rawHeaders === 'object') {
+                    for (var k in rawHeaders) { headerObj[k] = rawHeaders[k]; }
+                }
+            }
+
+            if (headerObj['X-Super-Properties']) {
+                safeCall(function() { AndroidHook.onSuperProps(headerObj['X-Super-Properties']); });
+            }
+
+            var body = (init && init.body) ? String(init.body) : '';
+            var headersStr = JSON.stringify(headerObj);
+
+            safeCall(function() { AndroidHook.onHttpRequest(method, url, headersStr, body); });
+
+            return origFetch.apply(this, arguments).then(function(response) {
+                var cloned = response.clone();
+                cloned.text().then(function(text) {
+                    var rh = {};
+                    cloned.headers.forEach(function(v, k) { rh[k] = v; });
+                    safeCall(function() {
+                        AndroidHook.onHttpResponse(method, url, response.status, JSON.stringify(rh), text);
+                    });
+                }).catch(function() {});
+                return response;
+            });
+        };
+
+        ['log', 'warn', 'error', 'info', 'debug'].forEach(function(level) {
+            var orig = console[level];
+            console[level] = function() {
+                var args = Array.prototype.slice.call(arguments).map(function(a) {
+                    if (typeof a === 'object') {
+                        try { return JSON.stringify(a); } catch(e) { return String(a); }
+                    }
+                    return String(a);
+                }).join(' ');
+                safeCall(function() { AndroidHook.onConsoleLog(level.toUpperCase(), args); });
+                return orig.apply(console, arguments);
+            };
+        });
+
+        window.addEventListener('error', function(e) {
+            safeCall(function() {
+                AndroidHook.onConsoleLog('ERROR', (e.message || 'Unknown error') + ' (' + (e.filename || '') + ':' + (e.lineno || 0) + ')');
+            });
+        });
+
+        window.addEventListener('unhandledrejection', function(e) {
+            safeCall(function() {
+                var reason = e.reason && e.reason.message ? e.reason.message : String(e.reason);
+                AndroidHook.onConsoleLog('ERROR', 'Unhandled rejection: ' + reason);
+            });
+        });
+
+        safeCall(function() { AndroidHook.onConsoleLog('INFO', 'Hooks installed successfully'); });
+    } catch(e) {
+        safeCall(function() { AndroidHook.onConsoleLog('ERROR', 'Hook init error: ' + e.message); });
+    }
+})();
+"""
+
+private const val QUEST_COMPLETE_JS = """
+(function() {
+    try {
+        var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+        webpackChunkdiscord_app.pop();
+
+        var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
+        var api = Object.values(wpRequire.c).find(x => x?.exports?.Bo?.get)?.exports.Bo;
+        var ChannelStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getAllThreadsForParent)?.exports.A;
+
+        if (!QuestsStore) { AndroidHook.onConsoleLog('ERROR', 'QuestsStore not found'); return; }
+        if (!api) { AndroidHook.onConsoleLog('ERROR', 'API module not found'); return; }
+
+        var supportedTasks = ["WATCH_VIDEO", "PLAY_ON_DESKTOP", "STREAM_ON_DESKTOP", "PLAY_ACTIVITY", "WATCH_VIDEO_ON_MOBILE"];
+        var questId = '__QUEST_ID__';
+
+        var quest = null;
+        try {
+            quest = QuestsStore.quests.get(questId);
+        } catch(e) {}
+
+        if (!quest) {
+            var quests = Array.from(QuestsStore.quests.values());
+            for (var i = 0; i < quests.length; i++) {
+                if (quests[i].id === questId) { quest = quests[i]; break; }
+            }
+        }
+
+        if (!quest) { AndroidHook.onConsoleLog('ERROR', 'Quest not found: ' + questId); return; }
+
+        var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
+        var taskName = supportedTasks.find(function(x) { return taskConfig.tasks[x] != null; });
+        if (!taskName) { AndroidHook.onConsoleLog('ERROR', 'No supported task found'); return; }
+
+        var secondsNeeded = taskConfig.tasks[taskName].target;
+        var secondsDone = (quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] && quest.userStatus.progress[taskName].value) || 0;
+
+        AndroidHook.onConsoleLog('INFO', 'Starting quest: ' + questId + ' task: ' + taskName + ' needed: ' + secondsNeeded + ' done: ' + secondsDone);
+
+        if (taskName === "WATCH_VIDEO" || taskName === "WATCH_VIDEO_ON_MOBILE") {
+            var speed = 7;
+            (async function() {
+                while (secondsDone < secondsNeeded) {
+                    var remaining = Math.min(speed, secondsNeeded - secondsDone);
+                    await new Promise(function(resolve) { setTimeout(resolve, remaining * 1000); });
+
+                    var timestamp = secondsDone + speed;
+                    var res = await api.post({
+                        url: '/quests/' + questId + '/video-progress',
+                        body: { timestamp: Math.min(secondsNeeded, timestamp + Math.random()) }
+                    });
+
+                    var completed = res.body && res.body.completed_at != null;
+                    secondsDone = Math.min(secondsNeeded, timestamp);
+                    AndroidHook.onConsoleLog('INFO', 'Video progress: ' + secondsDone + '/' + secondsNeeded);
+
+                    if (timestamp >= secondsNeeded) break;
+                }
+
+                await api.post({
+                    url: '/quests/' + questId + '/video-progress',
+                    body: { timestamp: secondsNeeded }
+                });
+
+                AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + questId);
+            })();
+        } else if (taskName === "PLAY_ACTIVITY") {
+            if (!ChannelStore) { AndroidHook.onConsoleLog('ERROR', 'ChannelStore not found'); return; }
+            var channelId = ChannelStore.getSortedPrivateChannels()[0] && ChannelStore.getSortedPrivateChannels()[0].id;
+            if (!channelId) { AndroidHook.onConsoleLog('ERROR', 'No channel found'); return; }
+            var streamKey = 'call:' + channelId + ':1';
+
+            (async function() {
+                while (secondsDone < secondsNeeded) {
+                    var res = await api.post({
+                        url: '/quests/' + questId + '/heartbeat',
+                        body: { stream_key: streamKey, terminal: false }
+                    });
+
+                    var progress = res.body && res.body.progress && res.body.progress.PLAY_ACTIVITY ? res.body.progress.PLAY_ACTIVITY.value : secondsDone;
+                    secondsDone = progress;
+                    AndroidHook.onConsoleLog('INFO', 'Activity progress: ' + progress + '/' + secondsNeeded);
+
+                    await new Promise(function(resolve) { setTimeout(resolve, 20 * 1000); });
+
+                    if (progress >= secondsNeeded) {
+                        await api.post({
+                            url: '/quests/' + questId + '/heartbeat',
+                            body: { stream_key: streamKey, terminal: true }
+                        });
+                        break;
+                    }
+                }
+
+                AndroidHook.onConsoleLog('SUCCESS', 'Quest completed: ' + questId);
+            })();
+        } else {
+            AndroidHook.onConsoleLog('WARN', 'Task ' + taskName + ' is not supported on mobile');
+        }
+    } catch(e) {
+        AndroidHook.onConsoleLog('ERROR', 'Quest completion error: ' + e.message);
+    }
+})();
+"""
+
+class WebHookInterface(
+    private val onReq: (String, String, String, String) -> Unit,
+    private val onResp: (String, String, Int, String, String) -> Unit,
+    private val onConsole: (String, String) -> Unit,
+    private val onProps: (String) -> Unit
+) {
+    @JavascriptInterface
+    fun onHttpRequest(method: String, url: String, headers: String, body: String) {
+        onReq.invoke(method, url, headers, body)
+    }
+
+    @JavascriptInterface
+    fun onHttpResponse(method: String, url: String, status: Int, headers: String, body: String) {
+        onResp.invoke(method, url, status, headers, body)
+    }
+
+    @JavascriptInterface
+    fun onConsoleLog(level: String, message: String) {
+        onConsole.invoke(level, message)
+    }
+
+    @JavascriptInterface
+    fun onSuperProps(props: String) {
+        onProps.invoke(props)
+    }
+}
+
+class QuestWebLoader(private val ctx: Context, private val token: String) {
+    private var webView: WebView? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    var onQuestData: ((String) -> Unit)? = null
+    var onSuperProps: ((String) -> Unit)? = null
+    var onPageLoaded: (() -> Unit)? = null
+
+    fun init() {
+        mainHandler.post {
+            val wv = WebView(ctx)
+
+            wv.settings.javaScriptEnabled = true
+            wv.settings.domStorageEnabled = true
+            wv.settings.databaseEnabled = true
+            wv.settings.userAgentString = "Mozilla/5.0 (Android 16; Mobile; rv:152.0) Gecko/152.0 Firefox/152.0"
+            wv.settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
+
+            val hookInterface = WebHookInterface(
+                onReq = { method, url, headers, body ->
+                    addHttpHookLog(true, method, url, headers, body.takeIf { it.isNotEmpty() })
+                    addQuestLog("HTTP", "$method $url", "Headers:\n$headers" + if (body.isNotEmpty()) "\nBody: $body" else "")
+                },
+                onResp = { method, url, status, headers, body ->
+                    addHttpHookLog(false, method, url, "", "", status, headers, body)
+                    addQuestLog("HTTP", "Response $status $url", body.take(2000))
+                    if (url.contains("/quests/@me") || url.contains("/quests?")) {
+                        onQuestData?.invoke(body)
+                    }
+                },
+                onConsole = { level, message ->
+                    addConsoleLog(level, message)
+                },
+                onProps = { props ->
+                    capturedSuperProps.value = props
+                    try {
+                        val json = JSONObject(String(Base64.decode(props, Base64.NO_WRAP)))
+                        val build = json.optInt("client_build_number", 0)
+                        if (build > 0) {
+                            capturedBuildNumber.value = build
+                            addQuestLog("SuperProps", "Captured build: $build", "Full: $props")
+                        }
+                    } catch (_: Exception) {}
+                    onSuperProps?.invoke(props)
+                }
+            )
+
+            wv.addJavascriptInterface(hookInterface, "AndroidHook")
+
+            var hooksInjected = false
+            var tokenSet = false
+
+            wv.webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    super.onPageStarted(view, url, favicon)
+                    addQuestLog("WebView", "Loading: $url")
+
+                    if (!hooksInjected && url != null && url.contains("discord.com")) {
+                        val js = HOOK_JS.replace("__TOKEN_PLACEHOLDER__", token)
+                        view?.evaluateJavascript(js, null)
+                        hooksInjected = true
+                        addQuestLog("WebView", "Hooks injected on $url")
+                    }
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    addQuestLog("WebView", "Page finished: $url")
+
+                    if (!hooksInjected && url != null && url.contains("discord.com")) {
+                        val js = HOOK_JS.replace("__TOKEN_PLACEHOLDER__", token)
+                        view?.evaluateJavascript(js, null)
+                        hooksInjected = true
+                    }
+
+                    if (url != null && (url.contains("/login") || url.contains("/register"))) {
+                        if (!tokenSet) {
+                            val setTokenJs = """
+                                try {
+                                    localStorage.setItem('token', JSON.stringify("$token"));
+                                    window.location.href = 'https://discord.com/quest-home';
+                                } catch(e) {
+                                    AndroidHook.onConsoleLog('ERROR', 'Token set failed: ' + e.message);
+                                }
+                            """.trimIndent()
+                            view?.evaluateJavascript(setTokenJs, null)
+                            tokenSet = true
+                        }
+                    }
+
+                    if (url != null && url.contains("quest-home")) {
+                        webViewReady.value = true
+                        onPageLoaded?.invoke()
+                    }
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                    if (url != null && url.contains("discord.com")) return false
+                    return true
+                }
+            }
+
+            wv.webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                    if (consoleMessage != null) {
+                        addConsoleLog(consoleMessage.messageLevel().name, "${consoleMessage.message()} (${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})")
+                    }
+                    return true
+                }
+            }
+
+            wv.loadUrl("https://discord.com/quest-home")
+            webView = wv
+            addQuestLog("WebView", "WebView initialized, loading quest-home")
+        }
+    }
+
+    fun getWebView(): WebView? = webView
+
+    fun reload() {
+        mainHandler.post {
+            webView?.reload()
+        }
+    }
+
+    fun executeQuestJS(questId: String) {
+        mainHandler.post {
+            val js = QUEST_COMPLETE_JS.replace("__QUEST_ID__", questId)
+            webView?.evaluateJavascript(js, null)
+            addQuestLog("JS", "Injected quest completion JS for $questId")
+        }
+    }
+
+    fun executeCustomJS(js: String, callback: ((String) -> Unit)? = null) {
+        mainHandler.post {
+            webView?.evaluateJavascript(js) { result ->
+                callback?.invoke(result ?: "")
+            }
+        }
+    }
+
+    fun destroy() {
+        mainHandler.post {
+            webView?.apply {
+                stopLoading()
+                loadUrl("about:blank")
+                Handler(Looper.getMainLooper()).postDelayed({
+                    clearHistory()
+                    destroy()
+                }, 300)
+            }
+            webView = null
+            webViewReady.value = false
+        }
+    }
+}
+
 private fun getCachedSuperProps(ctx: Context): String {
+    val sp = capturedSuperProps.value
+    if (sp.isNotEmpty()) return sp
     return ctx.getSharedPreferences("quest_app_cache", Context.MODE_PRIVATE)
         .getString("super_props", FALLBACK_SUPER_PROPS) ?: FALLBACK_SUPER_PROPS
 }
@@ -152,7 +735,7 @@ private fun generateSuperPropsJson(region: Region, buildNumber: Int): String {
     json.put("referring_domain_current", "")
     json.put("release_channel", "stable")
     json.put("client_build_number", buildNumber)
-    json.put("client_event_source", null)
+    json.put("client_event_source", JSONObject.NULL)
     json.put("client_launch_id", UUID.randomUUID().toString())
     json.put("launch_signature", UUID.randomUUID().toString())
     json.put("client_heartbeat_session_id", UUID.randomUUID().toString())
@@ -161,10 +744,10 @@ private fun generateSuperPropsJson(region: Region, buildNumber: Int): String {
 }
 
 private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String = withContext(Dispatchers.IO) {
-    addQuestLog("SuperProps", "Buscando builds em discord.sale/api/builds...")
+    addQuestLog("SuperProps", "Fetching builds from discord.sale/api/builds...")
     var attempts = 0
     var resultProps = ""
-    
+
     while (attempts < 3 && resultProps.isEmpty()) {
         attempts++
         try {
@@ -177,7 +760,7 @@ private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String
                     var latestDate = 0L
                     var buildNumber = 0
                     val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
-                    
+
                     for (i in 0 until arr.length()) {
                         val b = arr.getJSONObject(i)
                         val dateStr = b.optString("build_date")
@@ -187,27 +770,27 @@ private suspend fun fetchDynamicSuperProps(ctx: Context, region: Region): String
                             buildNumber = b.optInt("build_number")
                         }
                     }
-                    
+
                     if (buildNumber != 0) {
-                        addQuestLog("SuperProps", "Build mais recente encontrada: $buildNumber")
+                        addQuestLog("SuperProps", "Latest build found: $buildNumber")
                         resultProps = generateSuperPropsJson(region, buildNumber)
                         saveCachedSuperProps(ctx, resultProps)
-                        addQuestLog("SuperProps", "Gerado e salvo no cache com sucesso!")
+                        addQuestLog("SuperProps", "Generated and cached successfully!")
                     }
                 }
             } else {
-                addQuestLog("SuperProps", "Tentativa $attempts falhou (HTTP ${resp.code})")
+                addQuestLog("SuperProps", "Attempt $attempts failed (HTTP ${resp.code})")
             }
         } catch (e: Exception) {
-            addQuestLog("SuperProps", "Erro na tentativa $attempts: ${e.message}")
+            addQuestLog("SuperProps", "Error on attempt $attempts: ${e.message}")
         }
     }
-    
+
     if (resultProps.isEmpty()) {
-        addQuestLog("SuperProps", "Todas as tentativas falharam. Usando cache local.")
+        addQuestLog("SuperProps", "All attempts failed. Using local cache.")
         resultProps = getCachedSuperProps(ctx)
     }
-    
+
     return@withContext resultProps
 }
 
@@ -333,15 +916,8 @@ private fun parseQuest(q: JSONObject): QuestItem? {
     )
 }
 
-private suspend fun apiFetch(token: String, region: Region, superProps: String): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
-    val now  = System.currentTimeMillis()
-    val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
-    addQuestLog("API", "GET /quests/@me", "Headers:\n${req.headers}")
-    val resp = http.newCall(req).execute()
-    val body = resp.body?.string() ?: ""
-    addQuestLog("API", "Response ${resp.code}", body.take(2000))
-    if (!resp.isSuccessful) throw Exception(try { JSONObject(body).optString("message", "HTTP ${resp.code}") } catch (_: Exception) { "HTTP ${resp.code}" })
-    
+private fun parseQuestsFromJson(body: String): List<QuestItem> {
+    val now = System.currentTimeMillis()
     val parsed = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
     val arr = parsed.optJSONArray("quests")
         ?: try { JSONArray(body) } catch (_: Exception) { JSONArray() }
@@ -356,7 +932,19 @@ private suspend fun apiFetch(token: String, region: Region, superProps: String):
             }
         }
     }
-    
+    return list
+}
+
+private suspend fun apiFetch(token: String, region: Region, superProps: String): Pair<List<QuestItem>, Int?> = withContext(Dispatchers.IO) {
+    val req = buildReq("https://discord.com/api/v9/quests/@me", token, region, superProps, "https://discord.com/quest-home?tab=all").build()
+    addQuestLog("API", "GET /quests/@me", "Headers:\n${req.headers}")
+    val resp = http.newCall(req).execute()
+    val body = resp.body?.string() ?: ""
+    addQuestLog("API", "Response ${resp.code}", body.take(2000))
+    if (!resp.isSuccessful) throw Exception(try { JSONObject(body).optString("message", "HTTP ${resp.code}") } catch (_: Exception) { "HTTP ${resp.code}" })
+
+    val list = parseQuestsFromJson(body)
+
     val orbReq = buildReq("https://discord.com/api/v9/users/@me/virtual-currency/balance", token, region, superProps).build()
     val orbBody = try {
         http.newCall(orbReq).execute().body?.string() ?: "{}"
@@ -426,9 +1014,9 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     val sendTs = minOf(needed.toDouble(), timestamp.toDouble() + Math.random())
                     val bodyStr = JSONObject().put("timestamp", sendTs).toString()
                     val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
-                    
+
                     addQuestLog("API", "POST /video-progress", "Payload: $bodyStr")
-                    
+
                     val rj = try {
                         retryApi {
                             val postReq = buildReq(
@@ -491,7 +1079,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     val bodyStr = JSONObject().put("stream_key", streamKey).put("terminal", false).toString()
                     val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
                     addQuestLog("API", "POST /heartbeat", "Payload: $bodyStr")
-                    
+
                     val rj = try {
                         retryApi {
                             val postReq = buildReq(
@@ -555,9 +1143,14 @@ class QuestActivity : ComponentActivity() {
         private const val PREFS       = "quest_prefs_v3"
         fun start(ctx: Context, token: String) = ctx.startActivity(Intent(ctx, QuestActivity::class.java).putExtra(EXTRA_TOKEN, token))
     }
+
+    private var webLoader: QuestWebLoader? = null
+
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
         val token = intent.getStringExtra(EXTRA_TOKEN) ?: run { finish(); return }
+        loadLogsFromCache(this)
+        webLoader = QuestWebLoader(this, token)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = DC.Primary, background = DC.Bg, surface = DC.Surface)) {
                 Surface(Modifier.fillMaxSize(), color = DC.Bg) {
@@ -566,10 +1159,16 @@ class QuestActivity : ComponentActivity() {
                     if (!tosAcked) TosDialog(
                         onAccept  = { prefs.edit().putBoolean("tos_ack", true).apply(); tosAcked = true },
                         onDecline = { finish() }
-                    ) else QuestScreen(token, onBack = { finish() })
+                    ) else QuestScreen(token, webLoader, onBack = { finish() })
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        saveLogsToCache(this)
+        webLoader?.destroy()
     }
 }
 
@@ -594,7 +1193,7 @@ private fun TosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
 }
 
 @Composable
-private fun QuestScreen(token: String, onBack: () -> Unit) {
+private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () -> Unit) {
     var loading     by remember { mutableStateOf(true) }
     var fetchError  by remember { mutableStateOf<String?>(null) }
     var orbBalance  by remember { mutableStateOf<Int?>(null) }
@@ -615,49 +1214,97 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
     var fPlay       by remember { mutableStateOf(false) }
     val states      = remember { mutableStateListOf<QuestState>() }
     var showDebug   by remember { mutableStateOf(false) }
-    
+    var showWebView by remember { mutableStateOf(false) }
+
     var titleClicks by remember { mutableIntStateOf(0) }
     var lastClickTime by remember { mutableStateOf(0L) }
 
-    LaunchedEffect(refreshKey, region) {
-        loading = true; fetchError = null; states.clear(); orbBalance = null
-        try {
-            var (list, orbs) = apiFetch(token, region, superProps)
-            
-            if (list.isEmpty()) {
-                addQuestLog("WARN", "Quests Empty", "Tentando buscar novo SuperProps...")
-                val newProps = fetchDynamicSuperProps(ctx, region)
-                if (newProps.isNotEmpty() && newProps != superProps) {
-                    superProps = newProps
-                    val retryResult = apiFetch(token, region, newProps)
-                    list = retryResult.first
-                    orbs = retryResult.second
-                }
-            }
+    val capturedProps by capturedSuperProps
+    val capturedBuild by capturedBuildNumber
+    val wvReady by webViewReady
 
-            states.addAll(list.map { q ->
-                val rs = when {
-                    q.completedAt != null && q.claimedAt == null -> RunState.DONE
-                    q.taskName !in MOBILE -> RunState.DESKTOP_ONLY
-                    q.enrolledAt == null  -> RunState.NOT_ENROLLED
-                    else -> RunState.IDLE
+    LaunchedEffect(Unit) {
+        webLoader?.onQuestData = { body ->
+            try {
+                val list = parseQuestsFromJson(body)
+                withContext(Dispatchers.Main) {
+                    states.clear()
+                    states.addAll(list.map { q ->
+                        val rs = when {
+                            q.completedAt != null && q.claimedAt == null -> RunState.DONE
+                            q.taskName !in MOBILE -> RunState.DESKTOP_ONLY
+                            q.enrolledAt == null  -> RunState.NOT_ENROLLED
+                            else -> RunState.IDLE
+                        }
+                        QuestState(
+                            quest = q, runState = rs, progress = q.secondsDone,
+                            log = when (rs) {
+                                RunState.DONE         -> "Completed! Claim in the Discord app."
+                                RunState.DESKTOP_ONLY -> "Requires Desktop app."
+                                RunState.NOT_ENROLLED -> "Accept the quest in the Discord app first."
+                                else -> ""
+                            }
+                        )
+                    })
+                    loading = false
+                    addQuestLog("WebView", "Quests parsed from hooked response: ${list.size}")
                 }
-                QuestState(
-                    quest = q, runState = rs, progress = q.secondsDone,
-                    log = when (rs) {
-                        RunState.DONE         -> "Completed! Claim in the Discord app."
-                        RunState.DESKTOP_ONLY -> "Requires Desktop app."
-                        RunState.NOT_ENROLLED -> "Accept the quest in the Discord app first."
-                        else -> ""
-                    }
-                )
-            })
-            orbBalance = orbs
-        } catch (e: Exception) { 
-            fetchError = e.message
-            addQuestLog("ERROR", "Fetch Error", e.message ?: "Unknown")
+            } catch (e: Exception) {
+                addQuestLog("ERROR", "Parse hooked quests", e.message ?: "")
+            }
         }
-        loading = false
+
+        webLoader?.onSuperProps = { props ->
+            if (props.isNotEmpty()) {
+                superProps = props
+                saveCachedSuperProps(ctx, props)
+            }
+        }
+
+        webLoader?.init()
+    }
+
+    LaunchedEffect(refreshKey, region) {
+        if (refreshKey > 0 || !wvReady) {
+            loading = true; fetchError = null; states.clear(); orbBalance = null
+            try {
+                var (list, orbs) = apiFetch(token, region, superProps)
+
+                if (list.isEmpty()) {
+                    addQuestLog("WARN", "Quests Empty", "Trying to fetch new SuperProps...")
+                    val newProps = fetchDynamicSuperProps(ctx, region)
+                    if (newProps.isNotEmpty() && newProps != superProps) {
+                        superProps = newProps
+                        val retryResult = apiFetch(token, region, newProps)
+                        list = retryResult.first
+                        orbs = retryResult.second
+                    }
+                }
+
+                states.addAll(list.map { q ->
+                    val rs = when {
+                        q.completedAt != null && q.claimedAt == null -> RunState.DONE
+                        q.taskName !in MOBILE -> RunState.DESKTOP_ONLY
+                        q.enrolledAt == null  -> RunState.NOT_ENROLLED
+                        else -> RunState.IDLE
+                    }
+                    QuestState(
+                        quest = q, runState = rs, progress = q.secondsDone,
+                        log = when (rs) {
+                            RunState.DONE         -> "Completed! Claim in the Discord app."
+                            RunState.DESKTOP_ONLY -> "Requires Desktop app."
+                            RunState.NOT_ENROLLED -> "Accept the quest in the Discord app first."
+                            else -> ""
+                        }
+                    )
+                })
+                orbBalance = orbs
+            } catch (e: Exception) {
+                fetchError = e.message
+                addQuestLog("ERROR", "Fetch Error", e.message ?: "Unknown")
+            }
+            loading = false
+        }
     }
 
     var displayed = states.toList()
@@ -690,6 +1337,9 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                         }
                     }
                 },
+                onShowWebView = { showWebView = true },
+                webViewReady = wvReady,
+                capturedBuild = capturedBuild,
                 onTitleClick = {
                     val now = System.currentTimeMillis()
                     if (now - lastClickTime > 2000) titleClicks = 0
@@ -705,7 +1355,7 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                 loading            -> LoadingPane()
                 fetchError != null -> ErrorPane(fetchError!!) { refreshKey++ }
                 else               -> QuestList(
-                    displayed, token, region, superProps,
+                    displayed, token, region, superProps, webLoader,
                     onUpdate = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd },
                     onWatch  = { videoQuest = it },
                     onMore   = { moreQuest  = it }
@@ -726,9 +1376,13 @@ private fun QuestScreen(token: String, onBack: () -> Unit) {
                 onComplete = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd; videoQuest = null })
         }
         moreQuest?.let { MoreMenuSheet(it, LocalContext.current, onDismiss = { moreQuest = null }) }
-        
+
         if (showDebug) {
             DebugScreen(token, region, superProps, onClose = { showDebug = false }, onPropsUpdated = { superProps = it })
+        }
+
+        if (showWebView) {
+            WebViewDialog(webLoader, onDismiss = { showWebView = false })
         }
     }
 }
@@ -738,136 +1392,356 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    
+
     var currentActiveProps by remember { mutableStateOf(activeProps) }
     var customBuildInput by remember { mutableStateOf("") }
     var generatedProps by remember { mutableStateOf("") }
     var testResult by remember { mutableStateOf("") }
     var showWarning by remember { mutableStateOf(false) }
     var copiedField by remember { mutableStateOf("") }
+    var logTab by remember { mutableIntStateOf(0) }
+    val capturedBuild by capturedBuildNumber
+    val capturedProps by capturedSuperProps
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(DC.Bg)) {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().background(DC.Surface).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White) }
-                    Text("Debug & Testes", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = DC.White)
+                    Text("Debug & Logs", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = DC.White)
+                    Spacer(Modifier.weight(1f))
+                    if (capturedBuild > 0) {
+                        Box(Modifier.background(DC.Success.copy(0.15f), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                            Text("Build: $capturedBuild", fontSize = 10.sp, color = DC.Success, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        }
+                    }
+                    IconButton(onClick = {
+                        clearLogsCache(ctx)
+                    }) { Icon(Icons.Outlined.DeleteSweep, null, tint = DC.Error, modifier = Modifier.size(20.dp)) }
                 }
-                
-                Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    
-                    Text("Super Properties Atual no Cache:", color = DC.Primary, fontWeight = FontWeight.Bold)
-                    Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
-                        Text(currentActiveProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", currentActiveProps))
-                            copiedField = "ativo"
-                        }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copiar Atual") }
-                        Button(onClick = {
-                            scope.launch {
-                                currentActiveProps = fetchDynamicSuperProps(ctx, region)
-                                onPropsUpdated(currentActiveProps)
-                            }
-                        }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Buscar da API") }
-                    }
-                    
-                    if (copiedField.isNotEmpty()) {
-                        Text("Copiado para a área de transferência!", color = DC.Success, fontSize = 12.sp)
-                    }
 
-                    HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
-                    
-                    Text("Gerador de Super Properties:", color = DC.Warning, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = customBuildInput,
-                        onValueChange = { customBuildInput = it.filter { c -> c.isDigit() } },
-                        label = { Text("Client Build Number") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            scope.launch {
-                                val build = customBuildInput.toIntOrNull()
-                                if (build != null) {
-                                    generatedProps = generateSuperPropsJson(region, build)
-                                    addQuestLog("SuperProps", "Gerado customizado para build $build")
-                                } else {
-                                    addQuestLog("ERROR", "Build inválida")
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DebugTab("HTTP (${httpHookLogs.size})", logTab == 0) { logTab = 0 }
+                    DebugTab("Console (${consoleLogs.size})", logTab == 1) { logTab = 1 }
+                    DebugTab("System (${questLogs.size})", logTab == 2) { logTab = 2 }
+                    DebugTab("SuperProps", logTab == 3) { logTab = 3 }
+                }
+
+                Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+                    when (logTab) {
+                        0 -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    val sb = StringBuilder()
+                                    httpHookLogs.forEach { log ->
+                                        sb.appendLine("${log.timestamp} ${log.method} ${log.url}")
+                                        sb.appendLine("Status: ${log.responseStatus}")
+                                        if (log.requestHeaders.isNotEmpty()) sb.appendLine("Request Headers:\n${log.requestHeaders}")
+                                        if (log.requestBody != null) sb.appendLine("Request Body: ${log.requestBody}")
+                                        if (log.responseHeaders.isNotEmpty()) sb.appendLine("Response Headers:\n${log.responseHeaders}")
+                                        if (log.responseBody.isNotEmpty()) sb.appendLine("Response Body:\n${log.responseBody.take(5000)}")
+                                        sb.appendLine("---")
+                                    }
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("HTTP Logs", sb.toString()))
+                                    copiedField = "http"
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                                Button(onClick = {
+                                    saveLogsToCache(ctx)
+                                    copiedField = "saved"
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                            }
+                            if (copiedField == "http") Text("HTTP logs copied!", color = DC.Success, fontSize = 12.sp)
+                            if (copiedField == "saved") Text("Logs saved to cache!", color = DC.Success, fontSize = 12.sp)
+
+                            httpHookLogs.forEach { log ->
+                                var expanded by remember { mutableStateOf(false) }
+                                val statusColor = when {
+                                    log.responseStatus in 200..299 -> DC.Success
+                                    log.responseStatus in 400..599 -> DC.Error
+                                    log.responseStatus == 0 -> DC.Muted
+                                    else -> DC.Warning
+                                }
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = DC.Card),
+                                    modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }
+                                ) {
+                                    Column(Modifier.padding(10.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(Modifier.background(statusColor.copy(0.15f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                                Text(log.method, fontSize = 9.sp, color = statusColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                            }
+                                            Spacer(Modifier.width(6.dp))
+                                            if (log.responseStatus > 0) {
+                                                Text("${log.responseStatus}", fontSize = 10.sp, color = statusColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                                Spacer(Modifier.width(6.dp))
+                                            }
+                                            Text(log.url.take(80), fontSize = 10.sp, color = DC.SubText, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                            Text(log.timestamp, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace)
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, tint = DC.Muted, modifier = Modifier.size(14.dp))
+                                        }
+                                        if (expanded) {
+                                            Spacer(Modifier.height(8.dp))
+                                            if (log.requestHeaders.isNotEmpty()) {
+                                                Text("Request Headers:", fontSize = 9.sp, color = DC.Primary, fontWeight = FontWeight.Bold)
+                                                Text(log.requestHeaders, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace, maxLines = 30, overflow = TextOverflow.Ellipsis)
+                                                Spacer(Modifier.height(4.dp))
+                                            }
+                                            if (log.requestBody != null && log.requestBody.isNotEmpty()) {
+                                                Text("Request Body:", fontSize = 9.sp, color = DC.Warning, fontWeight = FontWeight.Bold)
+                                                Text(log.requestBody, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace, maxLines = 20, overflow = TextOverflow.Ellipsis)
+                                                Spacer(Modifier.height(4.dp))
+                                            }
+                                            if (log.responseHeaders.isNotEmpty()) {
+                                                Text("Response Headers:", fontSize = 9.sp, color = DC.Success, fontWeight = FontWeight.Bold)
+                                                Text(log.responseHeaders, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace, maxLines = 30, overflow = TextOverflow.Ellipsis)
+                                                Spacer(Modifier.height(4.dp))
+                                            }
+                                            if (log.responseBody.isNotEmpty()) {
+                                                Text("Response Body:", fontSize = 9.sp, color = DC.Teal, fontWeight = FontWeight.Bold)
+                                                Text(log.responseBody.take(5000), fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace, maxLines = 50, overflow = TextOverflow.Ellipsis)
+                                            }
+                                            Spacer(Modifier.height(6.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                TextButton(onClick = {
+                                                    val full = buildString {
+                                                        appendLine("${log.timestamp} ${log.method} ${log.url}")
+                                                        appendLine("Status: ${log.responseStatus}")
+                                                        if (log.requestHeaders.isNotEmpty()) appendLine("Request Headers:\n${log.requestHeaders}")
+                                                        if (log.requestBody != null) appendLine("Request Body: ${log.requestBody}")
+                                                        if (log.responseHeaders.isNotEmpty()) appendLine("Response Headers:\n${log.responseHeaders}")
+                                                        if (log.responseBody.isNotEmpty()) appendLine("Response Body:\n${log.responseBody}")
+                                                    }
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("HTTP Log", full))
+                                                }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                                    Text("Copy", fontSize = 10.sp, color = DC.Primary)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
-                        }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Gerar") }
-                        
-                        Button(onClick = {
-                            scope.launch {
-                                currentActiveProps = fetchDynamicSuperProps(ctx, region)
-                                customBuildInput = try { JSONObject(String(Base64.decode(currentActiveProps, Base64.DEFAULT))).optInt("client_build_number").toString() } catch (_: Exception) { "" }
-                                generatedProps = currentActiveProps
+                            if (httpHookLogs.isEmpty()) {
+                                Text("No HTTP logs yet. Load the WebView to capture requests.", color = DC.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
                             }
-                        }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Puxar Build Mais Recente") }
-                    }
-                    
-                    if (generatedProps.isNotEmpty()) {
-                        Text("Props Gerado:", color = DC.Success, fontWeight = FontWeight.Bold)
-                        Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
-                            Text(generatedProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = {
-                                clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", generatedProps))
-                                copiedField = "gerado"
-                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copiar Gerado") }
-                            Button(onClick = { showWarning = true }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Definir como Cache") }
-                        }
-                    }
 
-                    if (showWarning) {
-                        Card(colors = CardDefaults.cardColors(containerColor = DC.Error.copy(0.2f)), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                            Column(Modifier.padding(12.dp)) {
-                                Text("Aviso", color = DC.Error, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("Não é recomendado usar Super Properties personalizadas, pois o Discord pode bloquear requisições de builds antigas. Deseja continuar mesmo assim?", color = DC.SubText, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                        1 -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    val sb = StringBuilder()
+                                    consoleLogs.forEach { log -> sb.appendLine("[${log.timestamp}] ${log.level}: ${log.message}") }
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("Console Logs", sb.toString()))
+                                    copiedField = "console"
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                                Button(onClick = { saveLogsToCache(ctx) }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                            }
+                            if (copiedField == "console") Text("Console logs copied!", color = DC.Success, fontSize = 12.sp)
+                            consoleLogs.forEach { log ->
+                                val levelColor = when (log.level) {
+                                    "ERROR" -> DC.Error
+                                    "WARN" -> DC.Warning
+                                    "SUCCESS" -> DC.Success
+                                    "INFO" -> DC.Primary
+                                    else -> DC.Muted
+                                }
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Card), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(8.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(log.timestamp, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace)
+                                            Spacer(Modifier.width(5.dp))
+                                            Box(Modifier.background(levelColor.copy(0.15f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
+                                                Text(log.level, fontSize = 8.sp, color = levelColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                            }
+                                            Spacer(Modifier.width(5.dp))
+                                            Text(log.message, fontSize = 10.sp, color = DC.SubText, fontFamily = FontFamily.Monospace, maxLines = 5, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            }
+                            if (consoleLogs.isEmpty()) {
+                                Text("No console logs yet.", color = DC.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
+                            }
+                        }
+
+                        2 -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    val sb = StringBuilder()
+                                    questLogs.forEach { log ->
+                                        sb.appendLine("[${log.timestamp}] ${log.tag}: ${log.message}")
+                                        log.detail?.let { sb.appendLine("  Detail: $it") }
+                                    }
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("System Logs", sb.toString()))
+                                    copiedField = "system"
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                                Button(onClick = { saveLogsToCache(ctx) }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                            }
+                            if (copiedField == "system") Text("System logs copied!", color = DC.Success, fontSize = 12.sp)
+                            questLogs.forEach { log ->
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Card), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(8.dp)) {
+                                        Text("[${log.timestamp}] ${log.tag}: ${log.message}", color = DC.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        if (log.detail != null) {
+                                            Text(log.detail, color = DC.Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 10, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            }
+                            if (questLogs.isEmpty()) {
+                                Text("No system logs yet.", color = DC.Muted, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
+                            }
+                        }
+
+                        3 -> {
+                            if (capturedProps.isNotEmpty()) {
+                                Text("Captured from WebView (Build: $capturedBuild):", color = DC.Success, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
+                                    Text(capturedProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(onClick = {
-                                        saveCachedSuperProps(ctx, generatedProps)
-                                        currentActiveProps = generatedProps
-                                        onPropsUpdated(generatedProps)
-                                        showWarning = false
-                                        addQuestLog("SuperProps", "Cache substituído pelo valor customizado manualmente!")
-                                    }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Definir mesmo assim") }
-                                    OutlinedButton(onClick = { showWarning = false }) { Text("Cancelar") }
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", capturedProps))
+                                        copiedField = "captured"
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy Captured") }
+                                    Button(onClick = {
+                                        currentActiveProps = capturedProps
+                                        onPropsUpdated(capturedProps)
+                                        saveCachedSuperProps(ctx, capturedProps)
+                                        addQuestLog("SuperProps", "Applied captured props from WebView")
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Use Captured") }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                            }
+
+                            Text("Active Super Properties in Cache:", color = DC.Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
+                                Text(currentActiveProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", currentActiveProps))
+                                    copiedField = "ativo"
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy Current") }
+                                Button(onClick = {
+                                    scope.launch {
+                                        currentActiveProps = fetchDynamicSuperProps(ctx, region)
+                                        onPropsUpdated(currentActiveProps)
+                                    }
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Fetch from API") }
+                            }
+
+                            if (copiedField.isNotEmpty()) {
+                                Text("Copied to clipboard!", color = DC.Success, fontSize = 12.sp)
+                            }
+
+                            HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
+
+                            Text("Custom Super Properties Generator:", color = DC.Warning, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            OutlinedTextField(
+                                value = customBuildInput,
+                                onValueChange = { customBuildInput = it.filter { c -> c.isDigit() } },
+                                label = { Text("Client Build Number") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    scope.launch {
+                                        val build = customBuildInput.toIntOrNull()
+                                        if (build != null) {
+                                            generatedProps = generateSuperPropsJson(region, build)
+                                            addQuestLog("SuperProps", "Generated custom for build $build")
+                                        }
+                                    }
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Generate") }
+                                Button(onClick = { showWarning = true }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Set as Cache") }
+                            }
+
+                            if (generatedProps.isNotEmpty()) {
+                                Text("Generated Props:", color = DC.Success, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
+                                    Text(generatedProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
                                 }
                             }
+
+                            if (showWarning) {
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Error.copy(0.2f)), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text("Warning", color = DC.Error, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text("Custom Super Properties may cause Discord to block requests from outdated builds. Continue anyway?", color = DC.SubText, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(onClick = {
+                                                saveCachedSuperProps(ctx, generatedProps)
+                                                currentActiveProps = generatedProps
+                                                onPropsUpdated(generatedProps)
+                                                showWarning = false
+                                                addQuestLog("SuperProps", "Cache replaced with custom value!")
+                                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Set anyway") }
+                                            OutlinedButton(onClick = { showWarning = false }) { Text("Cancel") }
+                                        }
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
+
+                            Text("Test Request:", color = DC.Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Button(onClick = {
+                                scope.launch {
+                                    try {
+                                        val (list, orbs) = apiFetch(token, region, currentActiveProps)
+                                        testResult = "Success! Quests: ${list.size}, Orbs: $orbs"
+                                    } catch (e: Exception) {
+                                        testResult = "Error: ${e.message}"
+                                    }
+                                }
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.Success), modifier = Modifier.fillMaxWidth()) { Text("Test Quest Fetch") }
+                            Text("Result: $testResult", color = DC.White, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                         }
                     }
+                }
+            }
+        }
+    }
+}
 
-                    HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
-                    
-                    Text("Testar Requisição:", color = DC.Primary, fontWeight = FontWeight.Bold)
-                    Button(onClick = {
-                        scope.launch {
-                            try {
-                                val (list, orbs) = apiFetch(token, region, currentActiveProps)
-                                testResult = "Sucesso! Quests: ${list.size}, Orbs: $orbs"
-                            } catch (e: Exception) {
-                                testResult = "Erro: ${e.message}"
-                            }
-                        }
-                    }, colors = ButtonDefaults.buttonColors(containerColor = DC.Success), modifier = Modifier.fillMaxWidth()) { Text("Testar Busca de Quests") }
-                    Text("Resultado: $testResult", color = DC.White, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
-                    
-                    HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
-                    
-                    Text("Logs do Sistema (${questLogs.size}):", color = DC.Primary, fontWeight = FontWeight.Bold)
-                    questLogs.forEach { log ->
-                        Card(colors = CardDefaults.cardColors(containerColor = DC.Card), modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(8.dp)) {
-                                Text("[${log.timestamp}] ${log.tag}: ${log.message}", color = DC.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                                if (log.detail != null) {
-                                    Text(log.detail, color = DC.Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 10, overflow = TextOverflow.Ellipsis)
-                                }
+@Composable
+private fun DebugTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) DC.Primary.copy(0.2f) else DC.Card)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(label, fontSize = 11.sp, color = if (selected) DC.Primary else DC.Muted, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+    }
+}
+
+@Composable
+private fun WebViewDialog(webLoader: QuestWebLoader?, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(DC.Bg)) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().background(DC.Surface).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White) }
+                    Text("Discord Quest Page", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = DC.White, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { webLoader?.reload() }) { Icon(Icons.Outlined.Refresh, null, tint = DC.White, modifier = Modifier.size(20.dp)) }
+                }
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    webLoader?.getWebView()?.let { wv ->
+                        AndroidView(
+                            factory = { wv },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } ?: run {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CircularProgressIndicator(color = DC.Primary)
+                                Text("Initializing WebView...", color = DC.Muted, fontSize = 13.sp)
                             }
                         }
                     }
@@ -883,6 +1757,7 @@ private fun QuestHeader(
     onBack: () -> Unit, onFilter: () -> Unit, onCollect: () -> Unit,
     onRegion: () -> Unit, onRefresh: () -> Unit,
     filterCount: Int, canCompleteAll: Boolean, onCompleteAll: () -> Unit,
+    onShowWebView: () -> Unit, webViewReady: Boolean, capturedBuild: Int,
     onTitleClick: () -> Unit
 ) {
     Box(Modifier.fillMaxWidth().height(240.dp)) {
@@ -922,17 +1797,27 @@ private fun QuestHeader(
                     }
                     TopBarBtn(Icons.Outlined.Inventory2, onClick = onCollect)
                     TopBarBtn(Icons.Outlined.Refresh, onClick = onRefresh)
+                    TopBarBtn(
+                        if (webViewReady) Icons.Outlined.Visibility else Icons.Outlined.Web,
+                        onClick = onShowWebView
+                    )
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("${region.flag}  ${region.label}", fontSize = 11.sp, color = DC.Muted, fontWeight = FontWeight.Medium)
                 Text(
-                    "Quests", 
-                    fontWeight = FontWeight.ExtraBold, 
-                    fontSize = 28.sp, 
+                    "Quests",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 28.sp,
                     color = DC.White,
                     modifier = Modifier.clickable { onTitleClick() }
                 )
+                if (capturedBuild > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(Modifier.size(6.dp).background(DC.Success, CircleShape))
+                        Text("WebView Hooked (Build $capturedBuild)", fontSize = 11.sp, color = DC.Success, fontWeight = FontWeight.Bold)
+                    }
+                }
                 if (orbBalance != null && orbBalance > 0) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Box(Modifier.size(6.dp).background(DC.OrbViolet, CircleShape))
@@ -961,7 +1846,7 @@ private fun TopBarBtn(icon: ImageVector, onClick: () -> Unit) {
 
 @Composable
 private fun QuestList(
-    displayed: List<QuestState>, token: String, region: Region, superProps: String,
+    displayed: List<QuestState>, token: String, region: Region, superProps: String, webLoader: QuestWebLoader?,
     onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit
 ) {
     if (displayed.isEmpty()) {
@@ -976,13 +1861,13 @@ private fun QuestList(
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Spacer(Modifier.height(10.dp)) }
-        items(displayed, key = { it.quest.id }) { state -> QuestCard(state, token, region, superProps, onUpdate, onWatch, onMore) }
+        items(displayed, key = { it.quest.id }) { state -> QuestCard(state, token, region, superProps, webLoader, onUpdate, onWatch, onMore) }
         item { Spacer(Modifier.height(32.dp)) }
     }
 }
 
 @Composable
-private fun QuestCard(state: QuestState, token: String, region: Region, superProps: String, onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit) {
+private fun QuestCard(state: QuestState, token: String, region: Region, superProps: String, webLoader: QuestWebLoader?, onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit) {
     val ctx   = LocalContext.current
     val q     = state.quest
     val scope = rememberCoroutineScope()
@@ -1065,6 +1950,12 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                         PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f), shimX) {
                             scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
                         }
+                        if (webLoader != null && webViewReady.value) {
+                            SecondaryBtn("JS Hook", Icons.Outlined.Code, Modifier.weight(0.45f)) {
+                                webLoader.executeQuestJS(q.id)
+                                addQuestLog("JS", "Quest completion JS injected for ${q.id}")
+                            }
+                        }
                         if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
                     }
                 }
@@ -1096,13 +1987,13 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
 @Composable
 private fun FiltersSheet(
     sortMode: Int, fOrbs: Boolean, fDecor: Boolean, fInGame: Boolean, fWatch: Boolean, fPlay: Boolean,
-    onApply: (Int, Boolean, Boolean, Boolean, Boolean, Boolean) -> Unit, 
-    onReset: () -> Unit, 
+    onApply: (Int, Boolean, Boolean, Boolean, Boolean, Boolean) -> Unit,
+    onReset: () -> Unit,
     onDismiss: () -> Unit
 ) {
     var ts by remember { mutableIntStateOf(sortMode) }; var to by remember { mutableStateOf(fOrbs) }; var td by remember { mutableStateOf(fDecor) }
     var ti by remember { mutableStateOf(fInGame) }; var tw by remember { mutableStateOf(fWatch) }; var tp by remember { mutableStateOf(fPlay) }
-    
+
     BottomSheet(onDismiss) {
         SheetHandle()
         Text("Filters", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = DC.White, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 20.dp))
@@ -1129,7 +2020,7 @@ private fun FiltersSheet(
                 shape = RoundedCornerShape(26.dp),
                 border = BorderStroke(1.dp, DC.Border)
             ) { Text("Reset", color = DC.Muted, fontWeight = FontWeight.Bold) }
-            
+
             Button(onClick = { onApply(ts, to, td, ti, tw, tp) }, modifier = Modifier.weight(2f).height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = DC.Primary), shape = RoundedCornerShape(26.dp)) { Text("Done", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp) }
         }
     }
@@ -1286,15 +2177,15 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                         val remaining = minOf(7L, needed - spoofDone)
                                         delay(remaining * 1000L)
                                         if (!spoofActive) { running = false }
-                                        
+
                                         if (running) {
                                             val timestamp = spoofDone + 7L
                                             val sendTs = minOf(needed.toDouble(), timestamp.toDouble() + Math.random())
                                             val bodyStr = JSONObject().put("timestamp", sendTs).toString()
                                             val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
-                                            
+
                                             addQuestLog("API", "POST /video-progress (Dialog)", "Payload: $bodyStr")
-                                            
+
                                             val rj = try {
                                                 val postReq = buildReq(
                                                     "https://discord.com/api/v9/quests/${quest.id}/video-progress",
