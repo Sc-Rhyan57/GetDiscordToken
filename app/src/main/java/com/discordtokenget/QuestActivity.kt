@@ -389,7 +389,7 @@ private const val HOOK_JS = """
                     if (typeof a === 'object') {
                         try { return JSON.stringify(a); } catch(e) { return String(a); }
                     }
-                    return String(a);
+                    return String(a)
                 }).join(' ');
                 safeCall(function() { AndroidHook.onConsoleLog(level.toUpperCase(), args); });
                 return orig.apply(console, arguments);
@@ -902,6 +902,14 @@ data class CollectibleSub(val type: Int, val asset: String, val label: String)
 enum class RunState { IDLE, RUNNING, DONE, ERROR, NOT_ENROLLED, DESKTOP_ONLY }
 data class QuestState(val quest: QuestItem, val runState: RunState = RunState.IDLE, val progress: Long = 0L, val log: String = "")
 
+data class CaptchaData(
+    val sitekey: String,
+    val rqdata: String,
+    val rqtoken: String,
+    val sessionId: String,
+    val token: String = ""
+)
+
 private fun parseQuest(q: JSONObject): QuestItem? {
     val id  = q.optString("id").takeIf { it.isNotEmpty() } ?: return null
     val cfg = q.optJSONObject("config") ?: return null
@@ -1039,6 +1047,47 @@ private suspend fun retryApi(maxAttempts: Int = 5, initialDelayMs: Long = 500, m
             delay = minOf(maxDelayMs, delay * 2)
         }
     }
+}
+
+private suspend fun claimReward(token: String, region: Region, superProps: String, quest: QuestItem, captcha: CaptchaData? = null): Pair<JSONObject, CaptchaData?> = withContext(Dispatchers.IO) {
+    val url = "https://discord.com/api/v9/quests/${quest.id}/claim-reward"
+    val traffic = quest.rawConfig.optString("traffic_metadata_sealed", "")
+    val bodyStr = JSONObject().apply {
+        put("platform", 0)
+        put("location", 11)
+        put("is_targeted", false)
+        put("metadata_sealed", JSONObject.NULL)
+        put("traffic_metadata_sealed", traffic)
+    }.toString()
+    
+    val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
+    val req = buildReq(url, token, region, superProps).post(reqBody).apply {
+        if (captcha != null && captcha.token.isNotEmpty()) {
+            header("X-Captcha-Key", captcha.token)
+            header("X-Captcha-Rqtoken", captcha.rqtoken)
+            header("X-Captcha-Session-Id", captcha.sessionId)
+        }
+    }.build()
+    
+    val resp = http.newCall(req).execute()
+    val respBody = resp.body?.string() ?: "{}"
+    val json = JSONObject(respBody)
+    
+    if (resp.code == 400 && json.has("captcha_key")) {
+        val capData = CaptchaData(
+            sitekey = json.optString("captcha_sitekey"),
+            rqdata = json.optString("captcha_rqdata"),
+            rqtoken = json.optString("captcha_rqtoken"),
+            sessionId = json.optString("captcha_session_id")
+        )
+        return@withContext Pair(json, capData)
+    }
+    
+    if (!resp.isSuccessful) {
+        throw Exception(json.optString("message", "HTTP ${resp.code}"))
+    }
+    
+    return@withContext Pair(json, null)
 }
 
 private suspend fun runComplete(token: String, region: Region, superProps: String, state: QuestState, onUpdate: (QuestState) -> Unit) {
@@ -1876,6 +1925,56 @@ private fun WebViewDialog(webLoader: QuestWebLoader?, onDismiss: () -> Unit) {
 }
 
 @Composable
+private fun CaptchaDialog(sitekey: String, rqdata: String, onTokenReceived: (String) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(DC.Bg)) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().background(DC.Surface).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White) }
+                    Text("Captcha Verification", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = DC.White, modifier = Modifier.weight(1f))
+                }
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    AndroidView(factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            addJavascriptInterface(object {
+                                @JavascriptInterface
+                                fun onSuccess(token: String) {
+                                    onTokenReceived(token)
+                                }
+                            }, "AndroidCaptcha")
+                            
+                            val html = """
+                                <html>
+                                <head>
+                                    <script src="https://js.hcaptcha.com/1/api.js?render=explicit" async defer></script>
+                                    <style>body{margin:0;padding:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#1e1f22;}</style>
+                                </head>
+                                <body>
+                                    <div id="hcaptcha-container"></div>
+                                    <script>
+                                        hcaptcha.render('hcaptcha-container', {
+                                            sitekey: '$sitekey',
+                                            rqdata: '$rqdata',
+                                            callback: function(token) {
+                                                AndroidCaptcha.onSuccess(token);
+                                            }
+                                        });
+                                    </script>
+                                </body>
+                                </html>
+                            """.trimIndent()
+                            loadDataWithBaseURL("https://discord.com", html, "text/html", "UTF-8", null)
+                        }
+                    }, modifier = Modifier.fillMaxSize())
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun QuestHeader(
     orbBalance: Int?, region: Region,
     onBack: () -> Unit, onFilter: () -> Unit, onCollect: () -> Unit,
@@ -2000,6 +2099,8 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
     val pct = if (q.secondsNeeded > 0) (state.progress.coerceAtLeast(q.secondsDone).toFloat() / q.secondsNeeded).coerceIn(0f, 1f) else 0f
     val pulse = rememberInfiniteTransition(label = "p"); val pAlpha by pulse.animateFloat(0.15f, 0.6f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "pa")
     val shimT = rememberInfiniteTransition(label = "s"); val shimX by shimT.animateFloat(-350f, 1500f, infiniteRepeatable(tween(1900, easing = LinearEasing), RepeatMode.Restart), label = "sx")
+    
+    var showCaptcha by remember { mutableStateOf<CaptchaData?>(null) }
 
     Card(colors = CardDefaults.cardColors(containerColor = DC.Card), shape = RoundedCornerShape(18.dp),
         modifier = Modifier.fillMaxWidth().border(1.dp, accent.copy(if (state.runState == RunState.RUNNING) pAlpha else 0.15f), RoundedCornerShape(18.dp))) {
@@ -2066,61 +2167,97 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                             }
                         }
                     }
-                    state.runState == RunState.DONE -> StateChip(accent, Icons.Outlined.CheckCircle, "Completed!", Modifier.weight(1f))
+                    state.runState == RunState.DONE -> {
+                        StateChip(accent, Icons.Outlined.CheckCircle, "Completed!", Modifier.weight(1f))
+                        if (q.claimedAt == null) {
+                            SecondaryBtn("Claim", Icons.Outlined.Redeem, Modifier.weight(0.5f)) {
+                                scope.launch {
+                                    try {
+                                        val (res, cap) = claimReward(token, region, superProps, q)
+                                        if (cap != null) {
+                                            showCaptcha = cap
+                                        } else {
+                                            onUpdate(state.copy(runState = RunState.DONE, quest = q.copy(claimedAt = res.optString("claimed_at")), log = "Reward claimed successfully!"))
+                                        }
+                                    } catch (e: Exception) {
+                                        onUpdate(state.copy(log = "Claim error: ${e.message}"))
+                                    }
+                                }
+                            }
+                        }
+                    }
                     state.runState == RunState.DESKTOP_ONLY -> StateChip(DC.Warning, Icons.Outlined.Computer, "Desktop Only", Modifier.weight(1f))
                     state.runState == RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.Info, "Accept in Discord", Modifier.weight(1f))
                     else -> {
                         val isVideo = q.taskName.contains("WATCH")
-                        PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f), shimX) {
-                            scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
-                        }
-                        if (webLoader != null && webViewReady.value) {
-                            SecondaryBtn("JS Hook", Icons.Outlined.Code, Modifier.weight(0.45f)) {
-                                webLoader.executeQuestJS(q.id)
-                                addQuestLog("JS", "Quest completion JS injected for ${q.id}")
-                                onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
-                                
-                                scope.launch {
-                                    while (isActive) {
-                                        delay(5000)
-                                        webLoader.executeCustomJS("""
-                                            (function() {
-                                                try {
-                                                    var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
-                                                    webpackChunkdiscord_app.pop();
-                                                    var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
-                                                    var quest = QuestsStore.quests.get('${q.id}');
-                                                    if (!quest) return JSON.stringify({error: "not found"});
-                                                    var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
-                                                    var taskName = Object.keys(taskConfig.tasks)[0];
-                                                    var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
-                                                    var completed = quest.userStatus && quest.userStatus.completed_at != null;
-                                                    return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
-                                                } catch(e) { return JSON.stringify({error: e.message}); }
-                                            })();
-                                        """.trimIndent()) { res ->
-                                            if (res != "null" && res.isNotEmpty()) {
-                                                try {
-                                                    val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
-                                                    if (cleanRes != "null" && cleanRes.isNotEmpty()) {
-                                                        val json = JSONObject(cleanRes)
-                                                        if (json.has("progress")) {
-                                                            val p = json.getLong("progress")
-                                                            val n = json.getLong("needed")
-                                                            val c = json.getBoolean("completed")
-                                                            if (c || p >= n) {
-                                                                onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
-                                                                this.cancel()
-                                                            } else {
-                                                                onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
+                        var showCompleteMenu by remember { mutableStateOf(false) }
+                        Box {
+                            PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f), shimX) {
+                                showCompleteMenu = true
+                            }
+                            DropdownMenu(
+                                expanded = showCompleteMenu,
+                                onDismissRequest = { showCompleteMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Native API") },
+                                    onClick = {
+                                        showCompleteMenu = false
+                                        scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("JS Hook (WebView)") },
+                                    enabled = webLoader != null && webViewReady.value,
+                                    onClick = {
+                                        showCompleteMenu = false
+                                        webLoader?.executeQuestJS(q.id)
+                                        addQuestLog("JS", "Quest completion JS injected for ${q.id}")
+                                        onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
+                                        
+                                        scope.launch {
+                                            while (isActive) {
+                                                delay(5000)
+                                                webLoader.executeCustomJS("""
+                                                    (function() {
+                                                        try {
+                                                            var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+                                                            webpackChunkdiscord_app.pop();
+                                                            var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
+                                                            var quest = QuestsStore.quests.get('${q.id}');
+                                                            if (!quest) return JSON.stringify({error: "not found"});
+                                                            var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
+                                                            var taskName = Object.keys(taskConfig.tasks)[0];
+                                                            var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
+                                                            var completed = quest.userStatus && quest.userStatus.completed_at != null;
+                                                            return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
+                                                        } catch(e) { return JSON.stringify({error: e.message}); }
+                                                    })();
+                                                """.trimIndent()) { res ->
+                                                    if (res != "null" && res.isNotEmpty()) {
+                                                        try {
+                                                            val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
+                                                            if (cleanRes != "null" && cleanRes.isNotEmpty()) {
+                                                                val json = JSONObject(cleanRes)
+                                                                if (json.has("progress")) {
+                                                                    val p = json.getLong("progress")
+                                                                    val n = json.getLong("needed")
+                                                                    val c = json.getBoolean("completed")
+                                                                    if (c || p >= n) {
+                                                                        onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
+                                                                        this.cancel()
+                                                                    } else {
+                                                                        onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
+                                                                    }
+                                                                }
                                                             }
-                                                        }
+                                                        } catch (_: Exception) {}
                                                     }
-                                                } catch (_: Exception) {}
+                                                }
                                             }
                                         }
                                     }
-                                }
+                                )
                             }
                         }
                         if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
@@ -2129,6 +2266,32 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                 SecondaryIconBtn(Icons.Outlined.MoreVert) { onMore(q) }
             }
         }
+    }
+    
+    showCaptcha?.let { cap ->
+        CaptchaDialog(
+            sitekey = cap.sitekey,
+            rqdata = cap.rqdata,
+            onTokenReceived = { tokenCaptcha ->
+                scope.launch {
+                    try {
+                        val (res, _) = claimReward(token, region, superProps, q, cap.copy(token = tokenCaptcha))
+                        if (res.has("claimed_at")) {
+                            withContext(Dispatchers.Main) {
+                                showCaptcha = null
+                                onUpdate(state.copy(runState = RunState.DONE, quest = q.copy(claimedAt = res.optString("claimed_at")), log = "Reward claimed successfully!"))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            showCaptcha = null
+                            onUpdate(state.copy(log = "Claim captcha error: ${e.message}"))
+                        }
+                    }
+                }
+            },
+            onDismiss = { showCaptcha = null }
+        )
     }
 }
 
