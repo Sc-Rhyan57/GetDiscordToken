@@ -1455,8 +1455,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     // PROFILE FRAME
-
-        @Composable
+    @Composable
     fun UserProfileScreen(
         user: DiscordUser?, token: String, loadingUser: Boolean, loadingPresence: Boolean,
         loadingConns: Boolean, loadingGuilds: Boolean, loadingBadges: Boolean,
@@ -2091,7 +2090,7 @@ class MainActivity : ComponentActivity() {
                             Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading...", fontSize = 13.sp, color = AppColors.TextMuted) }
                         } else if (!authorizedApps.isNullOrEmpty()) {
                             SectionDivider("Authorized Apps (${authorizedApps.size})", AppColors.TextSecondary)
-                            val visibleApps = if (expandApps) authorizedApps : authorizedApps.take(3)
+                            val visibleApps = if (expandApps) authorizedApps else authorizedApps.take(3)
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 visibleApps.forEach { app ->
                                     Row(
