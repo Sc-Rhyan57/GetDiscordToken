@@ -50,3 +50,25 @@ jobs:
           name: android
           path: app/build/outputs/apk/${{ inputs.buildType }}/*.apk
 
+# RELEASE
+release:
+    if: inputs.buildType == 'release'
+    runs-on: ubuntu-latest
+    needs:
+      - build-android
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Discord Token v1.0.${{ github.run_number }}
+          files: dist/**/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
