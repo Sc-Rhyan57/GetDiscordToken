@@ -1157,11 +1157,16 @@ class MainActivity : ComponentActivity() {
             loadingPresence = true
             launch {
                 try {
-                    gatewayReconnectAttempts = 0; gatewaySessionId = ""; gatewaySequence = -1; currentPresence = null
-                    connectGatewayInternal(t, false) { updated -> presence = updated }
-                    var waited = 0
-                    while (presence == null && waited < 15000) { delay(100); waited += 100 }
-                    if (presence == null) addLog("WARN", "Gateway", "Timed out (${waited}ms)")
+                    if (rpcEnabled) {
+                        gatewayReconnectAttempts = 0; gatewaySessionId = ""; gatewaySequence = -1; currentPresence = null
+                        connectGatewayInternal(t, false) { updated -> presence = updated }
+                        var waited = 0
+                        while (presence == null && waited < 15000) { delay(100); waited += 100 }
+                        if (presence == null) addLog("WARN", "Gateway", "Timed out (${waited}ms)")
+                    } else {
+                        heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
+                        presence = null
+                    }
                 } catch (e: Exception) { addLog("ERROR", "Gateway", "Gateway init failed: ${e.message}") }
                 loadingPresence = false
             }
