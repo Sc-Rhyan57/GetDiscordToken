@@ -1167,7 +1167,7 @@ class MainActivity : ComponentActivity() {
                 val outboxArr = fetchOutbox(t)
                 addLog("SUCCESS", "API", "Outbox fetched: ${outboxArr.length()} items")
             }
-            
+
             loadingPresence = true
             launch {
                 try {
@@ -1276,6 +1276,16 @@ class MainActivity : ComponentActivity() {
                     friendCount = friendCount, nitroInfo = nitroInfo, orbsBalance = orbsBalance,
                     accountStanding = accountStanding, authorizedApps = authorizedApps,
                     footerClicks = footerClicks,
+                    rpcEnabled = rpcEnabled,
+                    onToggleRpc = {
+                        rpcEnabled = !rpcEnabled
+                        if (!rpcEnabled) {
+                            heartbeatJob?.cancel(); reconnectJob?.cancel(); gatewayWs?.close(1000, null)
+                            presence = null
+                        } else {
+                            refreshTick++
+                        }
+                    },
                     onFooterClick = { footerClicks++; if (footerClicks >= 5) { showLogs = true; footerClicks = 0 } },
                     onQuestClick = { showQuestPage = true },
                     onRefresh = {
@@ -1293,7 +1303,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
+    
     @Composable
     fun LogsScreen(onClose: () -> Unit, logsEnabled: Boolean, onToggle: (Boolean) -> Unit) {
         Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
