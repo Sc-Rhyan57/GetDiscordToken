@@ -981,14 +981,14 @@ class MainActivity : ComponentActivity() {
 
     private fun scheduleReconnect(token: String) {
         if (gatewayReconnectAttempts >= GATEWAY_MAX_RECONNECT_ATTEMPTS) { addLog("WARN", "Gateway", "Max reconnect attempts reached"); return }
-        reconnectJob?.cancel()
+        
+        reconnectHandler.removeCallbacks(reconnectRunnable)
+        
         val delay = GATEWAY_RECONNECT_DELAY_MS * (1L shl gatewayReconnectAttempts.coerceAtMost(4))
         gatewayReconnectAttempts++
         addLog("INFO", "Gateway", "Reconnect in ${delay}ms (attempt $gatewayReconnectAttempts/$GATEWAY_MAX_RECONNECT_ATTEMPTS)")
-        reconnectJob = CoroutineScope(Dispatchers.IO).launch {
-            delay(delay)
-            connectGatewayInternal(token, gatewaySessionId.isNotEmpty() && gatewaySequence > 0) { updated -> currentPresence = updated; onPresenceLive?.invoke(updated) }
-        }
+        
+        reconnectHandler.postDelayed(reconnectRunnable, delay)
     }
 
     private fun buildIdentifyPayload(token: String): String = JSONObject().apply {
@@ -2135,7 +2135,7 @@ class MainActivity : ComponentActivity() {
             }
 
             if (user?.profileEffectId != null) {
-                val effectUrl = "https://cdn.discordapp.com/profile-effects/${user.profileEffectId}/video.mp4"
+                val effectUrl = "https://cdn.discordapp.com/media/v1/collectibles-shop/${user.profileEffectId}/video"
                 AndroidView(
                     factory = { ctx ->
                         android.widget.VideoView(ctx).apply {
@@ -2153,7 +2153,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
+    
     // STATUS BADGE
     @Composable
     private fun StatusBadge(presence: DiscordPresence?, loadingPresence: Boolean) {
@@ -2434,7 +2434,6 @@ class MainActivity : ComponentActivity() {
             usrbgBannerUrl = usrbgUrl
         )
     }
-
     private suspend fun fetchProfileData(token: String, userId: String): ProfileData = withContext(Dispatchers.IO) {
         try {
             val resp = httpClient.newCall(
@@ -2453,7 +2452,9 @@ class MainActivity : ComponentActivity() {
             val primary = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0) else null
             val accent = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1) else null
             
-            val effectId = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
+            val effectId = up?.optJSONObject("profile_effect")?.optString("sku_id")?.takeIf { it.isNotEmpty() && it != "null" }
+                ?: up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
+                
             val angleRaw = up?.optDouble("theme_gradient_angle", 0.0) ?: 0.0
             val angleRad = (angleRaw * kotlin.math.PI / 180.0).toFloat()
 
