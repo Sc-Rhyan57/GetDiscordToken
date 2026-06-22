@@ -982,15 +982,17 @@ class MainActivity : ComponentActivity() {
     private fun scheduleReconnect(token: String) {
         if (gatewayReconnectAttempts >= GATEWAY_MAX_RECONNECT_ATTEMPTS) { addLog("WARN", "Gateway", "Max reconnect attempts reached"); return }
         
-        reconnectHandler.removeCallbacks(reconnectRunnable)
+        val handler = Handler(Looper.getMainLooper())
+        val runnable = Runnable { connectGatewayInternal(token, gatewaySessionId.isNotEmpty() && gatewaySequence > 0, onPresenceLive ?: return@Runnable) }
+        handler.removeCallbacks(runnable)
         
         val delay = GATEWAY_RECONNECT_DELAY_MS * (1L shl gatewayReconnectAttempts.coerceAtMost(4))
         gatewayReconnectAttempts++
         addLog("INFO", "Gateway", "Reconnect in ${delay}ms (attempt $gatewayReconnectAttempts/$GATEWAY_MAX_RECONNECT_ATTEMPTS)")
         
-        reconnectHandler.postDelayed(reconnectRunnable, delay)
+        handler.postDelayed(runnable, delay)
     }
-
+    
     private fun buildIdentifyPayload(token: String): String = JSONObject().apply {
         put("op", 2)
         put("d", JSONObject().apply {
