@@ -810,6 +810,18 @@ private fun resolvePresenceFromSessions(sessions: JSONArray?): Triple<String, Li
     return Triple(bestStatus, platforms, customStatus)
 }
 
+private fun activityIdentityKey(a: JSONObject): String {
+    val type    = a.optInt("type", 0)
+    val name    = a.optString("name")
+    val syncId  = a.optString("sync_id").takeIf { it.isNotEmpty() && it != "null" }
+    val details = a.optString("details").takeIf { it.isNotEmpty() && it != "null" }
+    val state   = a.optString("state").takeIf { it.isNotEmpty() && it != "null" }
+    val tsStart = a.optJSONObject("timestamps")?.let { if (!it.isNull("start")) it.optLong("start") else null }
+    // sync_id univocamente identifica a faixa do Spotify; sem ele, cai para details+state+start
+    // para nao confundir musicas/atividades diferentes que compartilham o mesmo name+type (ex: "Spotify").
+    return "$type|$name|${syncId ?: ""}|${details ?: ""}|${state ?: ""}|${tsStart ?: ""}"
+}
+
 private fun resolveActivityImageUrl(image: String, appId: String?): String? = when {
     image.startsWith("spotify:")    -> "https://i.scdn.co/image/${image.removePrefix("spotify:")}"
     image.startsWith("mp:external/")-> "https://media.discordapp.net/external/${image.removePrefix("mp:external/")}"
@@ -857,14 +869,32 @@ private fun buildActivity(a: JSONObject): PresenceActivity {
 private fun activitiesFromArray(acts: JSONArray?): List<PresenceActivity> {
     if (acts == null) return emptyList()
     val list = mutableListOf<PresenceActivity>()
-    for (j in 0 until acts.length()) { val a = acts.getJSONObject(j); if (a.optInt("type", -1) == 4) continue; val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue; val type = a.optInt("type", 0); if (list.none { it.name == name && it.type == type }) list.add(buildActivity(a)) }
+    val seenKeys = mutableSetOf<String>()
+    for (j in 0 until acts.length()) {
+        val a = acts.getJSONObject(j)
+        if (a.optInt("type", -1) == 4) continue
+        val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue
+        val key = activityIdentityKey(a)
+        if (seenKeys.add(key)) list.add(buildActivity(a))
+    }
     return list
 }
 
 private fun activitiesFromSessions(sessions: JSONArray?): List<PresenceActivity> {
     if (sessions == null) return emptyList()
     val list = mutableListOf<PresenceActivity>()
-    for (i in 0 until sessions.length()) { val s = sessions.getJSONObject(i); val acts = s.optJSONArray("activities") ?: continue; for (j in 0 until acts.length()) { val a = acts.getJSONObject(j); if (a.optInt("type", -1) == 4) continue; val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue; val type = a.optInt("type", 0); if (list.none { it.name == name && it.type == type }) list.add(buildActivity(a)) }  }
+    val seenKeys = mutableSetOf<String>()
+    for (i in 0 until sessions.length()) {
+        val s = sessions.getJSONObject(i)
+        val acts = s.optJSONArray("activities") ?: continue
+        for (j in 0 until acts.length()) {
+            val a = acts.getJSONObject(j)
+            if (a.optInt("type", -1) == 4) continue
+            val name = a.optString("name").takeIf { it.isNotEmpty() } ?: continue
+            val key = activityIdentityKey(a)
+            if (seenKeys.add(key)) list.add(buildActivity(a))
+        }
+    }
     return list
 }
 
@@ -1046,7 +1076,7 @@ class MainActivity : ComponentActivity() {
                                     val updated = DiscordPresence(status, activities, finalPlatforms, cs)
                                     currentPresence = updated; onPresenceLive?.invoke(updated)
                                 }
-                                "SESSION_REPLACE" -> {
+                                "SESSIONS_REPLACE" -> {
                                     val sessions = json.optJSONArray("d") ?: return
                                     val (status, platforms, cs) = resolvePresenceFromSessions(sessions); val activities = activitiesFromSessions(sessions)
                                     val updated = DiscordPresence(status, activities, platforms, cs); currentPresence = updated; onPresenceLive?.invoke(updated)
@@ -2213,7 +2243,7 @@ class MainActivity : ComponentActivity() {
         var elapsed      by remember { mutableStateOf("") }
         var remaining    by remember { mutableStateOf("") }
         var progFraction by remember { mutableStateOf(0f) }
-        LaunchedEffect(activity.name, activity.timestamps?.start, activity.timestamps?.end) {
+        LaunchedEffect(activity.name, activity.syncId, activity.details, activity.state, activity.timestamps?.start, activity.timestamps?.end) {
             while (true) {
                 val ts = activity.timestamps
                 if (ts?.start != null) elapsed = formatElapsed(ts.start)
