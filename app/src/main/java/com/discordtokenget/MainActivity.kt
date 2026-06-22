@@ -1163,6 +1163,11 @@ class MainActivity : ComponentActivity() {
             }
             user = fetched; loadingUser = false
 
+            launch {
+                val outboxArr = fetchOutbox(t)
+                addLog("SUCCESS", "API", "Outbox fetched: ${outboxArr.length()} items")
+            }
+            
             loadingPresence = true
             launch {
                 try {
