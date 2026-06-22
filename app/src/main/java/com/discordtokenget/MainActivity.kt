@@ -1103,6 +1103,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun DiscordTokenApp(initialToken: String?) {
         val ctx = LocalContext.current
+        var rpcEnabled by remember { mutableStateOf(true) }
         var token           by remember { mutableStateOf(initialToken) }
         var user            by remember { mutableStateOf<DiscordUser?>(null) }
         var presence        by remember { mutableStateOf<DiscordPresence?>(null) }
