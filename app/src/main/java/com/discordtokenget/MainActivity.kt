@@ -2434,9 +2434,11 @@ class MainActivity : ComponentActivity() {
             val json = JSONObject(body)
 
             val up = json.optJSONObject("user_profile")
+
             val themeArr = up?.optJSONArray("theme_colors")
-            val primary  = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0).takeIf { it != 0 } else null
-            val accent   = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1).takeIf { it != 0 } else null
+            val primary = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0) else null
+            val accent = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1) else null
+            
             val effectId = up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
             val angleRaw = up?.optDouble("theme_gradient_angle", 0.0) ?: 0.0
             val angleRad = (angleRaw * kotlin.math.PI / 180.0).toFloat()
