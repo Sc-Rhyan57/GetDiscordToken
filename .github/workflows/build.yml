@@ -50,8 +50,8 @@ jobs:
           name: android
           path: app/build/outputs/apk/${{ inputs.buildType }}/*.apk
 
-# RELEASE
-release:
+  # ─── Release única ─────────────────────────────────────────────────────────
+  release:
     if: inputs.buildType == 'release'
     runs-on: ubuntu-latest
     needs:
