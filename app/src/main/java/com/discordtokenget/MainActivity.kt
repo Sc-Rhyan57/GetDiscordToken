@@ -972,10 +972,10 @@ class MainActivity : ComponentActivity() {
 
     private fun scheduleReconnect(token: String) {
         if (gatewayReconnectAttempts >= GATEWAY_MAX_RECONNECT_ATTEMPTS) { addLog("WARN", "Gateway", "Max reconnect attempts reached"); return }
+        reconnectJob?.cancel()
         val delay = GATEWAY_RECONNECT_DELAY_MS * (1L shl gatewayReconnectAttempts.coerceAtMost(4))
         gatewayReconnectAttempts++
         addLog("INFO", "Gateway", "Reconnect in ${delay}ms (attempt $gatewayReconnectAttempts/$GATEWAY_MAX_RECONNECT_ATTEMPTS)")
-        reconnectJob?.cancel()
         reconnectJob = CoroutineScope(Dispatchers.IO).launch {
             delay(delay)
             connectGatewayInternal(token, gatewaySessionId.isNotEmpty() && gatewaySequence > 0) { updated -> currentPresence = updated; onPresenceLive?.invoke(updated) }
