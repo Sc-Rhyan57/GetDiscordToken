@@ -2333,14 +2333,14 @@ private fun FiltersSheet(
             CheckRow("Orbs", to) { to = !to }
             HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
             CheckRow("Avatar decoration", td) { td = !td }
-            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f)
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
             CheckRow("In-game rewards", ti) { ti = !ti }
         }
         Spacer(Modifier.height(16.dp))
         SheetSection("Quest type")
         SheetGroup {
             CheckRow("Play", tp) { tp = !tp }
-            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f)
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = DC.Border.copy(0.4f))
             CheckRow("Watch", tw) { tw = !tw }
         }
         Spacer(Modifier.height(24.dp))
