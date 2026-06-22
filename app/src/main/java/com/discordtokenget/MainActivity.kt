@@ -226,7 +226,6 @@ data class DiscordUser(
     val hasOrbsBadge: Boolean,
     val themeColorPrimary: Int?,
     val themeColorAccent: Int?,
-    val profileEffectId: String?,
     val displayNameStyle: String?,
     val themeGradientAngle: Float,
     val nitroSince: String?,
@@ -684,24 +683,6 @@ private fun ProfileThemeGradient(
 
 
 @Composable
-private fun ProfileEffectBadge(effectId: String) {
-    val thumbUrl = "https://cdn.discordapp.com/profile-effects/$effectId/thumbnail.png"
-    Row(
-        modifier = Modifier
-            .background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge))
-            .border(1.dp, AppColors.Primary.copy(0.25f), RoundedCornerShape(Radius.Badge))
-            .padding(horizontal = 8.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        AnimatedImage(thumbUrl, "Profile Effect", Modifier.size(20.dp).clip(RoundedCornerShape(4.dp)))
-        Spacer(Modifier.width(6.dp))
-        Text("Profile Effect", fontSize = 11.sp, color = AppColors.Primary, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-
-
-@Composable
 private fun AnimatedImage(
     url: String,
     contentDescription: String?,
@@ -891,7 +872,6 @@ private data class ProfileData(
     val badges: List<BadgeInfo>,
     val themeColorPrimary: Int?,
     val themeColorAccent: Int?,
-    val profileEffectId: String?,
     val gradientAngle: Float,
     val pronouns: String?
 )
@@ -1196,7 +1176,6 @@ class MainActivity : ComponentActivity() {
                         user = prevUser.copy(
                             themeColorPrimary  = profileResult.themeColorPrimary ?: prevUser.themeColorPrimary,
                             themeColorAccent   = profileResult.themeColorAccent  ?: prevUser.themeColorAccent,
-                            profileEffectId    = profileResult.profileEffectId   ?: prevUser.profileEffectId,
                             themeGradientAngle = profileResult.gradientAngle,
                             pronouns           = profileResult.pronouns ?: prevUser.pronouns
                         )
@@ -1838,11 +1817,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        if (user.profileEffectId != null) {
-                            Spacer(Modifier.height(8.dp))
-                            ProfileEffectBadge(user.profileEffectId)
-                        }
-
                         if (user.displayNameStyle != null) {
                             val dsObj = runCatching { org.json.JSONObject(user.displayNameStyle) }.getOrNull()
                             val hasRealStyle = dsObj != null && (
@@ -2031,7 +2005,6 @@ class MainActivity : ComponentActivity() {
                             }
                             if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
                             if (user.avatarDecorationAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Decoration", "Active ✓", AppColors.Success)
-                            if (user.profileEffectId != null) InfoRow(Icons.Outlined.Star, "Profile Effect", "Active (ID: ${user.profileEffectId.take(12)}…)", AppColors.Primary)
                             if (user.displayNameStyle != null) InfoRow(Icons.Outlined.TextFields, "Name Style", "Active ✓", AppColors.Primary)
                             if (!user.bannerColor.isNullOrBlank()) {
                                 val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrNull()
@@ -2134,24 +2107,6 @@ class MainActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.height(32.dp))
                 }
-            }
-
-            if (user?.profileEffectId != null) {
-                val effectUrl = "https://cdn.discordapp.com/media/v1/collectibles-shop/${user.profileEffectId}/video"
-                AndroidView(
-                    factory = { ctx ->
-                        android.widget.VideoView(ctx).apply {
-                            setVideoURI(Uri.parse(effectUrl))
-                            setOnPreparedListener { mp -> mp.isLooping = true; mp.setVolume(0f, 0f); start() }
-                            setOnErrorListener { _, _, _ -> true }
-                            isClickable = false
-                            isFocusable = false
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        }
-                    },
-                    update = { if (!it.isPlaying) it.start() },
-                    modifier = Modifier.fillMaxSize()
-                )
             }
         }
     }
@@ -2427,7 +2382,6 @@ class MainActivity : ComponentActivity() {
             hasOrbsBadge     = false,
             themeColorPrimary = null,
             themeColorAccent  = null,
-            profileEffectId   = null,
             displayNameStyle  = displayNameStyleRaw,
             themeGradientAngle = 0f,
             nitroSince = null,
@@ -2444,8 +2398,8 @@ class MainActivity : ComponentActivity() {
                     .header("Authorization", token)
                     .build()
             ).execute()
-            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /profile"); return@withContext ProfileData(emptyList(), null, null, null, 0f, null) }
-            val body = resp.body?.string() ?: return@withContext ProfileData(emptyList(), null, null, null, 0f, null)
+            if (!resp.isSuccessful) { addLog("WARN", "API", "HTTP ${resp.code} /profile"); return@withContext ProfileData(emptyList(), null, null, 0f, null) }
+            val body = resp.body?.string() ?: return@withContext ProfileData(emptyList(), null, null, 0f, null)
             val json = JSONObject(body)
 
             val up = json.optJSONObject("user_profile")
@@ -2453,10 +2407,7 @@ class MainActivity : ComponentActivity() {
             val themeArr = up?.optJSONArray("theme_colors")
             val primary = if (themeArr != null && themeArr.length() > 0) themeArr.optInt(0) else null
             val accent = if (themeArr != null && themeArr.length() > 1) themeArr.optInt(1) else null
-            
-            val effectId = up?.optJSONObject("profile_effect")?.optString("sku_id")?.takeIf { it.isNotEmpty() && it != "null" }
-                ?: up?.optString("profile_effect_id")?.takeIf { it.isNotEmpty() && it != "null" }
-                
+
             val angleRaw = up?.optDouble("theme_gradient_angle", 0.0) ?: 0.0
             val angleRad = (angleRaw * kotlin.math.PI / 180.0).toFloat()
 
@@ -2471,9 +2422,9 @@ class MainActivity : ComponentActivity() {
                 result.add(BadgeInfo(id = id, label = badgeLabelFromId(id, desc), color = badgeColorFromId(id), cdnUrl = "https://cdn.discordapp.com/badge-icons/$icon.png", description = desc, link = link))
             }
             val pronouns = up?.optString("pronouns")?.takeIf { it.isNotEmpty() && it != "null" }
-            addLog("SUCCESS", "API", "Profile: badges=${result.size} theme=${primary != null} effect=${effectId != null} angle=${angleRaw}° pronouns=${pronouns != null}")
-            ProfileData(result, primary, accent, effectId, angleRad, pronouns)
-        } catch (e: Exception) { addLog("ERROR", "API", "fetchProfileData: ${e.message}"); ProfileData(emptyList(), null, null, null, 0f, null) }
+            addLog("SUCCESS", "API", "Profile: badges=${result.size} theme=${primary != null} angle=${angleRaw}° pronouns=${pronouns != null}")
+            ProfileData(result, primary, accent, angleRad, pronouns)
+        } catch (e: Exception) { addLog("ERROR", "API", "fetchProfileData: ${e.message}"); ProfileData(emptyList(), null, null, 0f, null) }
     }
 
     private fun badgeLabelFromId(id: String, fallback: String): String = when {
