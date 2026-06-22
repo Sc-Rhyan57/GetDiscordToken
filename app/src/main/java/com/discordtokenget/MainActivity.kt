@@ -1444,8 +1444,9 @@ class MainActivity : ComponentActivity() {
             onDispose { webRef.value?.apply { stopLoading(); loadUrl("about:blank"); Handler(Looper.getMainLooper()).postDelayed({ clearHistory(); destroy() }, 500) }; webRef.value = null }
         }
     }
+    // PROFILE FRAME
 
-    @Composable
+        @Composable
     fun UserProfileScreen(
         user: DiscordUser?, token: String, loadingUser: Boolean, loadingPresence: Boolean,
         loadingConns: Boolean, loadingGuilds: Boolean, loadingBadges: Boolean,
@@ -1456,6 +1457,7 @@ class MainActivity : ComponentActivity() {
         nitroInfo: Triple<String?,String?,Int>?, orbsBalance: Int?,
         accountStanding: AccountStanding?, authorizedApps: List<AuthorizedApp>?,
         footerClicks: Int, onFooterClick: () -> Unit,
+        rpcEnabled: Boolean, onToggleRpc: () -> Unit,
         onQuestClick: () -> Unit,
         onRefresh: () -> Unit, onLogout: () -> Unit
     ) {
@@ -1520,13 +1522,22 @@ class MainActivity : ComponentActivity() {
                 containerColor = AppColors.Surface, shape = RoundedCornerShape(Radius.Card))
         }
 
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        val hasThemeGradient = user?.themeColorPrimary != null && user.themeColorAccent != null
+        val hasUsrbg         = user?.usrbgBannerUrl != null
 
-            val hasThemeGradient = user?.themeColorPrimary != null && user.themeColorAccent != null
-            val themeAngleRad    = if (hasThemeGradient) user!!.themeGradientAngle else 0f
-            val hasUsrbg         = user?.usrbgBannerUrl != null
+        Box(
+            Modifier.fillMaxSize().then(
+                if (hasThemeGradient) Modifier.background(
+                    Brush.verticalGradient(
+                        0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.8f),
+                        0.5f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.6f),
+                        1f to AppColors.Background
+                    )
+                ) else Modifier
+            )
+        ) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
 
-            Box(Modifier.fillMaxWidth()) {
                 Box(Modifier.fillMaxWidth().height(160.dp)) {
                     when {
                         useUsrbgBanner && hasUsrbg -> {
@@ -1547,29 +1558,9 @@ class MainActivity : ComponentActivity() {
                                 AnimatedImage(usrbgUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                             }
                         }
-                        hasThemeGradient -> {
-                            ProfileThemeGradient(
-                                primaryColor  = discordColorToCompose(user!!.themeColorPrimary!!),
-                                accentColor   = discordColorToCompose(user.themeColorAccent!!),
-                                angleRadians  = themeAngleRad,
-                                modifier      = Modifier.fillMaxSize()
-                            )
-                            if (user.banner != null) {
-                                val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
-                                AnimatedImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                            }
-                        }
                         user?.banner != null -> {
                             val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
                             AnimatedImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        }
-                        user?.accentColor != null -> {
-                            val c = Color(0xFF000000 or user.accentColor.toLong())
-                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
-                        }
-                        user?.bannerColor != null -> {
-                            val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrElse { AppColors.Primary }
-                            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(c, c.copy(0.4f), AppColors.Background))))
                         }
                         else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary.copy(0.6f), AppColors.Background))))
                     }
@@ -1589,23 +1580,28 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-            }
-
-            Column(Modifier.fillMaxWidth().then(
-                if (hasThemeGradient && !useUsrbgBanner) Modifier.background(
-                    Brush.verticalGradient(
-                        0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.55f),
-                        0.4f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.30f),
-                        1f to Color.Transparent
-                    )
-                ) else Modifier
-            ).padding(horizontal = 20.dp)) {
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    val decorAsset = user?.avatarDecorationAsset
-                    if (decorAsset != null) {
-                        AnimatedDecorationBorder(decorationAsset = decorAsset, size = 90.dp) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        val decorAsset = user?.avatarDecorationAsset
+                        if (decorAsset != null) {
+                            AnimatedDecorationBorder(decorationAsset = decorAsset, size = 90.dp) {
+                                Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
+                                    if (user.avatar != null) {
+                                        val ext = if (user.avatar.startsWith("a_")) "gif" else "webp"
+                                        AnimatedImage(
+                                            "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256",
+                                            null, Modifier.fillMaxSize(), ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(Modifier.fillMaxSize().background(AppColors.Primary), contentAlignment = Alignment.Center) {
+                                            Text(user.username.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 34.sp, fontWeight = FontWeight.Black, color = AppColors.OnPrimary)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
                             Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
-                                if (user.avatar != null) {
+                                if (user?.avatar != null) {
                                     val ext = if (user.avatar.startsWith("a_")) "gif" else "webp"
                                     AnimatedImage(
                                         "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256",
@@ -1613,534 +1609,543 @@ class MainActivity : ComponentActivity() {
                                     )
                                 } else {
                                     Box(Modifier.fillMaxSize().background(AppColors.Primary), contentAlignment = Alignment.Center) {
-                                        Text(user.username.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 34.sp, fontWeight = FontWeight.Black, color = AppColors.OnPrimary)
+                                        Text(user?.username?.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 34.sp, fontWeight = FontWeight.Black, color = AppColors.OnPrimary)
                                     }
                                 }
                             }
                         }
-                    } else {
-                        Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
-                            if (user?.avatar != null) {
-                                val ext = if (user.avatar.startsWith("a_")) "gif" else "webp"
-                                AnimatedImage(
-                                    "https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.$ext?size=256",
-                                    null, Modifier.fillMaxSize(), ContentScale.Crop
-                                )
-                            } else {
-                                Box(Modifier.fillMaxSize().background(AppColors.Primary), contentAlignment = Alignment.Center) {
-                                    Text(user?.username?.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 34.sp, fontWeight = FontWeight.Black, color = AppColors.OnPrimary)
-                                }
-                            }
-                        }
-                    }
 
-                    var showMenu by remember { mutableStateOf(false) }
-                    Box {
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.size(40.dp).background(AppColors.Surface, RoundedCornerShape(Radius.Small))
-                        ) {
-                            Icon(Icons.Outlined.MoreVert, null, tint = AppColors.TextSecondary, modifier = Modifier.size(20.dp))
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false },
-                            modifier = Modifier.background(AppColors.Surface)
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Quest Completer", color = AppColors.TextPrimary, fontSize = 14.sp) },
-                                leadingIcon = { Icon(Icons.Outlined.EmojiEvents, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
-                                onClick = { showMenu = false; onQuestClick() }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Reviews", color = AppColors.TextPrimary, fontSize = 14.sp) },
-                                leadingIcon = { Icon(Icons.Outlined.RateReview, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
-                                onClick = {
-                                    showMenu = false
-                                    if (user != null) ReviewActivity.start(ctx, token, user.id, user.username)
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Active Sessions", color = AppColors.TextPrimary, fontSize = 14.sp) },
-                                leadingIcon = { Icon(Icons.Outlined.Devices, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
-                                onClick = { showMenu = false; SessionsActivity.start(ctx, token) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Copy All Info", color = AppColors.TextPrimary, fontSize = 14.sp) },
-                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp)) },
-                                onClick = {
-                                    showMenu = false
-                                    if (user != null) {
-                                        val sb = buildString {
-                                            appendLine("=== Discord Account Info ===")
-                                            appendLine("Username: ${user.username}")
-                                            appendLine("Display Name: ${user.globalName ?: user.username}")
-                                            if (!user.pronouns.isNullOrBlank()) appendLine("Pronouns: ${user.pronouns}")
-                                            appendLine("User ID: ${user.id}")
-                                            appendLine("Discriminator: ${user.discriminator}")
-                                            if (!user.email.isNullOrBlank()) appendLine("Email: ${user.email}")
-                                            if (!user.phone.isNullOrBlank()) appendLine("Phone: ${user.phone}")
-                                            appendLine("Created: ${snowflakeToDate(user.id)}")
-                                            appendLine("Account Age: ${accountAgeString(snowflakeToTimestamp(user.id))}")
-                                            appendLine("2FA: ${if (user.mfaEnabled) "Enabled" else "Disabled"}")
-                                            appendLine("Verified: ${if (user.verified) "Yes" else "No"}")
-                                            if (!user.locale.isNullOrBlank()) appendLine("Locale: ${localeLabel(user.locale)}")
-                                            appendLine("Nitro: ${nitroLabel(user.premiumType)}")
-                                            if (guildCount != null) appendLine("Servers: $guildCount")
-                                            if (friendCount != null) appendLine("Friends: $friendCount")
-                                            if (orbsBalance != null && orbsBalance > 0) appendLine("Orbs: $orbsBalance")
-                                        }
-                                        copyToClipboard("Account Info", sb)
-                                    }
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Refresh", color = AppColors.TextPrimary, fontSize = 14.sp) },
-                                leadingIcon = { Icon(Icons.Outlined.Refresh, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp)) },
-                                onClick = { showMenu = false; onRefresh() }
-                            )
-                            HorizontalDivider(color = AppColors.Divider)
-                            DropdownMenuItem(
-                                text = { Text("Log Out", color = AppColors.Error, fontSize = 14.sp) },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null, tint = AppColors.Error, modifier = Modifier.size(18.dp)) },
-                                onClick = { showMenu = false; onLogout() }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-
-                if (loadingUser) {
-                    Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AppColors.Primary, strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
-                    }
-                } else if (user != null) {
-
-                    ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
-                        Button(onClick = { triggerTokenAction("copy") }, modifier = Modifier.fillMaxWidth().height(46.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = if (copied) AppColors.Success.copy(0.8f) else AppColors.Success),
-                            shape = RoundedCornerShape(Radius.Token)) {
-                            Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp), tint = Color.White); Spacer(Modifier.width(8.dp))
-                            Text(if (copied) "Copied!" else "Copy Token", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Card(colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVar), shape = RoundedCornerShape(Radius.Token)) {
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(if (showToken) token else "•".repeat(token.length),
-                                    fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = AppColors.TextSecondary,
-                                    maxLines = if (showToken) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                IconButton(onClick = { triggerTokenAction("show") }, modifier = Modifier.size(36.dp)) {
-                                    Icon(if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(12.dp))
-
-                    val displayName = user.globalName ?: user.username
-                    val nameStyle = user.displayNameStyle?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
-                    val nameColorPrimary  = nameStyle?.optString("color_primary")?.takeIf  { it.isNotBlank() && it != "null" }
-                    val nameColorAccent   = nameStyle?.optString("color_secondary")?.takeIf { it.isNotBlank() && it != "null" }
-                    val nameColorGradient = nameStyle?.optString("gradient_preset")?.takeIf { it.isNotBlank() && it != "null" }
-
-                    fun parseNameColor(hex: String?): Color? = hex?.let {
-                        runCatching { Color(android.graphics.Color.parseColor(if (it.startsWith("#")) it else "#$it")) }.getOrNull()
-                    }
-
-                    val c1 = parseNameColor(nameColorPrimary)
-                    val c2 = parseNameColor(nameColorAccent)
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        when {
-                            c1 != null && c2 != null && c1 != c2 ->
-                                Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.horizontalGradient(listOf(c1, c2))))
-                            c1 != null ->
-                                Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = c1)
-                            else ->
-                                Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
-                        }
-
-                        if (user.primaryGuildTag != null) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge))
-                                    .border(1.dp, AppColors.Primary.copy(0.25f), RoundedCornerShape(Radius.Badge))
-                                    .padding(horizontal = 7.dp, vertical = 3.dp)
+                        var showMenu by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier.size(40.dp).background(AppColors.Surface, RoundedCornerShape(Radius.Small))
                             ) {
-                                if (user.primaryGuildBadge != null && user.primaryGuildId != null) {
-                                    AsyncImage("https://cdn.discordapp.com/clan-badges/${user.primaryGuildId}/${user.primaryGuildBadge}.png?size=16", null, Modifier.size(12.dp).clip(CircleShape))
-                                    Spacer(Modifier.width(3.dp))
-                                }
-                                Text(user.primaryGuildTag, fontSize = 10.sp, color = AppColors.Primary, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Outlined.MoreVert, null, tint = AppColors.TextSecondary, modifier = Modifier.size(20.dp))
                             }
-                        }
-
-                        StatusBadge(presence = presence, loadingPresence = loadingPresence)
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "", fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                        IconButton(
-                            onClick = { copyToClipboard("Username", "@${user.username}${if (user.discriminator != "0") "#${user.discriminator}" else ""}") },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp))
-                        }
-                    }
-
-                    if (!user.pronouns.isNullOrBlank()) {
-                        Text(user.pronouns, fontSize = 13.sp, color = AppColors.TextMuted.copy(0.8f), fontWeight = FontWeight.Normal)
-                    }
-
-                    if (presence?.customStatus != null) {
-                        Spacer(Modifier.height(8.dp))
-                        val cs = presence.customStatus
-                        val sc = statusColor(presence.status)
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .background(sc.copy(alpha = 0.07f), RoundedCornerShape(Radius.Medium))
-                                .border(1.dp, sc.copy(alpha = 0.18f), RoundedCornerShape(Radius.Medium))
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (cs.emojiId != null) {
-                                val ext = if (cs.emojiAnimated) "gif" else "png"
-                                AnimatedImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=64", null, Modifier.size(24.dp), ContentScale.Fit)
-                                Spacer(Modifier.width(8.dp))
-                            } else if (!cs.emojiName.isNullOrEmpty()) {
-                                Text(cs.emojiName, fontSize = 22.sp, lineHeight = 24.sp)
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            Column(Modifier.weight(1f)) {
-                                if (!cs.text.isNullOrBlank()) {
-                                    Text(cs.text, fontSize = 14.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, lineHeight = 18.sp)
-                                }
-                                Text(
-                                    statusLabel(presence.status) + if (presence.platforms.isNotEmpty()) " · " + presence.platforms.joinToString(" & ") else "",
-                                    fontSize = 11.sp, color = sc.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                modifier = Modifier.background(AppColors.Surface)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Quest Completer", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                    leadingIcon = { Icon(Icons.Outlined.EmojiEvents, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
+                                    onClick = { showMenu = false; onQuestClick() }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Reviews", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                    leadingIcon = { Icon(Icons.Outlined.RateReview, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
+                                    onClick = {
+                                        showMenu = false
+                                        if (user != null) ReviewActivity.start(ctx, token, user.id, user.username)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Active Sessions", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                    leadingIcon = { Icon(Icons.Outlined.Devices, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
+                                    onClick = { showMenu = false; SessionsActivity.start(ctx, token) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (rpcEnabled) "Disable RPC" else "Enable RPC", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                    leadingIcon = { Icon(Icons.Outlined.Visibility, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp)) },
+                                    onClick = { showMenu = false; onToggleRpc() }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Copy All Info", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                    leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp)) },
+                                    onClick = {
+                                        showMenu = false
+                                        if (user != null) {
+                                            val sb = buildString {
+                                                appendLine("=== Discord Account Info ===")
+                                                appendLine("Username: ${user.username}")
+                                                appendLine("Display Name: ${user.globalName ?: user.username}")
+                                                if (!user.pronouns.isNullOrBlank()) appendLine("Pronouns: ${user.pronouns}")
+                                                appendLine("User ID: ${user.id}")
+                                                appendLine("Discriminator: ${user.discriminator}")
+                                                if (!user.email.isNullOrBlank()) appendLine("Email: ${user.email}")
+                                                if (!user.phone.isNullOrBlank()) appendLine("Phone: ${user.phone}")
+                                                appendLine("Created: ${snowflakeToDate(user.id)}")
+                                                appendLine("Account Age: ${accountAgeString(snowflakeToTimestamp(user.id))}")
+                                                appendLine("2FA: ${if (user.mfaEnabled) "Enabled" else "Disabled"}")
+                                                appendLine("Verified: ${if (user.verified) "Yes" else "No"}")
+                                                if (!user.locale.isNullOrBlank()) appendLine("Locale: ${localeLabel(user.locale)}")
+                                                appendLine("Nitro: ${nitroLabel(user.premiumType)}")
+                                                if (guildCount != null) appendLine("Servers: $guildCount")
+                                                if (friendCount != null) appendLine("Friends: $friendCount")
+                                                if (orbsBalance != null && orbsBalance > 0) appendLine("Orbs: $orbsBalance")
+                                            }
+                                            copyToClipboard("Account Info", sb)
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Refresh", color = AppColors.TextPrimary, fontSize = 14.sp) },
+                                    leadingIcon = { Icon(Icons.Outlined.Refresh, null, tint = AppColors.TextMuted, modifier = Modifier.size(18.dp)) },
+                                    onClick = { showMenu = false; onRefresh() }
+                                )
+                                HorizontalDivider(color = AppColors.Divider)
+                                DropdownMenuItem(
+                                    text = { Text("Log Out", color = AppColors.Error, fontSize = 14.sp) },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null, tint = AppColors.Error, modifier = Modifier.size(18.dp)) },
+                                    onClick = { showMenu = false; onLogout() }
                                 )
                             }
-                            Box(Modifier.size(9.dp).background(sc, CircleShape))
                         }
                     }
 
-                    if (presence?.platforms?.isNotEmpty() == true && presence.customStatus == null) {
-                        Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            presence.platforms.forEach { p ->
-                                Box(Modifier.background(statusColor(presence.status).copy(0.10f), RoundedCornerShape(Radius.Badge)).border(1.dp, statusColor(presence.status).copy(0.20f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                                    Text(p, fontSize = 10.sp, color = statusColor(presence.status).copy(0.9f), fontWeight = FontWeight.SemiBold)
-                                }
+                    Spacer(Modifier.height(14.dp))
+
+                    if (loadingUser) {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = AppColors.Primary, strokeWidth = 3.dp, modifier = Modifier.size(40.dp))
+                        }
+                    } else if (user != null) {
+
+                        ProfileSection("Access Token", Icons.Outlined.Fingerprint) {
+                            Button(onClick = { triggerTokenAction("copy") }, modifier = Modifier.fillMaxWidth().height(46.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (copied) AppColors.Success.copy(0.8f) else AppColors.Success),
+                                shape = RoundedCornerShape(Radius.Token)) {
+                                Icon(Icons.Outlined.ContentCopy, null, modifier = Modifier.size(16.dp), tint = Color.White); Spacer(Modifier.width(8.dp))
+                                Text(if (copied) "Copied!" else "Copy Token", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
                             }
-                        }
-                    }
-
-                    if (user.profileEffectId != null) {
-                        Spacer(Modifier.height(8.dp))
-                        ProfileEffectBadge(user.profileEffectId)
-                    }
-
-                    if (user.displayNameStyle != null) {
-                        val dsObj = runCatching { org.json.JSONObject(user.displayNameStyle) }.getOrNull()
-                        val hasRealStyle = dsObj != null && (
-                            dsObj.optString("color_primary").isNotEmpty() ||
-                            dsObj.optString("color_secondary").isNotEmpty() ||
-                            (dsObj.optString("font_type").isNotEmpty() && dsObj.optString("font_type") != "null")
-                        )
-                        if (hasRealStyle) {
                             Spacer(Modifier.height(8.dp))
-                            DisplayNameStyleBadge(styleJson = user.displayNameStyle)
+                            Card(colors = CardDefaults.cardColors(containerColor = AppColors.SurfaceVar), shape = RoundedCornerShape(Radius.Token)) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(if (showToken) token else "•".repeat(token.length),
+                                        fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = AppColors.TextSecondary,
+                                        maxLines = if (showToken) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { triggerTokenAction("show") }, modifier = Modifier.size(36.dp)) {
+                                        Icon(if (showToken) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null, tint = AppColors.Primary, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
                         }
-                    }
 
-                    if (loadingBadges) {
-                        Spacer(Modifier.height(12.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(12.dp), color = AppColors.Primary, strokeWidth = 1.5.dp); Spacer(Modifier.width(6.dp)); Text("Loading badges...", fontSize = 11.sp, color = AppColors.TextMuted) }
-                    } else if (badges.isNotEmpty()) {
-                        Spacer(Modifier.height(12.dp))
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            badges.forEach { badge ->
+                        Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(12.dp))
+
+                        val displayName = user.globalName ?: user.username
+                        val nameStyle = user.displayNameStyle?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+                        val nameColorPrimary  = nameStyle?.optString("color_primary")?.takeIf  { it.isNotBlank() && it != "null" }
+                        val nameColorAccent   = nameStyle?.optString("color_secondary")?.takeIf { it.isNotBlank() && it != "null" }
+
+                        fun parseNameColor(hex: String?): Color? = hex?.let {
+                            runCatching { Color(android.graphics.Color.parseColor(if (it.startsWith("#")) it else "#$it")) }.getOrNull()
+                        }
+
+                        val c1 = parseNameColor(nameColorPrimary)
+                        val c2 = parseNameColor(nameColorAccent)
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            when {
+                                c1 != null && c2 != null && c1 != c2 ->
+                                    Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, style = TextStyle(brush = Brush.horizontalGradient(listOf(c1, c2))))
+                                c1 != null ->
+                                    Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = c1)
+                                else ->
+                                    Text(displayName, fontSize = 26.sp, fontWeight = FontWeight.Black, color = AppColors.TextPrimary)
+                            }
+
+                            if (user.primaryGuildTag != null) {
                                 Row(
-                                    Modifier
-                                        .background(badge.color.copy(0.12f), RoundedCornerShape(Radius.Badge))
-                                        .border(1.dp, badge.color.copy(0.35f), RoundedCornerShape(Radius.Badge))
-                                        .clickable { selectedBadge = badge }
-                                        .padding(horizontal = 8.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .background(AppColors.Primary.copy(0.10f), RoundedCornerShape(Radius.Badge))
+                                        .border(1.dp, AppColors.Primary.copy(0.25f), RoundedCornerShape(Radius.Badge))
+                                        .padding(horizontal = 7.dp, vertical = 3.dp)
                                 ) {
-                                    AsyncImage(badge.cdnUrl, badge.label, Modifier.size(16.dp))
+                                    if (user.primaryGuildBadge != null && user.primaryGuildId != null) {
+                                        AsyncImage("https://cdn.discordapp.com/clan-badges/${user.primaryGuildId}/${user.primaryGuildBadge}.png?size=16", null, Modifier.size(12.dp).clip(CircleShape))
+                                        Spacer(Modifier.width(3.dp))
+                                    }
+                                    Text(user.primaryGuildTag, fontSize = 10.sp, color = AppColors.Primary, fontWeight = FontWeight.Bold)
                                 }
                             }
+
+                            StatusBadge(presence = presence, loadingPresence = loadingPresence)
                         }
-                    }
 
-                    if (!user.bio.isNullOrBlank()) {
-                        Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
-                        ProfileSection("About Me", Icons.AutoMirrored.Outlined.Notes) { DiscordMarkdown(user.bio, Modifier.fillMaxWidth()) }
-                    }
-
-                    if (loadingPresence) {
-                        Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
-                        ProfileSection("Current Activity", Icons.Outlined.Games) { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading activity...", fontSize = 13.sp, color = AppColors.TextMuted) } }
-                    } else if (presence?.activities?.isNotEmpty() == true) {
-                        Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
-                        ProfileSection("Current Activity", Icons.Outlined.Games) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { presence.activities.forEach { ActivityCard(it) } } }
-                    }
-
-                    SectionDivider("Account Info", AppColors.Primary)
-
-                    val createdMs = snowflakeToTimestamp(user.id)
-                    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        CopyableInfoRow(Icons.Outlined.Tag, "User ID", user.id) { copyToClipboard("User ID", user.id) }
-                        CopyableInfoRow(Icons.Outlined.CalendarMonth, "Created", snowflakeToDate(user.id)) { copyToClipboard("Created", snowflakeToDate(user.id)) }
-                        InfoRow(Icons.Outlined.Update, "Account Age", accountAgeString(createdMs))
-                        if (!user.pronouns.isNullOrBlank()) InfoRow(Icons.Outlined.Tag, "Pronouns", user.pronouns)
-                        if (!user.email.isNullOrBlank())  CopyableInfoRow(Icons.Outlined.Email,    "Email",   user.email)  { copyToClipboard("Email",   user.email) }
-                        if (!user.phone.isNullOrBlank())  CopyableInfoRow(Icons.Outlined.Phone,    "Phone",   user.phone)  { copyToClipboard("Phone",   user.phone) }
-                        if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale",  localeLabel(user.locale))
-                        InfoRow(Icons.Outlined.Lock,        "2FA",      if (user.mfaEnabled)  "Enabled"  else "Disabled", if (user.mfaEnabled) AppColors.Success else AppColors.TextMuted)
-                        InfoRow(Icons.Outlined.CheckCircle, "Verified", if (user.verified)    "Yes"      else "No",       if (user.verified)   AppColors.Success else AppColors.TextMuted)
-                        CopyableInfoRow(Icons.Outlined.Security, "Public Flags", "0x${user.publicFlags.toString(16).uppercase()} (${user.publicFlags})") { copyToClipboard("Public Flags", user.publicFlags.toString()) }
-                    }
-
-                    if (user.premiumType > 0) {
-                        SectionDivider("Nitro", AppColors.NitroPink)
-                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                            InfoRow(Icons.Outlined.WorkspacePremium, "Subscription", nitroLabel(user.premiumType), AppColors.NitroPink)
-                            if (loadingNitro) {
-                                InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", "Loading...", AppColors.NitroPink.copy(0.6f))
-                            } else if (nitroInfo != null) {
-                                val info = nitroInfo
-                                if (!info.first.isNullOrBlank()) InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", info.first!!, AppColors.NitroPink.copy(0.8f))
-                                if (!info.second.isNullOrBlank()) {
-                                    val now = System.currentTimeMillis()
-                                    val end = runCatching { java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }.parse(info.second!!.substringBefore('.'))?.time ?: 0L }.getOrElse { 0L }
-                                    val daysLeft = if (end > now) ((end - now) / 86400000L).toInt() else 0
-                                    val label = "${info.second!!.substring(0, 10)} (${daysLeft}d left)"
-                                    InfoRow(Icons.Outlined.Update, "Renews", label, if (daysLeft <= 7) AppColors.Warning else AppColors.NitroPink.copy(0.8f))
-                                }
-                                if (info.third > 0) InfoRow(Icons.Outlined.Groups, "Boosts", "${info.third} active", Color(0xFFFF73FA))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("@${user.username}" + if (user.discriminator != "0") "#${user.discriminator}" else "", fontSize = 15.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                            IconButton(
+                                onClick = { copyToClipboard("Username", "@${user.username}${if (user.discriminator != "0") "#${user.discriminator}" else ""}") },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(14.dp))
                             }
                         }
-                    }
 
-                    SectionDivider("Social", AppColors.Success)
-                    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        if (loadingGuilds) InfoRow(Icons.Outlined.Groups, "Servers", "Loading...")
-                        else if (guildCount != null) InfoRow(Icons.Outlined.Groups, "Servers", guildCount.toString() + if (guildCount >= 100) "+" else "")
-                        if (loadingFriends) InfoRow(Icons.Outlined.People, "Friends", "Loading...")
-                        else if (friendCount != null) InfoRow(Icons.Outlined.People, "Friends", friendCount.toString())
-                        if (user.primaryGuildTag != null) InfoRow(Icons.Outlined.Groups, "Clan Tag", user.primaryGuildTag, AppColors.Primary)
-                    }
-
-                    if (loadingOrbs || (orbsBalance != null && orbsBalance > 0)) {
-                        SectionDivider("Quests & Orbs", AppColors.QuestGold)
-                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                            if (loadingOrbs) {
-                                InfoRow(Icons.Outlined.Star, "Orbs Balance", "Loading...", AppColors.QuestGold)
-                            } else if (orbsBalance != null && orbsBalance > 0) {
-                                InfoRow(Icons.Outlined.Star, "Orbs Balance", "🔮 ${orbsBalance.toString().reversed().chunked(3).joinToString(",").reversed()} orbs", AppColors.QuestGold)
-                            }
+                        if (!user.pronouns.isNullOrBlank()) {
+                            Text(user.pronouns, fontSize = 13.sp, color = AppColors.TextMuted.copy(0.8f), fontWeight = FontWeight.Normal)
                         }
-                    }
 
-                    SectionDivider("Account Standing", if (loadingStanding) AppColors.TextMuted else if (accountStanding != null) standingStateColor(accountStanding.state) else AppColors.TextMuted)
-                    if (loadingStanding) {
-                        Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading standing...", fontSize = 13.sp, color = AppColors.TextMuted) }
-                    } else if (accountStanding != null) {
-                        val standingColor = standingStateColor(accountStanding.state)
-                        val standingLabel = standingStateLabel(accountStanding.state)
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (presence?.customStatus != null) {
+                            Spacer(Modifier.height(8.dp))
+                            val cs = presence.customStatus
+                            val sc = statusColor(presence.status)
                             Row(
                                 Modifier.fillMaxWidth()
-                                    .background(standingColor.copy(0.08f), RoundedCornerShape(Radius.Medium))
-                                    .border(1.dp, standingColor.copy(0.25f), RoundedCornerShape(Radius.Medium))
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                    .background(sc.copy(alpha = 0.07f), RoundedCornerShape(Radius.Medium))
+                                    .border(1.dp, sc.copy(alpha = 0.18f), RoundedCornerShape(Radius.Medium))
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Outlined.Shield, null, tint = standingColor, modifier = Modifier.size(20.dp))
-                                    Spacer(Modifier.width(10.dp))
-                                    Column {
-                                        Text("Account Standing", fontSize = 12.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium)
-                                        Text(standingLabel, fontSize = 15.sp, color = standingColor, fontWeight = FontWeight.ExtraBold)
-                                    }
+                                if (cs.emojiId != null) {
+                                    val ext = if (cs.emojiAnimated) "gif" else "png"
+                                    AnimatedImage("https://cdn.discordapp.com/emojis/${cs.emojiId}.$ext?size=64", null, Modifier.size(24.dp), ContentScale.Fit)
+                                    Spacer(Modifier.width(8.dp))
+                                } else if (!cs.emojiName.isNullOrEmpty()) {
+                                    Text(cs.emojiName, fontSize = 22.sp, lineHeight = 24.sp)
+                                    Spacer(Modifier.width(8.dp))
                                 }
-                                Box(
-                                    Modifier
-                                        .background(standingColor.copy(0.15f), RoundedCornerShape(Radius.Badge))
-                                        .border(1.dp, standingColor.copy(0.3f), RoundedCornerShape(Radius.Badge))
-                                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Text("State ${accountStanding.state}", fontSize = 10.sp, color = standingColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                Column(Modifier.weight(1f)) {
+                                    if (!cs.text.isNullOrBlank()) {
+                                        Text(cs.text, fontSize = 14.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, lineHeight = 18.sp)
+                                    }
+                                    Text(
+                                        statusLabel(presence.status) + if (presence.platforms.isNotEmpty()) " · " + presence.platforms.joinToString(" & ") else "",
+                                        fontSize = 11.sp, color = sc.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold
+                                    )
                                 }
-                            }
-                            val steps = listOf(100 to "All good", 200 to "Limited", 300 to "Very limited", 400 to "At risk", 500 to "Suspended")
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                steps.forEachIndexed { idx, (state, label) ->
-                                    val isActive = accountStanding.state == state
-                                    val isPast   = accountStanding.state > state
-                                    val dotColor = when {
-                                        isActive -> standingStateColor(state)
-                                        isPast   -> AppColors.Error.copy(0.5f)
-                                        else     -> AppColors.TextMuted.copy(0.3f)
-                                    }
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                        Box(
-                                            Modifier.size(if (isActive) 14.dp else 10.dp)
-                                                .background(dotColor, CircleShape)
-                                                .then(if (isActive) Modifier.border(2.dp, dotColor.copy(0.4f), CircleShape) else Modifier)
-                                        )
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(label, fontSize = 8.sp, color = if (isActive) dotColor else AppColors.TextMuted.copy(0.5f), fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal, textAlign = TextAlign.Center, lineHeight = 10.sp)
-                                    }
-                                    if (idx < steps.lastIndex) {
-                                        Box(Modifier.weight(0.3f).height(1.5.dp).background(if (isPast) AppColors.Error.copy(0.3f) else AppColors.Divider.copy(0.4f)))
-                                    }
-                                }
-                            }
-                            if (accountStanding.violations > 0) {
-                                InfoRow(Icons.Outlined.Warning, "Violations", "${accountStanding.violations} on record", AppColors.Warning)
+                                Box(Modifier.size(9.dp).background(sc, CircleShape))
                             }
                         }
-                    }
 
-                    SectionDivider("Cosmetics", AppColors.Primary)
-                    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        if (user.themeColorPrimary != null && user.themeColorAccent != null) {
-                            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Outlined.Palette, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(12.dp))
-                                Text("Profile Theme", fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Box(Modifier.size(18.dp).background(discordColorToCompose(user.themeColorPrimary), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
-                                Spacer(Modifier.width(4.dp))
-                                Box(Modifier.size(18.dp).background(discordColorToCompose(user.themeColorAccent), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "#%06X".format(user.themeColorPrimary and 0xFFFFFF) + " · #%06X".format(user.themeColorAccent and 0xFFFFFF),
-                                    fontSize = 11.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { copyToClipboard("Theme Colors", "#%06X / #%06X".format(user.themeColorPrimary and 0xFFFFFF, user.themeColorAccent and 0xFFFFFF)) }, modifier = Modifier.size(28.dp)) {
-                                    Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
+                        if (presence?.platforms?.isNotEmpty() == true && presence.customStatus == null) {
+                            Spacer(Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                presence.platforms.forEach { p ->
+                                    Box(Modifier.background(statusColor(presence.status).copy(0.10f), RoundedCornerShape(Radius.Badge)).border(1.dp, statusColor(presence.status).copy(0.20f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                                        Text(p, fontSize = 10.sp, color = statusColor(presence.status).copy(0.9f), fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }
-                        if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
-                        if (user.avatarDecorationAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Decoration", "Active ✓", AppColors.Success)
-                        if (user.profileEffectId != null) InfoRow(Icons.Outlined.Star, "Profile Effect", "Active (ID: ${user.profileEffectId.take(12)}…)", AppColors.Primary)
-                        if (user.displayNameStyle != null) InfoRow(Icons.Outlined.TextFields, "Name Style", "Active ✓", AppColors.Primary)
-                        if (!user.bannerColor.isNullOrBlank()) {
-                            val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrNull()
-                            if (c != null) {
+
+                        if (user.profileEffectId != null) {
+                            Spacer(Modifier.height(8.dp))
+                            ProfileEffectBadge(user.profileEffectId)
+                        }
+
+                        if (user.displayNameStyle != null) {
+                            val dsObj = runCatching { org.json.JSONObject(user.displayNameStyle) }.getOrNull()
+                            val hasRealStyle = dsObj != null && (
+                                dsObj.optString("color_primary").isNotEmpty() ||
+                                dsObj.optString("color_secondary").isNotEmpty() ||
+                                (dsObj.optString("font_type").isNotEmpty() && dsObj.optString("font_type") != "null")
+                            )
+                            if (hasRealStyle) {
+                                Spacer(Modifier.height(8.dp))
+                                DisplayNameStyleBadge(styleJson = user.displayNameStyle)
+                            }
+                        }
+
+                        if (loadingBadges) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(12.dp), color = AppColors.Primary, strokeWidth = 1.5.dp); Spacer(Modifier.width(6.dp)); Text("Loading badges...", fontSize = 11.sp, color = AppColors.TextMuted) }
+                        } else if (badges.isNotEmpty()) {
+                            Spacer(Modifier.height(12.dp))
+                            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                badges.forEach { badge ->
+                                    Row(
+                                        Modifier
+                                            .background(badge.color.copy(0.12f), RoundedCornerShape(Radius.Badge))
+                                            .border(1.dp, badge.color.copy(0.35f), RoundedCornerShape(Radius.Badge))
+                                            .clickable { selectedBadge = badge }
+                                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AsyncImage(badge.cdnUrl, badge.label, Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!user.bio.isNullOrBlank()) {
+                            Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
+                            ProfileSection("About Me", Icons.AutoMirrored.Outlined.Notes) { DiscordMarkdown(user.bio, Modifier.fillMaxWidth()) }
+                        }
+
+                        if (loadingPresence) {
+                            Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
+                            ProfileSection("Current Activity", Icons.Outlined.Games) { Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading activity...", fontSize = 13.sp, color = AppColors.TextMuted) } }
+                        } else if (presence?.activities?.isNotEmpty() == true) {
+                            Spacer(Modifier.height(16.dp)); HorizontalDivider(color = AppColors.Divider); Spacer(Modifier.height(16.dp))
+                            ProfileSection("Current Activity", Icons.Outlined.Games) { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { presence.activities.forEach { ActivityCard(it) } } }
+                        }
+
+                        SectionDivider("Account Info", AppColors.Primary)
+
+                        val createdMs = snowflakeToTimestamp(user.id)
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            CopyableInfoRow(Icons.Outlined.Tag, "User ID", user.id) { copyToClipboard("User ID", user.id) }
+                            CopyableInfoRow(Icons.Outlined.CalendarMonth, "Created", snowflakeToDate(user.id)) { copyToClipboard("Created", snowflakeToDate(user.id)) }
+                            InfoRow(Icons.Outlined.Update, "Account Age", accountAgeString(createdMs))
+                            if (!user.pronouns.isNullOrBlank()) InfoRow(Icons.Outlined.Tag, "Pronouns", user.pronouns)
+                            if (!user.email.isNullOrBlank())  CopyableInfoRow(Icons.Outlined.Email,    "Email",   user.email)  { copyToClipboard("Email",   user.email) }
+                            if (!user.phone.isNullOrBlank())  CopyableInfoRow(Icons.Outlined.Phone,    "Phone",   user.phone)  { copyToClipboard("Phone",   user.phone) }
+                            if (!user.locale.isNullOrBlank()) InfoRow(Icons.Outlined.Language, "Locale",  localeLabel(user.locale))
+                            InfoRow(Icons.Outlined.Lock,        "2FA",      if (user.mfaEnabled)  "Enabled"  else "Disabled", if (user.mfaEnabled) AppColors.Success else AppColors.TextMuted)
+                            InfoRow(Icons.Outlined.CheckCircle, "Verified", if (user.verified)    "Yes"      else "No",       if (user.verified)   AppColors.Success else AppColors.TextMuted)
+                            CopyableInfoRow(Icons.Outlined.Security, "Public Flags", "0x${user.publicFlags.toString(16).uppercase()} (${user.publicFlags})") { copyToClipboard("Public Flags", user.publicFlags.toString()) }
+                        }
+
+                        if (user.premiumType > 0) {
+                            SectionDivider("Nitro", AppColors.NitroPink)
+                            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                                InfoRow(Icons.Outlined.WorkspacePremium, "Subscription", nitroLabel(user.premiumType), AppColors.NitroPink)
+                                if (loadingNitro) {
+                                    InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", "Loading...", AppColors.NitroPink.copy(0.6f))
+                                } else if (nitroInfo != null) {
+                                    val info = nitroInfo
+                                    if (!info.first.isNullOrBlank()) InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", info.first!!, AppColors.NitroPink.copy(0.8f))
+                                    if (!info.second.isNullOrBlank()) {
+                                        val now = System.currentTimeMillis()
+                                        val end = runCatching { java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }.parse(info.second!!.substringBefore('.'))?.time ?: 0L }.getOrElse { 0L }
+                                        val daysLeft = if (end > now) ((end - now) / 86400000L).toInt() else 0
+                                        val label = "${info.second!!.substring(0, 10)} (${daysLeft}d left)"
+                                        InfoRow(Icons.Outlined.Update, "Renews", label, if (daysLeft <= 7) AppColors.Warning else AppColors.NitroPink.copy(0.8f))
+                                    }
+                                    if (info.third > 0) InfoRow(Icons.Outlined.Groups, "Boosts", "${info.third} active", Color(0xFFFF73FA))
+                                }
+                            }
+                        }
+
+                        SectionDivider("Social", AppColors.Success)
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            if (loadingGuilds) InfoRow(Icons.Outlined.Groups, "Servers", "Loading...")
+                            else if (guildCount != null) InfoRow(Icons.Outlined.Groups, "Servers", guildCount.toString() + if (guildCount >= 100) "+" else "")
+                            if (loadingFriends) InfoRow(Icons.Outlined.People, "Friends", "Loading...")
+                            else if (friendCount != null) InfoRow(Icons.Outlined.People, "Friends", friendCount.toString())
+                            if (user.primaryGuildTag != null) InfoRow(Icons.Outlined.Groups, "Clan Tag", user.primaryGuildTag, AppColors.Primary)
+                        }
+
+                        if (loadingOrbs || (orbsBalance != null && orbsBalance > 0)) {
+                            SectionDivider("Quests & Orbs", AppColors.QuestGold)
+                            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                                if (loadingOrbs) {
+                                    InfoRow(Icons.Outlined.Star, "Orbs Balance", "Loading...", AppColors.QuestGold)
+                                } else if (orbsBalance != null && orbsBalance > 0) {
+                                    InfoRow(Icons.Outlined.Star, "Orbs Balance", "🔮 ${orbsBalance.toString().reversed().chunked(3).joinToString(",").reversed()} orbs", AppColors.QuestGold)
+                                }
+                            }
+                        }
+
+                        SectionDivider("Account Standing", if (loadingStanding) AppColors.TextMuted else if (accountStanding != null) standingStateColor(accountStanding.state) else AppColors.TextMuted)
+                        if (loadingStanding) {
+                            Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading standing...", fontSize = 13.sp, color = AppColors.TextMuted) }
+                        } else if (accountStanding != null) {
+                            val standingColor = standingStateColor(accountStanding.state)
+                            val standingLabel = standingStateLabel(accountStanding.state)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .background(standingColor.copy(0.08f), RoundedCornerShape(Radius.Medium))
+                                        .border(1.dp, standingColor.copy(0.25f), RoundedCornerShape(Radius.Medium))
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Outlined.Shield, null, tint = standingColor, modifier = Modifier.size(20.dp))
+                                        Spacer(Modifier.width(10.dp))
+                                        Column {
+                                            Text("Account Standing", fontSize = 12.sp, color = AppColors.TextMuted, fontWeight = FontWeight.Medium)
+                                            Text(standingLabel, fontSize = 15.sp, color = standingColor, fontWeight = FontWeight.ExtraBold)
+                                        }
+                                    }
+                                    Box(
+                                        Modifier
+                                            .background(standingColor.copy(0.15f), RoundedCornerShape(Radius.Badge))
+                                            .border(1.dp, standingColor.copy(0.3f), RoundedCornerShape(Radius.Badge))
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("State ${accountStanding.state}", fontSize = 10.sp, color = standingColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                    }
+                                }
+                                val steps = listOf(100 to "All good", 200 to "Limited", 300 to "Very limited", 400 to "At risk", 500 to "Suspended")
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    steps.forEachIndexed { idx, (state, label) ->
+                                        val isActive = accountStanding.state == state
+                                        val isPast   = accountStanding.state > state
+                                        val dotColor = when {
+                                            isActive -> standingStateColor(state)
+                                            isPast   -> AppColors.Error.copy(0.5f)
+                                            else     -> AppColors.TextMuted.copy(0.3f)
+                                        }
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                            Box(
+                                                Modifier.size(if (isActive) 14.dp else 10.dp)
+                                                    .background(dotColor, CircleShape)
+                                                    .then(if (isActive) Modifier.border(2.dp, dotColor.copy(0.4f), CircleShape) else Modifier)
+                                            )
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(label, fontSize = 8.sp, color = if (isActive) dotColor else AppColors.TextMuted.copy(0.5f), fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal, textAlign = TextAlign.Center, lineHeight = 10.sp)
+                                        }
+                                        if (idx < steps.lastIndex) {
+                                            Box(Modifier.weight(0.3f).height(1.5.dp).background(if (isPast) AppColors.Error.copy(0.3f) else AppColors.Divider.copy(0.4f)))
+                                        }
+                                    }
+                                }
+                                if (accountStanding.violations > 0) {
+                                    InfoRow(Icons.Outlined.Warning, "Violations", "${accountStanding.violations} on record", AppColors.Warning)
+                                }
+                            }
+                        }
+
+                        SectionDivider("Cosmetics", AppColors.Primary)
+                        Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                            if (user.themeColorPrimary != null && user.themeColorAccent != null) {
                                 Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Outlined.AutoAwesome, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(12.dp))
-                                    Text("Accent", fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
-                                    Box(Modifier.size(20.dp).background(c, RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp))); Spacer(Modifier.width(8.dp))
-                                    Text(user.bannerColor.uppercase(), fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
-                                    IconButton(onClick = { copyToClipboard("Accent Color", user.bannerColor.uppercase()) }, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Outlined.Palette, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(12.dp))
+                                    Text("Profile Theme", fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Box(Modifier.size(18.dp).background(discordColorToCompose(user.themeColorPrimary), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
+                                    Spacer(Modifier.width(4.dp))
+                                    Box(Modifier.size(18.dp).background(discordColorToCompose(user.themeColorAccent), RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp)))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        "#%06X".format(user.themeColorPrimary and 0xFFFFFF) + " · #%06X".format(user.themeColorAccent and 0xFFFFFF),
+                                        fontSize = 11.sp, color = AppColors.TextMuted, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(onClick = { copyToClipboard("Theme Colors", "#%06X / #%06X".format(user.themeColorPrimary and 0xFFFFFF, user.themeColorAccent and 0xFFFFFF)) }, modifier = Modifier.size(28.dp)) {
                                         Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
                                     }
                                 }
                             }
-                        }
-                    }
-
-                    if (loadingConns) {
-                        SectionDivider("Connected Accounts", AppColors.TextSecondary)
-                        Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading...", fontSize = 13.sp, color = AppColors.TextMuted) }
-                    } else if (!connections.isNullOrEmpty()) {
-                        SectionDivider("Connected Accounts (${connections.size})", AppColors.TextSecondary)
-                        val visible = if (expandConns) connections else connections.take(3)
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            visible.forEach { conn ->
-                                val cc = connectionColor(conn.type); val profileUrl = connectionProfileUrl(conn.type, conn.name)
-                                Row(
-                                    Modifier.fillMaxWidth()
-                                        .background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium))
-                                        .border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium))
-                                        .then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier)
-                                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(Modifier.size(32.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) { Text(connectionLabel(conn.type).first().toString(), fontSize = 14.sp, color = cc, fontWeight = FontWeight.Black) }
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) { Text(connectionLabel(conn.type), fontSize = 11.sp, color = cc, fontWeight = FontWeight.Bold); if (profileUrl != null) { Spacer(Modifier.width(4.dp)); Icon(Icons.Outlined.Link, null, tint = cc.copy(0.6f), modifier = Modifier.size(10.dp)) } }
-                                        Text(conn.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    if (conn.verified) Box(Modifier.background(AppColors.Success.copy(0.12f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 7.dp, vertical = 2.dp)) { Text("✓", fontSize = 11.sp, color = AppColors.Success, fontWeight = FontWeight.Bold) }
-                                    IconButton(onClick = { copyToClipboard(connectionLabel(conn.type), conn.name) }, modifier = Modifier.size(28.dp)) {
-                                        Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
-                                    }
-                                }
-                            }
-                            if (connections.size > 3) {
-                                TextButton(onClick = { expandConns = !expandConns }, Modifier.fillMaxWidth()) {
-                                    Icon(if (expandConns) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
-                                    Text(if (expandConns) "Show less" else "Show ${connections.size - 3} more", fontSize = 12.sp, color = AppColors.Primary)
-                                }
-                            }
-                        }
-                    }
-
-                    if (loadingApps) {
-                        SectionDivider("Authorized Apps", AppColors.TextSecondary)
-                        Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading...", fontSize = 13.sp, color = AppColors.TextMuted) }
-                    } else if (!authorizedApps.isNullOrEmpty()) {
-                        SectionDivider("Authorized Apps (${authorizedApps.size})", AppColors.TextSecondary)
-                        val visibleApps = if (expandApps) authorizedApps else authorizedApps.take(3)
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            visibleApps.forEach { app ->
-                                Row(
-                                    Modifier.fillMaxWidth()
-                                        .background(AppColors.Surface, RoundedCornerShape(Radius.Medium))
-                                        .border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium))
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (app.icon != null) {
-                                        AsyncImage("https://cdn.discordapp.com/app-icons/${app.applicationId}/${app.icon}.png?size=64", null, Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
-                                    } else {
-                                        Box(Modifier.size(36.dp).background(AppColors.Primary.copy(0.18f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                                            Text(app.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 15.sp, color = AppColors.Primary, fontWeight = FontWeight.Black)
+                            if (badges.isNotEmpty()) InfoRow(Icons.Outlined.WorkspacePremium, "Badges", "${badges.size} active")
+                            if (user.avatarDecorationAsset != null) InfoRow(Icons.Outlined.AutoAwesome, "Decoration", "Active ✓", AppColors.Success)
+                            if (user.profileEffectId != null) InfoRow(Icons.Outlined.Star, "Profile Effect", "Active (ID: ${user.profileEffectId.take(12)}…)", AppColors.Primary)
+                            if (user.displayNameStyle != null) InfoRow(Icons.Outlined.TextFields, "Name Style", "Active ✓", AppColors.Primary)
+                            if (!user.bannerColor.isNullOrBlank()) {
+                                val c = runCatching { Color(android.graphics.Color.parseColor(user.bannerColor)) }.getOrNull()
+                                if (c != null) {
+                                    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Outlined.AutoAwesome, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(12.dp))
+                                        Text("Accent", fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
+                                        Box(Modifier.size(20.dp).background(c, RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp))); Spacer(Modifier.width(8.dp))
+                                        Text(user.bannerColor.uppercase(), fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                                        IconButton(onClick = { copyToClipboard("Accent Color", user.bannerColor.uppercase()) }, modifier = Modifier.size(28.dp)) {
+                                            Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
                                         }
                                     }
-                                    Spacer(Modifier.width(10.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(app.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        if (app.scopes.isNotEmpty()) {
-                                            Text(app.scopes.take(3).joinToString(", "), fontSize = 10.sp, color = AppColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        }
-                                    }
-                                    IconButton(onClick = { copyToClipboard("App ID", app.applicationId) }, modifier = Modifier.size(28.dp)) {
-                                        Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
-                                    }
-                                }
-                            }
-                            if (authorizedApps.size > 3) {
-                                TextButton(onClick = { expandApps = !expandApps }, Modifier.fillMaxWidth()) {
-                                    Icon(if (expandApps) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
-                                    Text(if (expandApps) "Show less" else "Show ${authorizedApps.size - 3} more", fontSize = 12.sp, color = AppColors.Primary)
                                 }
                             }
                         }
-                    }
 
-                    Spacer(Modifier.height(28.dp)); Footer(clicks = footerClicks, onClick = onFooterClick); Spacer(Modifier.height(10.dp)); GitHubButton()
+                        if (loadingConns) {
+                            SectionDivider("Connected Accounts", AppColors.TextSecondary)
+                            Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading...", fontSize = 13.sp, color = AppColors.TextMuted) }
+                        } else if (!connections.isNullOrEmpty()) {
+                            SectionDivider("Connected Accounts (${connections.size})", AppColors.TextSecondary)
+                            val visible = if (expandConns) connections else connections.take(3)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                visible.forEach { conn ->
+                                    val cc = connectionColor(conn.type); val profileUrl = connectionProfileUrl(conn.type, conn.name)
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .background(cc.copy(0.06f), RoundedCornerShape(Radius.Medium))
+                                            .border(1.dp, cc.copy(0.20f), RoundedCornerShape(Radius.Medium))
+                                            .then(if (profileUrl != null) Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(profileUrl))) } else Modifier)
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(Modifier.size(32.dp).background(cc.copy(0.18f), RoundedCornerShape(Radius.Small)), contentAlignment = Alignment.Center) { Text(connectionLabel(conn.type).first().toString(), fontSize = 14.sp, color = cc, fontWeight = FontWeight.Black) }
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) { Text(connectionLabel(conn.type), fontSize = 11.sp, color = cc, fontWeight = FontWeight.Bold); if (profileUrl != null) { Spacer(Modifier.width(4.dp)); Icon(Icons.Outlined.Link, null, tint = cc.copy(0.6f), modifier = Modifier.size(10.dp)) } }
+                                            Text(conn.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        if (conn.verified) Box(Modifier.background(AppColors.Success.copy(0.12f), RoundedCornerShape(Radius.Badge)).padding(horizontal = 7.dp, vertical = 2.dp)) { Text("✓", fontSize = 11.sp, color = AppColors.Success, fontWeight = FontWeight.Bold) }
+                                        IconButton(onClick = { copyToClipboard(connectionLabel(conn.type), conn.name) }, modifier = Modifier.size(28.dp)) {
+                                            Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
+                                        }
+                                    }
+                                }
+                                if (connections.size > 3) {
+                                    TextButton(onClick = { expandConns = !expandConns }, Modifier.fillMaxWidth()) {
+                                        Icon(if (expandConns) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
+                                        Text(if (expandConns) "Show less" else "Show ${connections.size - 3} more", fontSize = 12.sp, color = AppColors.Primary)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (loadingApps) {
+                            SectionDivider("Authorized Apps", AppColors.TextSecondary)
+                            Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(Modifier.size(16.dp), color = AppColors.Primary, strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)); Text("Loading...", fontSize = 13.sp, color = AppColors.TextMuted) }
+                        } else if (!authorizedApps.isNullOrEmpty()) {
+                            SectionDivider("Authorized Apps (${authorizedApps.size})", AppColors.TextSecondary)
+                            val visibleApps = if (expandApps) authorizedApps : authorizedApps.take(3)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                visibleApps.forEach { app ->
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .background(AppColors.Surface, RoundedCornerShape(Radius.Medium))
+                                            .border(1.dp, AppColors.Divider, RoundedCornerShape(Radius.Medium))
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (app.icon != null) {
+                                            AsyncImage("https://cdn.discordapp.com/app-icons/${app.applicationId}/${app.icon}.png?size=64", null, Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+                                        } else {
+                                            Box(Modifier.size(36.dp).background(AppColors.Primary.copy(0.18f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                                                Text(app.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?", fontSize = 15.sp, color = AppColors.Primary, fontWeight = FontWeight.Black)
+                                            }
+                                        }
+                                        Spacer(Modifier.width(10.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(app.name, fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            if (app.scopes.isNotEmpty()) {
+                                                Text(app.scopes.take(3).joinToString(", "), fontSize = 10.sp, color = AppColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            }
+                                        }
+                                        IconButton(onClick = { copyToClipboard("App ID", app.applicationId) }, modifier = Modifier.size(28.dp)) {
+                                            Icon(Icons.Outlined.ContentCopy, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp))
+                                        }
+                                    }
+                                }
+                                if (authorizedApps.size > 3) {
+                                    TextButton(onClick = { expandApps = !expandApps }, Modifier.fillMaxWidth()) {
+                                        Icon(if (expandApps) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp))
+                                        Text(if (expandApps) "Show less" else "Show ${authorizedApps.size - 3} more", fontSize = 12.sp, color = AppColors.Primary)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(28.dp)); Footer(clicks = footerClicks, onClick = onFooterClick); Spacer(Modifier.height(10.dp)); GitHubButton()
+                    }
+                    Spacer(Modifier.height(32.dp))
                 }
-                Spacer(Modifier.height(32.dp))
+            }
+
+            if (user?.profileEffectId != null) {
+                val effectUrl = "https://cdn.discordapp.com/profile-effects/${user.profileEffectId}/video.mp4"
+                AndroidView(
+                    factory = { ctx ->
+                        android.widget.VideoView(ctx).apply {
+                            setVideoURI(Uri.parse(effectUrl))
+                            setOnPreparedListener { mp -> mp.isLooping = true; mp.setVolume(0f, 0f); start() }
+                            setOnErrorListener { _, _, _ -> true }
+                            isClickable = false
+                            isFocusable = false
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        }
+                    },
+                    update = { if (!it.isPlaying) it.start() },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
 
+    // STATUS BADGE
     @Composable
     private fun StatusBadge(presence: DiscordPresence?, loadingPresence: Boolean) {
         when {
