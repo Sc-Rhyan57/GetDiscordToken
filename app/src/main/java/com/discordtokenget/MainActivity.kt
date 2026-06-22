@@ -957,6 +957,15 @@ class MainActivity : ComponentActivity() {
         WebStorage.getInstance().deleteAllData()
     }
 
+    private suspend fun fetchOutbox(token: String): JSONArray = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder().url("https://discord.com/api/v9/content-inventory/users/@me/outbox").header("Authorization", token).build()
+            val resp = httpClient.newCall(req).execute()
+            if (!resp.isSuccessful) return@withContext JSONArray()
+            JSONObject(resp.body?.string() ?: "{}").optJSONArray("entries") ?: JSONArray()
+        } catch (e: Exception) { JSONArray() }
+    }
+    
     private fun setupCrashHandler() {
         val def = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
