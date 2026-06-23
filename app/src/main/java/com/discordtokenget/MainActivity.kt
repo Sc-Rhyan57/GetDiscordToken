@@ -732,10 +732,7 @@ private fun AnimatedDecorationBorder(
             }
             .build()
     }
-    val decorUrl = if (Build.VERSION.SDK_INT >= 28)
-        "https://cdn.discordapp.com/avatar-decoration-presets/$decorationAsset.png?size=240&passthrough=true"
-    else
-        "https://cdn.discordapp.com/avatar-decoration-presets/$decorationAsset.gif?size=240"
+    val decorUrl = "https://cdn.discordapp.com/avatar-decoration-presets/$decorationAsset.png?size=240&passthrough=true"
     Box(modifier = modifier.size(size + 16.dp), contentAlignment = Alignment.Center) {
         content()
         AsyncImage(
@@ -917,8 +914,14 @@ private data class ProfileData(
 
 @Composable
 private fun SectionDivider(title: String, color: Color) {
+    val entrance = remember(title) { Animatable(0f) }
+    LaunchedEffect(title) { entrance.animateTo(1f, tween(450, easing = EaseOutCubic)) }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+            .graphicsLayer {
+                alpha = entrance.value
+                translationY = (1f - entrance.value) * 24f
+            },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.weight(1f).height(1.dp).background(color.copy(0.4f)))
@@ -1563,23 +1566,7 @@ class MainActivity : ComponentActivity() {
                 Modifier.fillMaxWidth().height(420.dp)
                     .graphicsLayer { translationY = -scrollState.value.toFloat() * 0.35f }
             ) {
-                when {
-                    hasThemeGradient -> Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(
-                                0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.55f),
-                                0.45f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.35f),
-                                1f to AppColors.Background
-                            )
-                        )
-                    )
-                    bannerAccent != null -> Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(listOf(bannerAccent.copy(alpha = 0.55f), AppColors.Background))
-                        )
-                    )
-                    else -> Box(Modifier.fillMaxSize().background(AppColors.Background))
-                }
+                Box(Modifier.fillMaxSize().background(AppColors.Background))
                 val blurBannerUrl = when {
                     useUsrbgBanner && hasUsrbg && user!!.usrbgBannerUrl?.endsWith(".webm", true) != true && user.usrbgBannerUrl?.endsWith(".mp4", true) != true -> user.usrbgBannerUrl
                     !useUsrbgBanner && user?.banner != null -> {
@@ -1591,9 +1578,26 @@ class MainActivity : ComponentActivity() {
                 if (blurBannerUrl != null) {
                     AnimatedImage(
                         blurBannerUrl, null,
-                        Modifier.fillMaxSize().blur(40.dp).graphicsLayer { alpha = 0.9f },
+                        Modifier.fillMaxSize().blur(40.dp).graphicsLayer { alpha = 0.55f },
                         contentScale = ContentScale.Crop
                     )
+                }
+                when {
+                    hasThemeGradient -> Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.85f),
+                                0.45f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.6f),
+                                1f to AppColors.Background
+                            )
+                        )
+                    )
+                    bannerAccent != null -> Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(listOf(bannerAccent.copy(alpha = 0.55f), Color.Transparent))
+                        )
+                    )
+                    else -> {}
                 }
                 Box(
                     Modifier.fillMaxSize().background(
@@ -2383,7 +2387,15 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ProfileSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
-        Column(Modifier.fillMaxWidth()) {
+        val entrance = remember(title) { Animatable(0f) }
+        LaunchedEffect(title) { entrance.animateTo(1f, tween(450, easing = EaseOutCubic)) }
+        Column(
+            Modifier.fillMaxWidth()
+                .graphicsLayer {
+                    alpha = entrance.value
+                    translationY = (1f - entrance.value) * 24f
+                }
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
                 Icon(icon, null, tint = AppColors.TextMuted, modifier = Modifier.size(13.dp)); Spacer(Modifier.width(5.dp))
                 Text(title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AppColors.TextMuted, letterSpacing = 0.8.sp)
