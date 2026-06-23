@@ -23,6 +23,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -140,6 +141,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
@@ -308,6 +310,13 @@ data class AuthorizedApp(
 data class AccountStanding(
     val state: Int,
     val violations: Int
+)
+
+data class NitroDetails(
+    val since: String?,
+    val ends: String?,
+    val boostCount: Int,
+    val isExpired: Boolean
 )
 
 private object AppColors {
@@ -1142,7 +1151,7 @@ class MainActivity : ComponentActivity() {
         var loadingOrbs     by remember { mutableStateOf(false) }
         var loadingStanding by remember { mutableStateOf(false) }
         var loadingApps     by remember { mutableStateOf(false) }
-        var nitroInfo       by remember { mutableStateOf<Triple<String?,String?,Int>?>(null) }
+        var nitroInfo       by remember { mutableStateOf<NitroDetails?>(null) }
         var orbsBalance     by remember { mutableStateOf<Int?>(null) }
         var accountStanding by remember { mutableStateOf<AccountStanding?>(null) }
         var authorizedApps  by remember { mutableStateOf<List<AuthorizedApp>?>(null) }
@@ -1474,7 +1483,7 @@ class MainActivity : ComponentActivity() {
         loadingStanding: Boolean, loadingApps: Boolean,
         presence: DiscordPresence?, connections: List<DiscordConnection>?,
         guildCount: Int?, badges: List<BadgeInfo>, friendCount: Int?,
-        nitroInfo: Triple<String?,String?,Int>?, orbsBalance: Int?,
+        nitroInfo: NitroDetails?, orbsBalance: Int?,
         accountStanding: AccountStanding?, authorizedApps: List<AuthorizedApp>?,
         footerClicks: Int, onFooterClick: () -> Unit,
         rpcEnabled: Boolean, onToggleRpc: () -> Unit,
@@ -1544,21 +1553,62 @@ class MainActivity : ComponentActivity() {
 
         val hasThemeGradient = user?.themeColorPrimary != null && user.themeColorAccent != null
         val hasUsrbg         = user?.usrbgBannerUrl != null
+        val bannerAccent     = user?.bannerColor?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+        val scrollState      = rememberScrollState()
+        val entrance         = remember { Animatable(0f) }
+        LaunchedEffect(user?.id) { entrance.snapTo(0f); entrance.animateTo(1f, tween(550, easing = EaseOutCubic)) }
 
-        Box(
-            Modifier.fillMaxSize().then(
-                if (hasThemeGradient) Modifier.background(
-                    Brush.verticalGradient(
-                        0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.8f),
-                        0.5f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.6f),
-                        1f to AppColors.Background
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier.fillMaxWidth().height(420.dp)
+                    .graphicsLayer { translationY = -scrollState.value.toFloat() * 0.35f }
+            ) {
+                when {
+                    hasThemeGradient -> Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                0f to discordColorToCompose(user!!.themeColorPrimary!!).copy(alpha = 0.55f),
+                                0.45f to discordColorToCompose(user.themeColorAccent!!).copy(alpha = 0.35f),
+                                1f to AppColors.Background
+                            )
+                        )
                     )
-                ) else Modifier
-            )
-        ) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    bannerAccent != null -> Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(listOf(bannerAccent.copy(alpha = 0.55f), AppColors.Background))
+                        )
+                    )
+                    else -> Box(Modifier.fillMaxSize().background(AppColors.Background))
+                }
+                val blurBannerUrl = when {
+                    useUsrbgBanner && hasUsrbg && user!!.usrbgBannerUrl?.endsWith(".webm", true) != true && user.usrbgBannerUrl?.endsWith(".mp4", true) != true -> user.usrbgBannerUrl
+                    !useUsrbgBanner && user?.banner != null -> {
+                        val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
+                        "https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600"
+                    }
+                    else -> null
+                }
+                if (blurBannerUrl != null) {
+                    AnimatedImage(
+                        blurBannerUrl, null,
+                        Modifier.fillMaxSize().blur(40.dp).graphicsLayer { alpha = 0.9f },
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            0.45f to Color.Transparent,
+                            0.72f to AppColors.Background.copy(alpha = 0.55f),
+                            1f to AppColors.Background
+                        )
+                    )
+                )
+            }
+            Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
 
-                Box(Modifier.fillMaxWidth().height(160.dp)) {
+                Box(Modifier.fillMaxWidth().height(200.dp).graphicsLayer { alpha = entrance.value }) {
                     when {
                         useUsrbgBanner && hasUsrbg -> {
                             val usrbgUrl = user!!.usrbgBannerUrl!!
@@ -1582,8 +1632,14 @@ class MainActivity : ComponentActivity() {
                             val ext = if (user.banner.startsWith("a_")) "gif" else "webp"
                             AnimatedImage("https://cdn.discordapp.com/banners/${user.id}/${user.banner}.$ext?size=600", null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                         }
+                        bannerAccent != null -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(bannerAccent.copy(0.75f), AppColors.Background))))
                         else -> Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(AppColors.Primary.copy(0.6f), AppColors.Background))))
                     }
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(0.6f to Color.Transparent, 1f to AppColors.Background.copy(alpha = 0.9f))
+                        )
+                    )
                     if (hasUsrbg && user?.usrbgBannerUrl != null) {
                         Box(
                             Modifier.align(Alignment.TopEnd).padding(8.dp)
@@ -1600,12 +1656,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp)
+                        .graphicsLayer {
+                            alpha = entrance.value
+                            translationY = (1f - entrance.value) * 40f
+                        }
+                ) {
                     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         val decorAsset = user?.avatarDecorationAsset
                         if (decorAsset != null) {
                             AnimatedDecorationBorder(decorationAsset = decorAsset, size = 90.dp) {
-                                Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
+                                Box(Modifier.size(90.dp).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
                                     if (user.avatar != null) {
                                         val ext = if (user.avatar.startsWith("a_")) "gif" else "webp"
                                         AnimatedImage(
@@ -1620,7 +1682,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         } else {
-                            Box(Modifier.size(90.dp).border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
+                            Box(Modifier.size(90.dp).graphicsLayer { scaleX = scale.value; scaleY = scale.value }.border(4.dp, AppColors.Background, CircleShape).clip(CircleShape).background(AppColors.Surface)) {
                                 if (user?.avatar != null) {
                                     val ext = if (user.avatar.startsWith("a_")) "gif" else "webp"
                                     AnimatedImage(
@@ -1691,7 +1753,14 @@ class MainActivity : ComponentActivity() {
                                                 appendLine("2FA: ${if (user.mfaEnabled) "Enabled" else "Disabled"}")
                                                 appendLine("Verified: ${if (user.verified) "Yes" else "No"}")
                                                 if (!user.locale.isNullOrBlank()) appendLine("Locale: ${localeLabel(user.locale)}")
-                                                appendLine("Nitro: ${nitroLabel(user.premiumType)}")
+                                                if (user.premiumType > 0) {
+                                                    appendLine("Nitro: ${nitroLabel(user.premiumType)}")
+                                                } else if (nitroInfo != null && nitroInfo.isExpired) {
+                                                    val endStr = nitroInfo.ends?.substring(0, 10)
+                                                    appendLine("Nitro: Expired${if (endStr != null) " (ended $endStr)" else ""}")
+                                                } else {
+                                                    appendLine("Nitro: None")
+                                                }
                                                 if (guildCount != null) appendLine("Servers: $guildCount")
                                                 if (friendCount != null) appendLine("Friends: $friendCount")
                                                 if (orbsBalance != null && orbsBalance > 0) appendLine("Orbs: $orbsBalance")
@@ -1918,16 +1987,24 @@ class MainActivity : ComponentActivity() {
                                     InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", "Loading...", AppColors.NitroPink.copy(0.6f))
                                 } else if (nitroInfo != null) {
                                     val info = nitroInfo
-                                    if (!info.first.isNullOrBlank()) InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", info.first!!, AppColors.NitroPink.copy(0.8f))
-                                    if (!info.second.isNullOrBlank()) {
+                                    if (!info.since.isNullOrBlank()) InfoRow(Icons.Outlined.CalendarMonth, "Nitro Since", info.since, AppColors.NitroPink.copy(0.8f))
+                                    if (!info.ends.isNullOrBlank() && !info.isExpired) {
                                         val now = System.currentTimeMillis()
-                                        val end = runCatching { java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }.parse(info.second!!.substringBefore('.'))?.time ?: 0L }.getOrElse { 0L }
+                                        val end = runCatching { java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }.parse(info.ends.substringBefore('.'))?.time ?: 0L }.getOrElse { 0L }
                                         val daysLeft = if (end > now) ((end - now) / 86400000L).toInt() else 0
-                                        val label = "${info.second!!.substring(0, 10)} (${daysLeft}d left)"
+                                        val label = "${info.ends.substring(0, 10)} (${daysLeft}d left)"
                                         InfoRow(Icons.Outlined.Update, "Renews", label, if (daysLeft <= 7) AppColors.Warning else AppColors.NitroPink.copy(0.8f))
                                     }
-                                    if (info.third > 0) InfoRow(Icons.Outlined.Groups, "Boosts", "${info.third} active", Color(0xFFFF73FA))
+                                    if (info.boostCount > 0) InfoRow(Icons.Outlined.Groups, "Boosts", "${info.boostCount} active", Color(0xFFFF73FA))
                                 }
+                            }
+                        } else if (nitroInfo != null && nitroInfo.isExpired) {
+                            SectionDivider("Nitro", AppColors.TextMuted)
+                            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                                val info = nitroInfo
+                                InfoRow(Icons.Outlined.WorkspacePremium, "Previously Had", "Nitro", AppColors.TextMuted)
+                                if (!info.ends.isNullOrBlank()) InfoRow(Icons.Outlined.Update, "Expired On", info.ends.substring(0, 10), AppColors.TextMuted)
+                                else if (!info.since.isNullOrBlank()) InfoRow(Icons.Outlined.CalendarMonth, "Active Since", info.since, AppColors.TextMuted)
                             }
                         }
 
@@ -2041,7 +2118,7 @@ class MainActivity : ComponentActivity() {
                                 if (c != null) {
                                     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Outlined.AutoAwesome, null, tint = AppColors.TextMuted, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(12.dp))
-                                        Text("Accent", fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
+                                        Text("Banner Color", fontSize = 13.sp, color = AppColors.TextMuted, modifier = Modifier.width(90.dp))
                                         Box(Modifier.size(20.dp).background(c, RoundedCornerShape(4.dp)).border(1.dp, AppColors.Divider, RoundedCornerShape(4.dp))); Spacer(Modifier.width(8.dp))
                                         Text(user.bannerColor.uppercase(), fontSize = 13.sp, color = AppColors.TextPrimary, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
                                         IconButton(onClick = { copyToClipboard("Accent Color", user.bannerColor.uppercase()) }, modifier = Modifier.size(28.dp)) {
@@ -2509,11 +2586,11 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) { addLog("ERROR", "API", "fetchFriendCount: ${e.message}"); null }
     }
 
-    private suspend fun fetchNitroDetails(token: String): Triple<String?, String?, Int>? = withContext(Dispatchers.IO) {
+    private suspend fun fetchNitroDetails(token: String): NitroDetails? = withContext(Dispatchers.IO) {
         try {
             val resp = httpClient.newCall(
                 Request.Builder()
-                    .url("https://discord.com/api/v9/users/@me/billing/subscriptions")
+                    .url("https://discord.com/api/v9/users/@me/billing/subscriptions?include_inactive=true")
                     .header("Authorization", token)
                     .build()
             ).execute()
@@ -2521,9 +2598,16 @@ class MainActivity : ComponentActivity() {
             val body = resp.body?.string() ?: return@withContext null
             val arr = JSONArray(body)
             if (arr.length() == 0) return@withContext null
-            val sub = arr.getJSONObject(0)
+            var sub: JSONObject? = null
+            for (i in 0 until arr.length()) {
+                val candidate = arr.getJSONObject(i)
+                if (candidate.optInt("type", -1) == 1) { sub = candidate; if (candidate.optInt("status", -1) == 1) break }
+            }
+            if (sub == null) return@withContext null
             val since = sub.optString("current_period_start").takeIf { it.isNotEmpty() && it != "null" }?.substring(0, 10)
             val ends  = sub.optString("current_period_end").takeIf  { it.isNotEmpty() && it != "null" }
+            val statusField = sub.optInt("status", -1)
+            val isExpired = statusField == 3 || statusField == 4
             val boostResp = httpClient.newCall(
                 Request.Builder()
                     .url("https://discord.com/api/v9/users/@me/guilds/premium/subscription-slots")
@@ -2535,8 +2619,8 @@ class MainActivity : ComponentActivity() {
                 val slots = JSONArray(boostResp.body?.string() ?: "[]")
                 for (i in 0 until slots.length()) { val slot = slots.getJSONObject(i); if (!slot.isNull("subscription_id")) boostCount++ }
             }
-            addLog("SUCCESS", "API", "Nitro since=$since ends=${ends?.substring(0,10)} boosts=$boostCount")
-            Triple(since, ends, boostCount)
+            addLog("SUCCESS", "API", "Nitro since=$since ends=${ends?.substring(0,10)} boosts=$boostCount status=$statusField expired=$isExpired")
+            NitroDetails(since = since, ends = ends, boostCount = boostCount, isExpired = isExpired)
         } catch (e: Exception) { addLog("ERROR", "API", "fetchNitroDetails: ${e.message}"); null }
     }
 
