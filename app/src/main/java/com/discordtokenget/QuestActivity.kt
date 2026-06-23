@@ -186,92 +186,105 @@ private fun addConsoleLog(level: String, message: String) {
 }
 
 private fun saveLogsToCache(ctx: Context) {
-    try {
-        val dir = File(ctx.cacheDir, "quest_logs")
-        dir.mkdirs()
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val dir = File(ctx.cacheDir, "quest_logs")
+            dir.mkdirs()
 
-        val httpFile = File(dir, "http_logs.json")
-        val httpArray = JSONArray()
-        httpHookLogs.forEach { log ->
-            val obj = JSONObject()
-            obj.put("timestamp", log.timestamp)
-            obj.put("method", log.method)
-            obj.put("url", log.url)
-            obj.put("requestHeaders", log.requestHeaders)
-            obj.put("requestBody", log.requestBody ?: "")
-            obj.put("responseStatus", log.responseStatus)
-            obj.put("responseHeaders", log.responseHeaders)
-            obj.put("responseBody", log.responseBody)
-            httpArray.put(obj)
-        }
-        httpFile.writeText(httpArray.toString())
+            val httpFile = File(dir, "http_logs.json")
+            val httpArray = JSONArray()
+            httpHookLogs.forEach { log ->
+                val obj = JSONObject()
+                obj.put("timestamp", log.timestamp)
+                obj.put("method", log.method)
+                obj.put("url", log.url)
+                obj.put("requestHeaders", log.requestHeaders)
+                obj.put("requestBody", log.requestBody ?: "")
+                obj.put("responseStatus", log.responseStatus)
+                obj.put("responseHeaders", log.responseHeaders)
+                obj.put("responseBody", log.responseBody)
+                httpArray.put(obj)
+            }
+            httpFile.writeText(httpArray.toString())
 
-        val consoleFile = File(dir, "console_logs.json")
-        val consoleArray = JSONArray()
-        consoleLogs.forEach { log ->
-            val obj = JSONObject()
-            obj.put("timestamp", log.timestamp)
-            obj.put("level", log.level)
-            obj.put("message", log.message)
-            consoleArray.put(obj)
-        }
-        consoleFile.writeText(consoleArray.toString())
+            val consoleFile = File(dir, "console_logs.json")
+            val consoleArray = JSONArray()
+            consoleLogs.forEach { log ->
+                val obj = JSONObject()
+                obj.put("timestamp", log.timestamp)
+                obj.put("level", log.level)
+                obj.put("message", log.message)
+                consoleArray.put(obj)
+            }
+            consoleFile.writeText(consoleArray.toString())
 
-        val questFile = File(dir, "quest_logs.json")
-        val questArray = JSONArray()
-        questLogs.forEach { log ->
-            val obj = JSONObject()
-            obj.put("timestamp", log.timestamp)
-            obj.put("tag", log.tag)
-            obj.put("message", log.message)
-            log.detail?.let { obj.put("detail", it) }
-            questArray.put(obj)
-        }
-        questFile.writeText(questArray.toString())
-    } catch (_: Exception) {}
+            val questFile = File(dir, "quest_logs.json")
+            val questArray = JSONArray()
+            questLogs.forEach { log ->
+                val obj = JSONObject()
+                obj.put("timestamp", log.timestamp)
+                obj.put("tag", log.tag)
+                obj.put("message", log.message)
+                log.detail?.let { obj.put("detail", it) }
+                questArray.put(obj)
+            }
+            questFile.writeText(questArray.toString())
+        } catch (_: Exception) {}
+    }
 }
 
 private fun loadLogsFromCache(ctx: Context) {
-    try {
-        val dir = File(ctx.cacheDir, "quest_logs")
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val dir = File(ctx.cacheDir, "quest_logs")
 
-        val httpFile = File(dir, "http_logs.json")
-        if (httpFile.exists()) {
-            val arr = JSONArray(httpFile.readText())
-            for (i in arr.length() - 1 downTo 0) {
-                val o = arr.getJSONObject(i)
-                httpHookLogs.add(HttpHookLog(
-                    ++hookLogIdCounter,
-                    o.optString("timestamp"),
-                    o.optString("method"),
-                    o.optString("url"),
-                    o.optString("requestHeaders"),
-                    o.optString("requestBody").takeIf { it.isNotEmpty() },
-                    o.optInt("responseStatus"),
-                    o.optString("responseHeaders"),
-                    o.optString("responseBody")
-                ))
+            val httpList = mutableListOf<HttpHookLog>()
+            val httpFile = File(dir, "http_logs.json")
+            if (httpFile.exists()) {
+                val arr = JSONArray(httpFile.readText())
+                for (i in arr.length() - 1 downTo 0) {
+                    val o = arr.getJSONObject(i)
+                    httpList.add(HttpHookLog(
+                        ++hookLogIdCounter,
+                        o.optString("timestamp"),
+                        o.optString("method"),
+                        o.optString("url"),
+                        o.optString("requestHeaders"),
+                        o.optString("requestBody").takeIf { it.isNotEmpty() },
+                        o.optInt("responseStatus"),
+                        o.optString("responseHeaders"),
+                        o.optString("responseBody")
+                    ))
+                }
             }
-        }
 
-        val consoleFile = File(dir, "console_logs.json")
-        if (consoleFile.exists()) {
-            val arr = JSONArray(consoleFile.readText())
-            for (i in arr.length() - 1 downTo 0) {
-                val o = arr.getJSONObject(i)
-                consoleLogs.add(ConsoleLogEntry(o.optString("timestamp"), o.optString("level"), o.optString("message")))
+            val consoleList = mutableListOf<ConsoleLogEntry>()
+            val consoleFile = File(dir, "console_logs.json")
+            if (consoleFile.exists()) {
+                val arr = JSONArray(consoleFile.readText())
+                for (i in arr.length() - 1 downTo 0) {
+                    val o = arr.getJSONObject(i)
+                    consoleList.add(ConsoleLogEntry(o.optString("timestamp"), o.optString("level"), o.optString("message")))
+                }
             }
-        }
 
-        val questFile = File(dir, "quest_logs.json")
-        if (questFile.exists()) {
-            val arr = JSONArray(questFile.readText())
-            for (i in arr.length() - 1 downTo 0) {
-                val o = arr.getJSONObject(i)
-                questLogs.add(QuestLog(o.optString("timestamp"), o.optString("tag"), o.optString("message"), o.optString("detail").takeIf { it.isNotEmpty() }))
+            val questList = mutableListOf<QuestLog>()
+            val questFile = File(dir, "quest_logs.json")
+            if (questFile.exists()) {
+                val arr = JSONArray(questFile.readText())
+                for (i in arr.length() - 1 downTo 0) {
+                    val o = arr.getJSONObject(i)
+                    questList.add(QuestLog(o.optString("timestamp"), o.optString("tag"), o.optString("message"), o.optString("detail").takeIf { it.isNotEmpty() }))
+                }
             }
-        }
-    } catch (_: Exception) {}
+
+            withContext(Dispatchers.Main) {
+                httpHookLogs.addAll(httpList)
+                consoleLogs.addAll(consoleList)
+                questLogs.addAll(questList)
+            }
+        } catch (_: Exception) {}
+    }
 }
 
 private fun clearLogsCache(ctx: Context) {
