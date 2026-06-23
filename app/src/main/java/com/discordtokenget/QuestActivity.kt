@@ -422,9 +422,9 @@ private const val HOOK_JS = """
             });
         });
 
-        safeCall(function() { AndroidHook.onConsoleLog('INFO', 'Hooks installed successfully'); });
+        safeCall(function() { AndroidHook.onConsoleLog('INFO', 'HOOKS injetados com sucesso! obtendo requests...'); });
     } catch(e) {
-        safeCall(function() { AndroidHook.onConsoleLog('ERROR', 'Hook init error: ' + e.message); });
+        safeCall(function() { AndroidHook.onConsoleLog('ERROR', 'HOUVE UM ERRO AO INJETAR O HOOK: ' + e.message); });
     }
 })();
 """
@@ -1311,7 +1311,7 @@ private fun TosDialog(onAccept: () -> Unit, onDecline: () -> Unit) {
                     Text("Terms of Service", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = DC.White)
                 }
                 HorizontalDivider(color = DC.Border)
-                Text("This tool automates Discord Quest completion via the official API.\n\nUsing automation may violate Discord's Terms of Service. Your account could be suspended or banned.\n\nFor educational purposes only. Use at your own risk.", fontSize = 13.sp, color = DC.SubText, lineHeight = 20.sp)
+                Text("This tool automates Discord Quest completion via the official API.\n\nUsing automation may violate Discord's Terms of Service. Your account could be suspended or banned.\n\nUSE AT YOUR RISK!!", fontSize = 13.sp, color = DC.SubText, lineHeight = 20.sp)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(onClick = onDecline, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, DC.Error.copy(0.5f))) { Text("Decline", color = DC.Error, fontWeight = FontWeight.Bold) }
                     Button(onClick = onAccept, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = DC.Primary), shape = RoundedCornerShape(12.dp)) { Text("I Understand", fontWeight = FontWeight.ExtraBold) }
@@ -1586,7 +1586,7 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
                     Spacer(Modifier.weight(1f))
                     if (capturedBuild > 0) {
                         Box(Modifier.background(DC.Success.copy(0.15f), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 4.dp)) {
-                            Text("Build: $capturedBuild", fontSize = 10.sp, color = DC.Success, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            Text("Build: $capturedBuild(Discord Client web)", fontSize = 10.sp, color = DC.Success, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
                     }
                     IconButton(onClick = {
@@ -2003,7 +2003,7 @@ private fun QuestHeader(
                             val player = MediaPlayer()
                             mp = player
                             try {
-                                player.setDataSource("https://discord.com/assets/7ba7fcf2c4710bb7.webm")
+                                player.setDataSource("https://raw.githubusercontent.com/Sc-Rhyan57/RandomStuff/refs/heads/main/687185569dd0ac147ad89a64_image5.jpg")
                                 player.setDisplay(h); player.isLooping = true; player.setVolume(0f, 0f)
                                 player.setOnPreparedListener { it.start() }; player.prepareAsync()
                             } catch (_: Exception) {}
@@ -2047,7 +2047,7 @@ private fun QuestHeader(
                 if (capturedBuild > 0) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Box(Modifier.size(6.dp).background(DC.Success, CircleShape))
-                        Text("WebView Hooked (Build $capturedBuild)", fontSize = 11.sp, color = DC.Success, fontWeight = FontWeight.Bold)
+                        Text("Discord Client web: (Build $capturedBuild)", fontSize = 11.sp, color = DC.Success, fontWeight = FontWeight.Bold)
                     }
                 }
                 if (orbBalance != null && orbBalance > 0) {
@@ -2086,7 +2086,7 @@ private fun QuestList(
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(40.dp)) {
                 Box(Modifier.size(80.dp).background(DC.Muted.copy(0.08f), CircleShape), Alignment.Center) { Icon(Icons.Outlined.SportsEsports, null, tint = DC.Muted, modifier = Modifier.size(38.dp)) }
                 Text("No quests available", color = DC.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-                Text("Try a different region or adjust your filters.", color = DC.Muted, fontSize = 13.sp)
+                Text("Try a different region or adjust your filters.\n if not appears, report to Sc-rhyan57 on github.", color = DC.Muted, fontSize = 13.sp)
             }
         }
         return
@@ -2216,7 +2216,7 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("JS Hook (WebView)") },
+                                    text = { Text("JS Hook") },
                                     enabled = webLoader != null && webViewReady.value,
                                     onClick = {
                                         showCompleteMenu = false
