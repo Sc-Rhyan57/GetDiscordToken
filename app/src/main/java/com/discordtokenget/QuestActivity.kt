@@ -24,7 +24,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -890,7 +889,6 @@ data class QuestItem(
     val videoUrl: String?, val questLink: String?,
     val enrolledAt: String?, val completedAt: String?, val claimedAt: String?,
     val configVersion: Int,
-    val trafficMetadata: String,
     val rawConfig: JSONObject
 )
 
@@ -939,7 +937,6 @@ private fun parseQuest(q: JSONObject): QuestItem? {
             }
         }
     }
-    val trafficMetadata = q.optString("traffic_metadata_sealed", cfg.optString("traffic_metadata_sealed", ""))
     return QuestItem(
         id = id, name = msg.optString("quest_name", msg.optString("questName", "")), reward = reward, rewardType = rewardType,
         expiresMs = parseIso(cfg.optString("expires_at", cfg.optString("expiresAt", ""))), taskName = taskName,
@@ -956,7 +953,6 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         claimedAt   = us?.optString("claimed_at")?.takeIf   { it.isNotEmpty() && it != "null" }
                       ?: us?.optString("claimedAt")?.takeIf   { it.isNotEmpty() && it != "null" },
         configVersion = configVersion,
-        trafficMetadata = trafficMetadata,
         rawConfig   = cfg
     )
 }
@@ -1055,7 +1051,7 @@ private suspend fun retryApi(maxAttempts: Int = 5, initialDelayMs: Long = 500, m
 
 private suspend fun claimReward(token: String, region: Region, superProps: String, quest: QuestItem, captcha: CaptchaData? = null): Pair<JSONObject, CaptchaData?> = withContext(Dispatchers.IO) {
     val url = "https://discord.com/api/v9/quests/${quest.id}/claim-reward"
-    val traffic = quest.trafficMetadata
+    val traffic = quest.rawConfig.optString("traffic_metadata_sealed", "")
     val bodyStr = JSONObject().apply {
         put("platform", 0)
         put("location", 11)
@@ -1077,7 +1073,7 @@ private suspend fun claimReward(token: String, region: Region, superProps: Strin
     val respBody = resp.body?.string() ?: "{}"
     val json = JSONObject(respBody)
     
-    if (!resp.isSuccessful && json.has("captcha_key")) {
+    if (resp.code == 400 && json.has("captcha_key")) {
         val capData = CaptchaData(
             sitekey = json.optString("captcha_sitekey"),
             rqdata = json.optString("captcha_rqdata"),
@@ -1088,8 +1084,7 @@ private suspend fun claimReward(token: String, region: Region, superProps: Strin
     }
     
     if (!resp.isSuccessful) {
-        val msg = json.optString("message", json.optString("code", "HTTP ${resp.code}"))
-        if (msg.isEmpty()) throw Exception("HTTP ${resp.code}") else throw Exception(msg)
+        throw Exception(json.optString("message", "HTTP ${resp.code}"))
     }
     
     return@withContext Pair(json, null)
@@ -1497,15 +1492,9 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
                 canCompleteAll = states.any { it.runState == RunState.IDLE },
                 onCompleteAll = {
                     CoroutineScope(Dispatchers.IO).launch {
-                        states.toList().forEach { st ->
-                            if (st.runState == RunState.IDLE) {
-                                runComplete(token, region, superProps, st) { upd ->
-                                    CoroutineScope(Dispatchers.Main).launch {
-                                        val i = states.indexOfFirst { it.quest.id == upd.quest.id }
-                                        if (i >= 0) states[i] = upd
-                                    }
-                                }
-                            }
+                        states.forEachIndexed { idx, st ->
+                            if (st.runState == RunState.IDLE)
+                                runComplete(token, region, superProps, st) { upd -> if (idx < states.size) states[idx] = upd }
                         }
                     }
                 },
@@ -1528,12 +1517,7 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
                 fetchError != null -> ErrorPane(fetchError!!) { refreshKey++ }
                 else               -> QuestList(
                     displayed, token, region, superProps, webLoader,
-                    onUpdate = { upd ->
-                        CoroutineScope(Dispatchers.Main).launch {
-                            val i = states.indexOfFirst { it.quest.id == upd.quest.id }
-                            if (i >= 0) states[i] = upd
-                        }
-                    },
+                    onUpdate = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd },
                     onWatch  = { videoQuest = it },
                     onMore   = { moreQuest  = it }
                 )
@@ -1550,13 +1534,7 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
         videoQuest?.let { q ->
             VideoPlayerDialog(q, token, region, superProps,
                 onDismiss  = { videoQuest = null },
-                onComplete = { upd ->
-                    CoroutineScope(Dispatchers.Main).launch {
-                        val i = states.indexOfFirst { it.quest.id == upd.quest.id }
-                        if (i >= 0) states[i] = upd
-                        videoQuest = null
-                    }
-                })
+                onComplete = { upd -> val i = states.indexOfFirst { it.quest.id == upd.quest.id }; if (i >= 0) states[i] = upd; videoQuest = null })
         }
         moreQuest?.let { MoreMenuSheet(it, LocalContext.current, onDismiss = { moreQuest = null }) }
 
@@ -1567,51 +1545,6 @@ private fun QuestScreen(token: String, webLoader: QuestWebLoader?, onBack: () ->
         if (showWebView) {
             WebViewDialog(webLoader, onDismiss = { showWebView = false })
         }
-    }
-}
-
-@Composable
-private fun QuestHeader(
-    orbBalance: Int?, region: Region, onBack: () -> Unit,
-    onFilter: () -> Unit, onCollect: () -> Unit, onRegion: () -> Unit, onRefresh: () -> Unit,
-    filterCount: Int, canCompleteAll: Boolean, onCompleteAll: () -> Unit,
-    onShowWebView: () -> Unit, webViewReady: Boolean, capturedBuild: Int,
-    onTitleClick: () -> Unit
-) {
-    Column(Modifier.fillMaxWidth().background(DC.Surface)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).padding(top = 32.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White) }
-            Column(Modifier.weight(1f).clickable(onClick = onTitleClick)) {
-                Text("Quests", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = DC.White)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Outlined.Public, null, tint = DC.Muted, modifier = Modifier.size(12.dp))
-                    Text(region.label, fontSize = 11.sp, color = DC.Muted)
-                    if (orbBalance != null) {
-                        Text("·", color = DC.Muted)
-                        Text("$orbBalance Orbs", fontSize = 11.sp, color = DC.Warning, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, null, tint = DC.White) }
-            IconButton(onClick = onFilter) {
-                BadgedBox(badge = {
-                    if (filterCount > 0) {
-                        Badge { Text(filterCount.toString()) }
-                    }
-                }) {
-                    Icon(Icons.Outlined.FilterList, null, tint = DC.White)
-                }
-            }
-            IconButton(onClick = onCollect) { Icon(Icons.Outlined.Inventory2, null, tint = DC.White) }
-            IconButton(onClick = onRegion) { Icon(Icons.Outlined.Language, null, tint = DC.White) }
-            if (canCompleteAll) {
-                IconButton(onClick = onCompleteAll) { Icon(Icons.Outlined.FastForward, null, tint = DC.Success) }
-            }
-            IconButton(onClick = onShowWebView) {
-                Icon(Icons.Outlined.DeveloperMode, null, tint = if (webViewReady) DC.Success else DC.Muted)
-            }
-        }
-        HorizontalDivider(color = DC.Border)
     }
 }
 
@@ -1657,32 +1590,285 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
 
                 when (logTab) {
                     0 -> {
-                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                val sb = StringBuilder()
+                                httpHookLogs.forEach { log ->
+                                    sb.appendLine("${log.timestamp} ${log.method} ${log.url}")
+                                    sb.appendLine("Status: ${log.responseStatus}")
+                                    if (log.requestHeaders.isNotEmpty()) sb.appendLine("Request Headers:\n${log.requestHeaders}")
+                                    if (log.requestBody != null) sb.appendLine("Request Body: ${log.requestBody}")
+                                    if (log.responseHeaders.isNotEmpty()) sb.appendLine("Response Headers:\n${log.responseHeaders}")
+                                    if (log.responseBody.isNotEmpty()) sb.appendLine("Response Body:\n${log.responseBody.take(5000)}")
+                                    sb.appendLine("---")
+                                }
+                                if (sb.length > 400_000) {
+                                    sb.setLength(400_000)
+                                    sb.append("\n\n... LOGS TRUNCATED DUE TO SIZE LIMIT ...")
+                                }
+                                clipboard.setPrimaryClip(ClipData.newPlainText("HTTP Logs", sb.toString()))
+                                copiedField = "http"
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                            Button(onClick = {
+                                saveLogsToCache(ctx)
+                                copiedField = "saved"
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                        }
+                        if (copiedField == "http") Text("HTTP logs copied!", color = DC.Success, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp))
+                        if (copiedField == "saved") Text("Logs saved to cache!", color = DC.Success, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp))
+
+                        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(httpHookLogs) { log ->
-                                HttpLogItem(log)
+                                var expanded by remember { mutableStateOf(false) }
+                                val statusColor = when {
+                                    log.responseStatus in 200..299 -> DC.Success
+                                    log.responseStatus in 400..599 -> DC.Error
+                                    log.responseStatus == 0 -> DC.Muted
+                                    else -> DC.Warning
+                                }
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = DC.Card),
+                                    modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }
+                                ) {
+                                    Column(Modifier.padding(10.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(Modifier.background(statusColor.copy(0.15f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+                                                Text(log.method, fontSize = 9.sp, color = statusColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                            }
+                                            Spacer(Modifier.width(6.dp))
+                                            if (log.responseStatus > 0) {
+                                                Text("${log.responseStatus}", fontSize = 10.sp, color = statusColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                                Spacer(Modifier.width(6.dp))
+                                            }
+                                            Text(log.url.take(80), fontSize = 10.sp, color = DC.SubText, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                            Text(log.timestamp, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace)
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, tint = DC.Muted, modifier = Modifier.size(14.dp))
+                                        }
+                                        if (expanded) {
+                                            Spacer(Modifier.height(8.dp))
+                                            if (log.requestHeaders.isNotEmpty()) {
+                                                Text("Request Headers:", fontSize = 9.sp, color = DC.Primary, fontWeight = FontWeight.Bold)
+                                                Text(log.requestHeaders, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace, maxLines = 30, overflow = TextOverflow.Ellipsis)
+                                                Spacer(Modifier.height(4.dp))
+                                            }
+                                            if (log.requestBody != null && log.requestBody.isNotEmpty()) {
+                                                Text("Request Body:", fontSize = 9.sp, color = DC.Warning, fontWeight = FontWeight.Bold)
+                                                Text(log.requestBody, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace, maxLines = 20, overflow = TextOverflow.Ellipsis)
+                                                Spacer(Modifier.height(4.dp))
+                                            }
+                                            if (log.responseHeaders.isNotEmpty()) {
+                                                Text("Response Headers:", fontSize = 9.sp, color = DC.Success, fontWeight = FontWeight.Bold)
+                                                Text(log.responseHeaders, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace, maxLines = 30, overflow = TextOverflow.Ellipsis)
+                                                Spacer(Modifier.height(4.dp))
+                                            }
+                                            if (log.responseBody.isNotEmpty()) {
+                                                Text("Response Body:", fontSize = 9.sp, color = DC.Teal, fontWeight = FontWeight.Bold)
+                                                Text(log.responseBody.take(5000), fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace, maxLines = 50, overflow = TextOverflow.Ellipsis)
+                                            }
+                                            Spacer(Modifier.height(6.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                TextButton(onClick = {
+                                                    val full = buildString {
+                                                        appendLine("${log.timestamp} ${log.method} ${log.url}")
+                                                        appendLine("Status: ${log.responseStatus}")
+                                                        if (log.requestHeaders.isNotEmpty()) appendLine("Request Headers:\n${log.requestHeaders}")
+                                                        if (log.requestBody != null) appendLine("Request Body: ${log.requestBody}")
+                                                        if (log.responseHeaders.isNotEmpty()) appendLine("Response Headers:\n${log.responseHeaders}")
+                                                        if (log.responseBody.isNotEmpty()) appendLine("Response Body:\n${log.responseBody}")
+                                                    }
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("HTTP Log", full))
+                                                }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                                    Text("Copy", fontSize = 10.sp, color = DC.Primary)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+
                     1 -> {
-                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                val sb = StringBuilder()
+                                consoleLogs.forEach { log -> sb.appendLine("[${log.timestamp}] ${log.level}: ${log.message}") }
+                                if (sb.length > 400_000) {
+                                    sb.setLength(400_000)
+                                    sb.append("\n\n... LOGS TRUNCATED DUE TO SIZE LIMIT ...")
+                                }
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Console Logs", sb.toString()))
+                                copiedField = "console"
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                            Button(onClick = { saveLogsToCache(ctx) }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                        }
+                        if (copiedField == "console") Text("Console logs copied!", color = DC.Success, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp))
+                        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(consoleLogs) { log ->
-                                ConsoleLogItem(log)
+                                val levelColor = when (log.level) {
+                                    "ERROR" -> DC.Error
+                                    "WARN" -> DC.Warning
+                                    "SUCCESS" -> DC.Success
+                                    "INFO" -> DC.Primary
+                                    else -> DC.Muted
+                                }
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Card), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(8.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(log.timestamp, fontSize = 9.sp, color = DC.Muted, fontFamily = FontFamily.Monospace)
+                                            Spacer(Modifier.width(5.dp))
+                                            Box(Modifier.background(levelColor.copy(0.15f), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
+                                                Text(log.level, fontSize = 8.sp, color = levelColor, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                            }
+                                            Spacer(Modifier.width(5.dp))
+                                            Text(log.message, fontSize = 10.sp, color = DC.SubText, fontFamily = FontFamily.Monospace, maxLines = 5, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+
                     2 -> {
-                        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = {
+                                val sb = StringBuilder()
+                                questLogs.forEach { log ->
+                                    sb.appendLine("[${log.timestamp}] ${log.tag}: ${log.message}")
+                                    log.detail?.let { sb.appendLine("  Detail: $it") }
+                                }
+                                if (sb.length > 400_000) {
+                                    sb.setLength(400_000)
+                                    sb.append("\n\n... LOGS TRUNCATED DUE TO SIZE LIMIT ...")
+                                }
+                                clipboard.setPrimaryClip(ClipData.newPlainText("System Logs", sb.toString()))
+                                copiedField = "system"
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy All") }
+                            Button(onClick = { saveLogsToCache(ctx) }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Save Cache") }
+                        }
+                        if (copiedField == "system") Text("System logs copied!", color = DC.Success, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp))
+                        LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             items(questLogs) { log ->
-                                QuestLogItem(log)
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Card), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(8.dp)) {
+                                        Text("[${log.timestamp}] ${log.tag}: ${log.message}", color = DC.White, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                        if (log.detail != null) {
+                                            Text(log.detail, color = DC.Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 10, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
+
                     3 -> {
-                        Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Active SuperProps:", color = DC.White, fontWeight = FontWeight.Bold)
-                            Text(currentActiveProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.background(DC.Card, RoundedCornerShape(8.dp)).padding(8.dp).fillMaxWidth())
-                            Text("Captured SuperProps:", color = DC.White, fontWeight = FontWeight.Bold)
-                            Text(capturedProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.background(DC.Card, RoundedCornerShape(8.dp)).padding(8.dp).fillMaxWidth())
+                        Column(Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (capturedProps.isNotEmpty()) {
+                                Text("Captured from WebView (Build: $capturedBuild):", color = DC.Success, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
+                                    Text(capturedProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = {
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", capturedProps))
+                                        copiedField = "captured"
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy Captured") }
+                                    Button(onClick = {
+                                        currentActiveProps = capturedProps
+                                        onPropsUpdated(capturedProps)
+                                        saveCachedSuperProps(ctx, capturedProps)
+                                        addQuestLog("SuperProps", "Applied captured props from WebView")
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Use Captured") }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                            }
+
+                            Text("Active Super Properties in Cache:", color = DC.Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
+                                Text(currentActiveProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("SuperProps", currentActiveProps))
+                                    copiedField = "ativo"
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.CardAlt)) { Text("Copy Current") }
+                                Button(onClick = {
+                                    scope.launch {
+                                        currentActiveProps = fetchDynamicSuperProps(ctx, region)
+                                        onPropsUpdated(currentActiveProps)
+                                    }
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Fetch from API") }
+                            }
+
+                            if (copiedField.isNotEmpty()) {
+                                Text("Copied to clipboard!", color = DC.Success, fontSize = 12.sp)
+                            }
+
+                            HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
+
+                            Text("Custom Super Properties Generator:", color = DC.Warning, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            OutlinedTextField(
+                                value = customBuildInput,
+                                onValueChange = { customBuildInput = it.filter { c -> c.isDigit() } },
+                                label = { Text("Client Build Number") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    scope.launch {
+                                        val build = customBuildInput.toIntOrNull()
+                                        if (build != null) {
+                                            generatedProps = generateSuperPropsJson(region, build)
+                                            addQuestLog("SuperProps", "Generated custom for build $build")
+                                        }
+                                    }
+                                }, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary)) { Text("Generate") }
+                                Button(onClick = { showWarning = true }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Set as Cache") }
+                            }
+
+                            if (generatedProps.isNotEmpty()) {
+                                Text("Generated Props:", color = DC.Success, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Card)) {
+                                    Text(generatedProps, color = DC.SubText, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(8.dp).fillMaxWidth())
+                                }
+                            }
+
+                            if (showWarning) {
+                                Card(colors = CardDefaults.cardColors(containerColor = DC.Error.copy(0.2f)), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text("Warning", color = DC.Error, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text("Custom Super Properties may cause Discord to block requests from outdated builds. Continue anyway?", color = DC.SubText, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(onClick = {
+                                                saveCachedSuperProps(ctx, generatedProps)
+                                                currentActiveProps = generatedProps
+                                                onPropsUpdated(generatedProps)
+                                                showWarning = false
+                                                addQuestLog("SuperProps", "Cache replaced with custom value!")
+                                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.Warning)) { Text("Set anyway") }
+                                            OutlinedButton(onClick = { showWarning = false }) { Text("Cancel") }
+                                        }
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = DC.Border, modifier = Modifier.padding(vertical = 8.dp))
+
+                            Text("Test Request:", color = DC.Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Button(onClick = {
+                                scope.launch {
+                                    try {
+                                        val (list, orbs) = apiFetch(token, region, currentActiveProps, ctx)
+                                        testResult = "Success! Quests: ${list.size}, Orbs: $orbs"
+                                    } catch (e: Exception) {
+                                        testResult = "Error: ${e.message}"
+                                    }
+                                }
+                            }, colors = ButtonDefaults.buttonColors(containerColor = DC.Success), modifier = Modifier.fillMaxWidth()) { Text("Test Quest Fetch") }
+                            Text("Result: $testResult", color = DC.White, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
                         }
                     }
                 }
@@ -1694,54 +1880,13 @@ private fun DebugScreen(token: String, region: Region, activeProps: String, onCl
 @Composable
 private fun DebugTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(8.dp)).background(if (selected) DC.Primary.copy(0.2f) else Color.Transparent).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp)
+        Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) DC.Primary.copy(0.2f) else DC.Card)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        Text(label, color = if (selected) DC.Primary else DC.Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
-private fun HttpLogItem(log: HttpHookLog) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(DC.Card).clickable { expanded = !expanded }.padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("${log.method}", color = DC.Primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            Text(log.url, color = DC.White, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(log.timestamp, color = DC.Muted, fontSize = 9.sp)
-        }
-        if (expanded) {
-            Text("Status: ${log.responseStatus}", color = DC.SubText, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-            Text("Req Headers: ${log.requestHeaders}", color = DC.SubText, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-            if (!log.requestBody.isNullOrEmpty()) Text("Req Body: $log.requestBody", color = DC.SubText, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-            Text("Resp Body: ${log.responseBody.take(1000)}", color = DC.SubText, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-        }
-    }
-}
-
-@Composable
-private fun ConsoleLogItem(log: ConsoleLogEntry) {
-    val color = when (log.level) { "ERROR" -> DC.Error; "WARN" -> DC.Warning; "SUCCESS" -> DC.Success; "INFO" -> DC.Primary; else -> DC.SubText }
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(log.timestamp, color = DC.Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-        Text(log.level, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-        Text(log.message, color = DC.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-    }
-}
-
-@Composable
-private fun QuestLogItem(log: QuestLog) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(log.timestamp, color = DC.Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-            Text("[${log.tag}]", color = DC.Primary, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-            Text(log.message, color = DC.White, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
-        }
-        if (!log.detail.isNullOrEmpty()) {
-            Text(log.detail, color = DC.SubText, fontSize = 9.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(start = 60.dp, top = 2.dp))
-        }
+        Text(label, fontSize = 11.sp, color = if (selected) DC.Primary else DC.Muted, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
     }
 }
 
@@ -1750,216 +1895,373 @@ private fun WebViewDialog(webLoader: QuestWebLoader?, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(DC.Bg)) {
             Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().background(DC.Surface).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().background(DC.Surface).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White) }
-                    Text("Discord WebView", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = DC.White)
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = { webLoader?.reload() }) { Icon(Icons.Outlined.Refresh, null, tint = DC.White) }
+                    Text("Discord Quest Page", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = DC.White, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { webLoader?.reload() }) { Icon(Icons.Outlined.Refresh, null, tint = DC.White, modifier = Modifier.size(20.dp)) }
                 }
-                AndroidView(factory = { ctx ->
-                    webLoader?.getWebView() ?: WebView(ctx)
-                }, modifier = Modifier.fillMaxSize())
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    webLoader?.getWebView()?.let { wv ->
+                        AndroidView(
+                            factory = { wv },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } ?: run {
+                        Box(Modifier.fillMaxSize(), Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CircularProgressIndicator(color = DC.Primary)
+                                Text("Initializing WebView...", color = DC.Muted, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun QuestList(
-    states: List<QuestState>, token: String, region: Region, superProps: String, webLoader: QuestWebLoader?,
-    onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit
-) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(states, key = { it.quest.id }) { state ->
-            QuestItemCard(state, token, region, superProps, webLoader, onUpdate, onWatch, onMore)
+private fun CaptchaDialog(sitekey: String, rqdata: String, onTokenReceived: (String) -> Unit, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(Modifier.fillMaxSize().background(DC.Bg)) {
+            Column(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxWidth().background(DC.Surface).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White) }
+                    Text("Captcha Verification", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = DC.White, modifier = Modifier.weight(1f))
+                }
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    AndroidView(factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            addJavascriptInterface(object {
+                                @JavascriptInterface
+                                fun onSuccess(token: String) {
+                                    onTokenReceived(token)
+                                }
+                            }, "AndroidCaptcha")
+                            
+                            val html = """
+                                <html>
+                                <head>
+                                    <script src="https://js.hcaptcha.com/1/api.js?render=explicit" async defer></script>
+                                    <style>body{margin:0;padding:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#1e1f22;}</style>
+                                </head>
+                                <body>
+                                    <div id="hcaptcha-container"></div>
+                                    <script>
+                                        hcaptcha.render('hcaptcha-container', {
+                                            sitekey: '$sitekey',
+                                            rqdata: '$rqdata',
+                                            callback: function(token) {
+                                                AndroidCaptcha.onSuccess(token);
+                                            }
+                                        });
+                                    </script>
+                                </body>
+                                </html>
+                            """.trimIndent()
+                            loadDataWithBaseURL("https://discord.com", html, "text/html", "UTF-8", null)
+                        }
+                    }, modifier = Modifier.fillMaxSize())
+                }
+            }
         }
-        item { Spacer(Modifier.height(28.dp)) }
     }
 }
 
 @Composable
-private fun QuestItemCard(
-    state: QuestState, token: String, region: Region, superProps: String, webLoader: QuestWebLoader?,
-    onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit
+private fun QuestHeader(
+    orbBalance: Int?, region: Region,
+    onBack: () -> Unit, onFilter: () -> Unit, onCollect: () -> Unit,
+    onRegion: () -> Unit, onRefresh: () -> Unit,
+    filterCount: Int, canCompleteAll: Boolean, onCompleteAll: () -> Unit,
+    onShowWebView: () -> Unit, webViewReady: Boolean, capturedBuild: Int,
+    onTitleClick: () -> Unit
 ) {
-    val q = state.quest
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val pct = if (q.secondsNeeded > 0) (q.secondsDone.toFloat() / q.secondsNeeded).coerceIn(0f, 1f) else 0f
-    val accent = when (q.rewardType) { "orbs" -> DC.Warning; "decor" -> DC.OrbViolet; "nitro" -> DC.Primary; else -> DC.Teal }
-    val shimTransition = rememberInfiniteTransition(label = "shim")
-    val shimX by shimTransition.animateFloat(
-        initialValue = -300f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(animation = tween(1500, easing = LinearEasing), repeatMode = RepeatMode.Restart),
-        label = "shimX"
-    )
-    var showCaptcha by remember { mutableStateOf<CaptchaData?>(null) }
-    val pAlpha = if (state.runState == RunState.RUNNING) 0.6f else 0.2f
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DC.Card),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth().border(1.dp, accent.copy(0.16f), RoundedCornerShape(14.dp)).animateContentSize()
-    ) {
-        Column {
-            Box(Modifier.fillMaxWidth().height(120.dp).background(DC.Surface)) {
-                if (q.bannerUrl != null) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(ctx).data(q.bannerUrl).crossfade(true).build(),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+    Box(Modifier.fillMaxWidth().height(240.dp)) {
+        AndroidView(
+            factory = { ctx ->
+                SurfaceView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    holder.addCallback(object : SurfaceHolder.Callback {
+                        private var mp: MediaPlayer? = null
+                        override fun surfaceCreated(h: SurfaceHolder) {
+                            val player = MediaPlayer()
+                            mp = player
+                            try {
+                                player.setDataSource("https://discord.com/assets/7ba7fcf2c4710bb7.webm")
+                                player.setDisplay(h); player.isLooping = true; player.setVolume(0f, 0f)
+                                player.setOnPreparedListener { it.start() }; player.prepareAsync()
+                            } catch (_: Exception) {}
+                        }
+                        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hi: Int) {}
+                        override fun surfaceDestroyed(h: SurfaceHolder) { mp?.release(); mp = null }
+                    })
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(colorStops = arrayOf(0f to Color.Black.copy(0.25f), 0.5f to Color.Black.copy(0.5f), 1f to DC.Bg))))
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(top = 40.dp, bottom = 16.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                IconButton(onClick = onBack, modifier = Modifier.size(40.dp).background(Color.Black.copy(0.5f), CircleShape).border(1.dp, Color.White.copy(0.1f), CircleShape)) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, tint = DC.White, modifier = Modifier.size(18.dp))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TopBarBtn(Icons.Outlined.Language, onClick = onRegion)
+                    Box {
+                        TopBarBtn(Icons.Outlined.Tune, onClick = onFilter)
+                        if (filterCount > 0) Badge(Modifier.align(Alignment.TopEnd).offset(2.dp, (-2).dp)) { Text("$filterCount") }
+                    }
+                    TopBarBtn(Icons.Outlined.Inventory2, onClick = onCollect)
+                    TopBarBtn(Icons.Outlined.Refresh, onClick = onRefresh)
+                    TopBarBtn(
+                        if (webViewReady) Icons.Outlined.Visibility else Icons.Outlined.Web,
+                        onClick = onShowWebView
                     )
                 }
-                Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, DC.Card))))
-                Row(Modifier.fillMaxWidth().padding(12.dp).align(Alignment.BottomStart), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(56.dp)) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(ctx).data(q.rewardIconUrl).crossfade(true).build(),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                        )
-                        Canvas(Modifier.fillMaxSize()) {
-                            val sw = 3.5f; val r = size.minDimension / 2f - sw / 2f
-                            drawCircle(color = DC.Border.copy(0.8f), radius = r, style = Stroke(sw))
-                            if (pct > 0f) drawArc(color = accent, startAngle = -90f, sweepAngle = 360f * pct, useCenter = false, style = Stroke(sw, cap = StrokeCap.Round))
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("${region.flag}  ${region.label}", fontSize = 11.sp, color = DC.Muted, fontWeight = FontWeight.Medium)
+                Text(
+                    "Quests",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 28.sp,
+                    color = DC.White,
+                    modifier = Modifier.clickable { onTitleClick() }
+                )
+                if (capturedBuild > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(Modifier.size(6.dp).background(DC.Success, CircleShape))
+                        Text("WebView Hooked (Build $capturedBuild)", fontSize = 11.sp, color = DC.Success, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (orbBalance != null && orbBalance > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Box(Modifier.size(6.dp).background(DC.OrbViolet, CircleShape))
+                        Text("$orbBalance Orbs", fontSize = 12.sp, color = DC.OrbViolet, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (canCompleteAll) {
+                    Spacer(Modifier.height(2.dp))
+                    Button(onClick = onCompleteAll, colors = ButtonDefaults.buttonColors(containerColor = DC.Primary), shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp), modifier = Modifier.height(36.dp)) {
+                        Icon(Icons.Outlined.DoneAll, null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Complete All", fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopBarBtn(icon: ImageVector, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(40.dp).background(Color.Black.copy(0.5f), RoundedCornerShape(12.dp)).border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(12.dp))) {
+        Icon(icon, null, tint = DC.White, modifier = Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun QuestList(
+    displayed: List<QuestState>, token: String, region: Region, superProps: String, webLoader: QuestWebLoader?,
+    onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit
+) {
+    if (displayed.isEmpty()) {
+        Box(Modifier.fillMaxSize(), Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(40.dp)) {
+                Box(Modifier.size(80.dp).background(DC.Muted.copy(0.08f), CircleShape), Alignment.Center) { Icon(Icons.Outlined.SportsEsports, null, tint = DC.Muted, modifier = Modifier.size(38.dp)) }
+                Text("No quests available", color = DC.White, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                Text("Try a different region or adjust your filters.", color = DC.Muted, fontSize = 13.sp)
+            }
+        }
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Spacer(Modifier.height(10.dp)) }
+        items(displayed, key = { it.quest.id }) { state -> QuestCard(state, token, region, superProps, webLoader, onUpdate, onWatch, onMore) }
+        item { Spacer(Modifier.height(32.dp)) }
+    }
+}
+
+@Composable
+private fun QuestCard(state: QuestState, token: String, region: Region, superProps: String, webLoader: QuestWebLoader?, onUpdate: (QuestState) -> Unit, onWatch: (QuestItem) -> Unit, onMore: (QuestItem) -> Unit) {
+    val ctx   = LocalContext.current
+    val q     = state.quest
+    val scope = rememberCoroutineScope()
+    val accent = when { q.claimedAt != null -> DC.Teal; q.rewardType == "orbs" -> DC.OrbViolet; q.rewardType == "decor" || q.rewardType == "nitro" -> DC.Primary; else -> DC.Success }
+    val gifLoader = remember(ctx) { ImageLoader.Builder(ctx).components { if (Build.VERSION.SDK_INT >= 28) add(ImageDecoderDecoder.Factory()) else add(GifDecoder.Factory()) }.build() }
+    val pct = if (q.secondsNeeded > 0) (state.progress.coerceAtLeast(q.secondsDone).toFloat() / q.secondsNeeded).coerceIn(0f, 1f) else 0f
+    val pulse = rememberInfiniteTransition(label = "p"); val pAlpha by pulse.animateFloat(0.15f, 0.6f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "pa")
+    val shimT = rememberInfiniteTransition(label = "s"); val shimX by shimT.animateFloat(-350f, 1500f, infiniteRepeatable(tween(1900, easing = LinearEasing), RepeatMode.Restart), label = "sx")
+    
+    var showCaptcha by remember { mutableStateOf<CaptchaData?>(null) }
+
+    Card(colors = CardDefaults.cardColors(containerColor = DC.Card), shape = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth().border(1.dp, accent.copy(if (state.runState == RunState.RUNNING) pAlpha else 0.15f), RoundedCornerShape(18.dp))) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(150.dp)) {
+                if (q.bannerUrl != null) {
+                    AsyncImage(ImageRequest.Builder(ctx).data(q.bannerUrl).crossfade(true).build(), null, gifLoader, Modifier.fillMaxSize().clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)), contentScale = ContentScale.Crop)
+                } else {
+                    Box(Modifier.fillMaxSize().clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)).background(Brush.linearGradient(listOf(accent.copy(0.25f), DC.CardAlt))))
+                }
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, DC.Card.copy(0.45f), DC.Card), startY = 55f)))
+                if (state.runState == RunState.RUNNING) Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Transparent, accent.copy(0.2f), Color.Transparent), startX = shimX, endX = shimX + 400f)))
+                if (q.publisher.isNotEmpty()) {
+                    Row(Modifier.align(Alignment.TopStart).padding(10.dp).background(Color.Black.copy(0.6f), RoundedCornerShape(20.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Outlined.Verified, null, tint = DC.Success, modifier = Modifier.size(9.dp))
+                        Text(q.publisher, fontSize = 9.sp, color = DC.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Text("Ends ${fmtShort(q.expiresMs)}", modifier = Modifier.align(Alignment.TopEnd).padding(10.dp).background(Color.Black.copy(0.6f), RoundedCornerShape(20.dp)).padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 9.sp, color = DC.White, fontWeight = FontWeight.Bold)
+                Box(Modifier.align(Alignment.BottomStart).offset(14.dp, 28.dp).size(60.dp)) {
+                    if (q.rewardIconUrl != null) {
+                        AsyncImage(ImageRequest.Builder(ctx).data(q.rewardIconUrl).crossfade(true).build(), null, gifLoader, Modifier.size(48.dp).align(Alignment.Center).clip(CircleShape).border(2.dp, DC.Card, CircleShape), contentScale = ContentScale.Crop)
+                    } else {
+                        Box(Modifier.size(48.dp).align(Alignment.Center).background(DC.CardAlt, CircleShape).border(2.dp, DC.Card, CircleShape)) { Icon(Icons.Outlined.CardGiftcard, null, tint = accent, modifier = Modifier.align(Alignment.Center).size(22.dp)) }
+                    }
+                    Canvas(Modifier.fillMaxSize()) {
+                        val sw = 3.5f; val r = size.minDimension / 2f - sw / 2f
+                        drawCircle(color = DC.Border.copy(0.8f), radius = r, style = Stroke(sw))
+                        if (pct > 0f) drawArc(color = accent, startAngle = -90f, sweepAngle = 360f * pct, useCenter = false, style = Stroke(sw, cap = StrokeCap.Round))
+                    }
+                }
+            }
+            Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 32.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("QUEST: ${q.name.uppercase()}", fontSize = 9.sp, color = accent, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.07.sp)
+                Text(q.reward, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = DC.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(describeTask(q.taskName, q.secondsNeeded), fontSize = 12.sp, color = DC.SubText, lineHeight = 17.sp)
+            }
+            if (q.secondsNeeded > 0) {
+                Column(Modifier.padding(horizontal = 14.dp).padding(top = 6.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Progress", fontSize = 9.sp, color = DC.Muted, fontWeight = FontWeight.Medium)
+                        Text("${(pct * 100).toInt()}%", fontSize = 9.sp, color = accent, fontWeight = FontWeight.ExtraBold)
+                    }
+                    Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(DC.Border)) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(pct).background(Brush.horizontalGradient(listOf(accent.copy(0.7f), accent)), RoundedCornerShape(2.dp)))
+                    }
+                }
+            }
+            if (state.log.isNotBlank() && state.runState != RunState.IDLE) {
+                val logColor = when (state.runState) { RunState.ERROR, RunState.NOT_ENROLLED -> DC.Error; RunState.DONE -> accent; RunState.DESKTOP_ONLY -> DC.Warning; else -> DC.Muted }
+                Text(state.log, fontSize = 10.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 14.sp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp).background(logColor.copy(0.07f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp))
+            }
+            HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border.copy(0.4f))
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                when {
+                    state.runState == RunState.RUNNING -> {
+                        Box(Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(0.12f)).border(1.dp, accent.copy(pAlpha), RoundedCornerShape(12.dp))
+                            .drawWithContent { drawContent(); drawRect(Brush.horizontalGradient(listOf(Color.Transparent, accent.copy(0.22f), Color.Transparent), startX = shimX, endX = shimX + 300f), size = size) }, Alignment.Center) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CircularProgressIndicator(modifier = Modifier.size(13.dp), color = accent, strokeWidth = 2.dp)
+                                Text(state.log.lines().lastOrNull()?.take(28) ?: "Running...", fontSize = 11.sp, color = accent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
-                    Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 32.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("QUEST: ${q.name.uppercase()}", fontSize = 9.sp, color = accent, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.07.sp)
-                        Text(q.reward, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = DC.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(describeTask(q.taskName, q.secondsNeeded), fontSize = 12.sp, color = DC.SubText, lineHeight = 17.sp)
-                    }
-                    if (q.secondsNeeded > 0) {
-                        Column(Modifier.padding(horizontal = 14.dp).padding(top = 6.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Progress", fontSize = 9.sp, color = DC.Muted, fontWeight = FontWeight.Medium)
-                                Text("${(pct * 100).toInt()}%", fontSize = 9.sp, color = accent, fontWeight = FontWeight.ExtraBold)
-                            }
-                            Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(DC.Border)) {
-                                Box(Modifier.fillMaxHeight().fillMaxWidth(pct).background(Brush.horizontalGradient(listOf(accent.copy(0.7f), accent)), RoundedCornerShape(2.dp)))
-                            }
-                        }
-                    }
-                    if (state.log.isNotBlank() && state.runState != RunState.IDLE) {
-                        val logColor = when (state.runState) { RunState.ERROR, RunState.NOT_ENROLLED -> DC.Error; RunState.DONE -> accent; RunState.DESKTOP_ONLY -> DC.Warning; else -> DC.Muted }
-                        Text(state.log, fontSize = 10.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 14.sp,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp).background(logColor.copy(0.07f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp))
-                    }
-                    HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border.copy(0.4f))
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        when {
-                            state.runState == RunState.RUNNING -> {
-                                Box(Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(0.12f)).border(1.dp, accent.copy(pAlpha), RoundedCornerShape(12.dp))
-                                    .drawWithContent { drawContent(); drawRect(Brush.horizontalGradient(listOf(Color.Transparent, accent.copy(0.22f), Color.Transparent), startX = shimX, endX = shimX + 300f), size = size) }, Alignment.Center) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        CircularProgressIndicator(modifier = Modifier.size(13.dp), color = accent, strokeWidth = 2.dp)
-                                        Text(state.log.lines().lastOrNull()?.take(28) ?: "Running...", fontSize = 11.sp, color = accent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
-                            }
-                            state.runState == RunState.DONE -> {
-                                StateChip(accent, Icons.Outlined.CheckCircle, "Completed!", Modifier.weight(1f))
-                                if (q.claimedAt == null) {
-                                    SecondaryBtn("Claim", Icons.Outlined.Redeem, Modifier.weight(0.5f)) {
-                                        scope.launch {
-                                            try {
-                                                val (res, cap) = claimReward(token, region, superProps, q)
-                                                if (cap != null) {
-                                                    showCaptcha = cap
-                                                } else {
-                                                    onUpdate(state.copy(runState = RunState.DONE, quest = q.copy(claimedAt = res.optString("claimed_at")), log = "Reward claimed successfully!"))
-                                                }
-                                            } catch (e: Exception) {
-                                                onUpdate(state.copy(log = "Claim error: ${e.message}"))
-                                            }
+                    state.runState == RunState.DONE -> {
+                        StateChip(accent, Icons.Outlined.CheckCircle, "Completed!", Modifier.weight(1f))
+                        if (q.claimedAt == null) {
+                            SecondaryBtn("Claim", Icons.Outlined.Redeem, Modifier.weight(0.5f)) {
+                                scope.launch {
+                                    try {
+                                        val (res, cap) = claimReward(token, region, superProps, q)
+                                        if (cap != null) {
+                                            showCaptcha = cap
+                                        } else {
+                                            onUpdate(state.copy(runState = RunState.DONE, quest = q.copy(claimedAt = res.optString("claimed_at")), log = "Reward claimed successfully!"))
                                         }
+                                    } catch (e: Exception) {
+                                        onUpdate(state.copy(log = "Claim error: ${e.message}"))
                                     }
                                 }
                             }
-                            state.runState == RunState.DESKTOP_ONLY -> StateChip(DC.Warning, Icons.Outlined.Computer, "Desktop Only", Modifier.weight(1f))
-                            state.runState == RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.Info, "Accept in Discord", Modifier.weight(1f))
-                            else -> {
-                                val isVideo = q.taskName.contains("WATCH")
-                                var showCompleteMenu by remember { mutableStateOf(false) }
-                                Box(modifier = Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f)) {
-                                    PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.fillMaxSize(), shimX, enabled = state.runState == RunState.IDLE) {
-                                        showCompleteMenu = true
+                        }
+                    }
+                    state.runState == RunState.DESKTOP_ONLY -> StateChip(DC.Warning, Icons.Outlined.Computer, "Desktop Only", Modifier.weight(1f))
+                    state.runState == RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.Info, "Accept in Discord", Modifier.weight(1f))
+                    else -> {
+                        val isVideo = q.taskName.contains("WATCH")
+                        var showCompleteMenu by remember { mutableStateOf(false) }
+                        Box(modifier = Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f)) {
+                            PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.fillMaxSize(), shimX) {
+                                showCompleteMenu = true
+                            }
+                            DropdownMenu(
+                                expanded = showCompleteMenu,
+                                onDismissRequest = { showCompleteMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Native API") },
+                                    onClick = {
+                                        showCompleteMenu = false
+                                        scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
                                     }
-                                    DropdownMenu(
-                                        expanded = showCompleteMenu,
-                                        onDismissRequest = { showCompleteMenu = false }
-                                    ) {
-                                        DropdownMenuItem(
-                                            text = { Text("Native API") },
-                                            onClick = {
-                                                showCompleteMenu = false
-                                                scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
-                                            }
-                                        )
-                                        DropdownMenuItem(
-                                            text = { Text("JS Hook (WebView)") },
-                                            enabled = webLoader != null && webViewReady.value && state.runState == RunState.IDLE,
-                                            onClick = {
-                                                showCompleteMenu = false
-                                                webLoader?.let { loader ->
-                                                    loader.executeQuestJS(q.id)
-                                                    addQuestLog("JS", "Quest completion JS injected for ${q.id}")
-                                                    onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
-                                                    
-                                                    scope.launch {
-                                                        while (isActive) {
-                                                            delay(5000)
-                                                            loader.executeCustomJS("""
-                                                                (function() {
-                                                                    try {
-                                                                        var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
-                                                                        webpackChunkdiscord_app.pop();
-                                                                        var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
-                                                                        var quest = QuestsStore.quests.get('${q.id}');
-                                                                        if (!quest) return JSON.stringify({error: "not found"});
-                                                                        var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
-                                                                        var taskName = Object.keys(taskConfig.tasks)[0];
-                                                                        var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
-                                                                        var completed = quest.userStatus && quest.userStatus.completed_at != null;
-                                                                        return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
-                                                                    } catch(e) { return JSON.stringify({error: e.message}); }
-                                                                })();
-                                                            """.trimIndent()) { res ->
-                                                                if (res != "null" && res.isNotEmpty()) {
-                                                                    try {
-                                                                        val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
-                                                                        if (cleanRes != "null" && cleanRes.isNotEmpty()) {
-                                                                            val json = JSONObject(cleanRes)
-                                                                            if (json.has("progress")) {
-                                                                                val p = json.getLong("progress")
-                                                                                val n = json.getLong("needed")
-                                                                                val c = json.getBoolean("completed")
-                                                                                if (c || p >= n) {
-                                                                                    onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
-                                                                                    this.cancel()
-                                                                                } else {
-                                                                                    onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
-                                                                                }
-                                                                            }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("JS Hook (WebView)") },
+                                    enabled = webLoader != null && webViewReady.value,
+                                    onClick = {
+                                        showCompleteMenu = false
+                                        webLoader?.let { loader ->
+                                            loader.executeQuestJS(q.id)
+                                            addQuestLog("JS", "Quest completion JS injected for ${q.id}")
+                                            onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
+                                            
+                                            scope.launch {
+                                                while (isActive) {
+                                                    delay(5000)
+                                                    loader.executeCustomJS("""
+                                                        (function() {
+                                                            try {
+                                                                var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+                                                                webpackChunkdiscord_app.pop();
+                                                                var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
+                                                                var quest = QuestsStore.quests.get('${q.id}');
+                                                                if (!quest) return JSON.stringify({error: "not found"});
+                                                                var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
+                                                                var taskName = Object.keys(taskConfig.tasks)[0];
+                                                                var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
+                                                                var completed = quest.userStatus && quest.userStatus.completed_at != null;
+                                                                return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
+                                                            } catch(e) { return JSON.stringify({error: e.message}); }
+                                                        })();
+                                                    """.trimIndent()) { res ->
+                                                        if (res != "null" && res.isNotEmpty()) {
+                                                            try {
+                                                                val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
+                                                                if (cleanRes != "null" && cleanRes.isNotEmpty()) {
+                                                                    val json = JSONObject(cleanRes)
+                                                                    if (json.has("progress")) {
+                                                                        val p = json.getLong("progress")
+                                                                        val n = json.getLong("needed")
+                                                                        val c = json.getBoolean("completed")
+                                                                        if (c || p >= n) {
+                                                                            onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
+                                                                            this.cancel()
+                                                                        } else {
+                                                                            onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
                                                                         }
-                                                                    } catch (_: Exception) {}
+                                                                    }
                                                                 }
-                                                            }
+                                                            } catch (_: Exception) {}
                                                         }
                                                     }
                                                 }
                                             }
-                                        )
+                                        }
                                     }
-                                }
-                                if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
+                                )
                             }
                         }
-                        SecondaryIconBtn(Icons.Outlined.MoreVert) { onMore(q) }
+                        if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
                     }
                 }
+                SecondaryIconBtn(Icons.Outlined.MoreVert) { onMore(q) }
             }
         }
     }
@@ -1971,20 +2273,11 @@ private fun QuestItemCard(
             onTokenReceived = { tokenCaptcha ->
                 scope.launch {
                     try {
-                        val (res, newCap) = claimReward(token, region, superProps, q, cap.copy(token = tokenCaptcha))
+                        val (res, _) = claimReward(token, region, superProps, q, cap.copy(token = tokenCaptcha))
                         if (res.has("claimed_at")) {
                             withContext(Dispatchers.Main) {
                                 showCaptcha = null
                                 onUpdate(state.copy(runState = RunState.DONE, quest = q.copy(claimedAt = res.optString("claimed_at")), log = "Reward claimed successfully!"))
-                            }
-                        } else if (newCap != null) {
-                            withContext(Dispatchers.Main) {
-                                showCaptcha = newCap
-                            }
-                        } else {
-                            withContext(Dispatchers.Main) {
-                                showCaptcha = null
-                                onUpdate(state.copy(log = "Claim failed: ${res.optString("message", "Unknown error")}"))
                             }
                         }
                     } catch (e: Exception) {
@@ -2000,42 +2293,8 @@ private fun QuestItemCard(
     }
 }
 
-@Composable
-private fun CaptchaDialog(sitekey: String, rqdata: String, onTokenReceived: (String) -> Unit, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxWidth(0.96f).clip(RoundedCornerShape(22.dp)).background(DC.Card).border(1.dp, DC.Border, RoundedCornerShape(22.dp))) {
-            Column {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Security, null, tint = DC.Warning)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Captcha Verification", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = DC.White)
-                }
-                AndroidView(factory = { ctx ->
-                    WebView(ctx).apply {
-                        settings.javaScriptEnabled = true
-                        addJavascriptInterface(object {
-                            @JavascriptInterface
-                            fun onCaptchaToken(token: String) {
-                                Handler(Looper.getMainLooper()).post { onTokenReceived(token) }
-                            }
-                        }, "AndroidHook")
-                        val html = """
-                            <html><head><script src="https://js.hcaptcha.com/1/api.js" async defer></script></head>
-                            <body style="background-color:#1E1F22; display:flex; justify-content:center; align-items:center; height:100vh; margin:0;">
-                            <div class="h-captcha" data-sitekey="$sitekey" data-rqdata="$rqdata" data-callback="onSubmit"></div>
-                            <script>function onSubmit(token) { AndroidHook.onCaptchaToken(token); }</script>
-                            </body></html>
-                        """.trimIndent()
-                        loadDataWithBaseURL("https://discord.com", html, "text/html", "UTF-8", null)
-                    }
-                }, modifier = Modifier.fillMaxWidth().height(400.dp))
-            }
-        }
-    }
-}
-
-@Composable private fun PrimaryBtn(label: String, color: Color, icon: ImageVector, mod: Modifier, shimX: Float = 0f, enabled: Boolean = true, onClick: () -> Unit) {
-    Box(mod.height(46.dp).clip(RoundedCornerShape(12.dp)).background(if (enabled) Brush.horizontalGradient(listOf(color, color.copy(0.82f))) else Brush.horizontalGradient(listOf(DC.Muted, DC.Muted.copy(0.82f)))).drawWithContent { if (enabled) drawContent(); drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(0.12f), Color.Transparent), startX = shimX, endX = shimX + 240f), size = size) }.clickable(enabled = enabled, onClick = onClick), Alignment.Center) {
+@Composable private fun PrimaryBtn(label: String, color: Color, icon: ImageVector, mod: Modifier, shimX: Float = 0f, onClick: () -> Unit) {
+    Box(mod.height(46.dp).clip(RoundedCornerShape(12.dp)).background(Brush.horizontalGradient(listOf(color, color.copy(0.82f)))).drawWithContent { drawContent(); drawRect(Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(0.12f), Color.Transparent), startX = shimX, endX = shimX + 240f), size = size) }.clickable(onClick = onClick), Alignment.Center) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(14.dp)); Text(label, fontWeight = FontWeight.ExtraBold, color = Color.White, fontSize = 12.sp) }
     }
 }
