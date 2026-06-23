@@ -890,6 +890,7 @@ data class QuestItem(
     val videoUrl: String?, val questLink: String?,
     val enrolledAt: String?, val completedAt: String?, val claimedAt: String?,
     val configVersion: Int,
+    val trafficMetadata: String,
     val rawConfig: JSONObject
 )
 
@@ -938,6 +939,7 @@ private fun parseQuest(q: JSONObject): QuestItem? {
             }
         }
     }
+    val trafficMetadata = q.optString("traffic_metadata_sealed", cfg.optString("traffic_metadata_sealed", ""))
     return QuestItem(
         id = id, name = msg.optString("quest_name", msg.optString("questName", "")), reward = reward, rewardType = rewardType,
         expiresMs = parseIso(cfg.optString("expires_at", cfg.optString("expiresAt", ""))), taskName = taskName,
@@ -954,6 +956,7 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         claimedAt   = us?.optString("claimed_at")?.takeIf   { it.isNotEmpty() && it != "null" }
                       ?: us?.optString("claimedAt")?.takeIf   { it.isNotEmpty() && it != "null" },
         configVersion = configVersion,
+        trafficMetadata = trafficMetadata,
         rawConfig   = cfg
     )
 }
@@ -1052,7 +1055,7 @@ private suspend fun retryApi(maxAttempts: Int = 5, initialDelayMs: Long = 500, m
 
 private suspend fun claimReward(token: String, region: Region, superProps: String, quest: QuestItem, captcha: CaptchaData? = null): Pair<JSONObject, CaptchaData?> = withContext(Dispatchers.IO) {
     val url = "https://discord.com/api/v9/quests/${quest.id}/claim-reward"
-    val traffic = quest.rawConfig.optString("traffic_metadata_sealed", "")
+    val traffic = quest.trafficMetadata
     val bodyStr = JSONObject().apply {
         put("platform", 0)
         put("location", 11)
@@ -1784,8 +1787,6 @@ private fun QuestItemCard(
     val scope = rememberCoroutineScope()
     val pct = if (q.secondsNeeded > 0) (q.secondsDone.toFloat() / q.secondsNeeded).coerceIn(0f, 1f) else 0f
     val accent = when (q.rewardType) { "orbs" -> DC.Warning; "decor" -> DC.OrbViolet; "nitro" -> DC.Primary; else -> DC.Teal }
-    val progressAnim by animateFloatAsState(targetValue = pct, animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing), label = "progAnim")
-    
     val shimTransition = rememberInfiniteTransition(label = "shim")
     val shimX by shimTransition.animateFloat(
         initialValue = -300f,
@@ -1822,7 +1823,7 @@ private fun QuestItemCard(
                         Canvas(Modifier.fillMaxSize()) {
                             val sw = 3.5f; val r = size.minDimension / 2f - sw / 2f
                             drawCircle(color = DC.Border.copy(0.8f), radius = r, style = Stroke(sw))
-                            if (progressAnim > 0f) drawArc(color = accent, startAngle = -90f, sweepAngle = 360f * progressAnim, useCenter = false, style = Stroke(sw, cap = StrokeCap.Round))
+                            if (pct > 0f) drawArc(color = accent, startAngle = -90f, sweepAngle = 360f * pct, useCenter = false, style = Stroke(sw, cap = StrokeCap.Round))
                         }
                     }
                     Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 32.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -1834,14 +1835,14 @@ private fun QuestItemCard(
                         Column(Modifier.padding(horizontal = 14.dp).padding(top = 6.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Progress", fontSize = 9.sp, color = DC.Muted, fontWeight = FontWeight.Medium)
-                                Text("${(progressAnim * 100).toInt()}%", fontSize = 9.sp, color = accent, fontWeight = FontWeight.ExtraBold)
+                                Text("${(pct * 100).toInt()}%", fontSize = 9.sp, color = accent, fontWeight = FontWeight.ExtraBold)
                             }
                             Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(DC.Border)) {
-                                Box(Modifier.fillMaxHeight().fillMaxWidth(progressAnim).background(Brush.horizontalGradient(listOf(accent.copy(0.7f), accent)), RoundedCornerShape(2.dp)))
+                                Box(Modifier.fillMaxHeight().fillMaxWidth(pct).background(Brush.horizontalGradient(listOf(accent.copy(0.7f), accent)), RoundedCornerShape(2.dp)))
                             }
                         }
                     }
-                    AnimatedVisibility(visible = state.log.isNotBlank() && state.runState != RunState.IDLE, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+                    if (state.log.isNotBlank() && state.runState != RunState.IDLE) {
                         val logColor = when (state.runState) { RunState.ERROR, RunState.NOT_ENROLLED -> DC.Error; RunState.DONE -> accent; RunState.DESKTOP_ONLY -> DC.Warning; else -> DC.Muted }
                         Text(state.log, fontSize = 10.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 14.sp,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp).background(logColor.copy(0.07f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp))
@@ -1899,7 +1900,7 @@ private fun QuestItemCard(
                                         )
                                         DropdownMenuItem(
                                             text = { Text("JS Hook (WebView)") },
-                                            enabled = webLoader != null && webViewReady.value && state.runState != RunState.RUNNING,
+                                            enabled = webLoader != null && webViewReady.value && state.runState == RunState.IDLE,
                                             onClick = {
                                                 showCompleteMenu = false
                                                 webLoader?.let { loader ->
@@ -1970,11 +1971,20 @@ private fun QuestItemCard(
             onTokenReceived = { tokenCaptcha ->
                 scope.launch {
                     try {
-                        val (res, _) = claimReward(token, region, superProps, q, cap.copy(token = tokenCaptcha))
+                        val (res, newCap) = claimReward(token, region, superProps, q, cap.copy(token = tokenCaptcha))
                         if (res.has("claimed_at")) {
                             withContext(Dispatchers.Main) {
                                 showCaptcha = null
                                 onUpdate(state.copy(runState = RunState.DONE, quest = q.copy(claimedAt = res.optString("claimed_at")), log = "Reward claimed successfully!"))
+                            }
+                        } else if (newCap != null) {
+                            withContext(Dispatchers.Main) {
+                                showCaptcha = newCap
+                            }
+                        } else {
+                            withContext(Dispatchers.Main) {
+                                showCaptcha = null
+                                onUpdate(state.copy(log = "Claim failed: ${res.optString("message", "Unknown error")}"))
                             }
                         }
                     } catch (e: Exception) {
