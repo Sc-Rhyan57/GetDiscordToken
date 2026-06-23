@@ -570,6 +570,34 @@ class QuestWebLoader(private val ctx: Context, private val token: String) {
     var onSuperProps: ((String) -> Unit)? = null
     var onPageLoaded: (() -> Unit)? = null
 
+    private val bufferHttp = mutableListOf<HttpHookLog>()
+    private val bufferQuest = mutableListOf<QuestLog>()
+    private val bufferConsole = mutableListOf<ConsoleLogEntry>()
+    private val flushRunnable = Runnable { flush() }
+
+    private fun scheduleFlush() {
+        mainHandler.removeCallbacks(flushRunnable)
+        mainHandler.postDelayed(flushRunnable, 150L)
+    }
+
+    private fun flush() {
+        if (bufferHttp.isNotEmpty()) {
+            httpHookLogs.addAll(0, bufferHttp)
+            while (httpHookLogs.size > 200) httpHookLogs.removeAt(httpHookLogs.size - 1)
+            bufferHttp.clear()
+        }
+        if (bufferQuest.isNotEmpty()) {
+            questLogs.addAll(0, bufferQuest)
+            while (questLogs.size > 500) questLogs.removeAt(questLogs.size - 1)
+            bufferQuest.clear()
+        }
+        if (bufferConsole.isNotEmpty()) {
+            consoleLogs.addAll(0, bufferConsole)
+            while (consoleLogs.size > 300) consoleLogs.removeAt(consoleLogs.size - 1)
+            bufferConsole.clear()
+        }
+    }
+
     fun init() {
         mainHandler.post {
             val wv = WebView(ctx)
@@ -585,29 +613,41 @@ class QuestWebLoader(private val ctx: Context, private val token: String) {
 
             val hookInterface = WebHookInterface(
                 onReq = { method, url, headers, body ->
-                    mainHandler.post {
-                        addHttpHookLog(true, method, url, headers, body.takeIf { it.isNotEmpty() })
-                        addQuestLog("HTTP", "$method $url", "Headers:\n$headers" + if (body.isNotEmpty()) "\nBody: $body" else "")
-                    }
+                    if (stopHooking.value) return@WebHookInterface
+                    val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+                    val safeHeaders = sanitizeText(headers)
+                    val safeBody = body?.let { sanitizeText(it) }
+                    val id = ++hookLogIdCounter
+                    pendingHttpRequests["$method:$url"] = HttpHookLog(id, ts, method, url, safeHeaders, safeBody, 0, "", "")
+                    bufferQuest.add(0, QuestLog(ts, "HTTP", "$method $url", "Headers:\n$safeHeaders" + if (!body.isNullOrEmpty()) "\nBody: $safeBody" else ""))
+                    scheduleFlush()
                 },
                 onResp = { method, url, status, headers, body ->
-                    mainHandler.post {
-                        addHttpHookLog(false, method, url, "", "", status, headers, body)
-                        addQuestLog("HTTP", "Response $status $url", body.take(2000))
-                        if (url.contains("/quests/@me") || url.contains("/quests?")) {
-                            if (status == 200) {
-                                stopHooking.value = true
-                            }
-                            scope.launch {
-                                onQuestData?.invoke(body)
-                            }
-                        }
+                    if (stopHooking.value && !(url.contains("/quests/@me") || url.contains("/quests?"))) return@WebHookInterface
+                    val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+                    val safeRespHeaders = sanitizeText(headers)
+                    val safeRespBody = sanitizeText(body)
+                    val key = "$method:$url"
+                    val pending = pendingHttpRequests.remove(key)
+                    val log = if (pending != null) {
+                        pending.copy(responseStatus = status, responseHeaders = safeRespHeaders, responseBody = safeRespBody)
+                    } else {
+                        HttpHookLog(++hookLogIdCounter, ts, method, url, "", "", status, safeRespHeaders, safeRespBody)
+                    }
+                    bufferHttp.add(0, log)
+                    bufferQuest.add(0, QuestLog(ts, "HTTP", "Response $status $url", safeRespBody.take(2000)))
+                    scheduleFlush()
+
+                    if (url.contains("/quests/@me") || url.contains("/quests?")) {
+                        if (status == 200) mainHandler.post { stopHooking.value = true }
+                        scope.launch { onQuestData?.invoke(body) }
                     }
                 },
                 onConsole = { level, message ->
-                    mainHandler.post {
-                        addConsoleLog(level, message)
-                    }
+                    if (stopHooking.value && level != "SUCCESS" && level != "ERROR") return@WebHookInterface
+                    val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
+                    bufferConsole.add(0, ConsoleLogEntry(ts, level, sanitizeText(message)))
+                    scheduleFlush()
                 },
                 onProps = { props ->
                     mainHandler.post {
@@ -722,6 +762,8 @@ class QuestWebLoader(private val ctx: Context, private val token: String) {
 
     fun destroy() {
         scope.cancel()
+        mainHandler.removeCallbacks(flushRunnable)
+        flush()
         mainHandler.post {
             webView?.apply {
                 stopLoading()
