@@ -823,7 +823,7 @@ private fun activityIdentityKey(a: JSONObject): String {
     val details = a.optString("details").takeIf { it.isNotEmpty() && it != "null" }
     val state   = a.optString("state").takeIf { it.isNotEmpty() && it != "null" }
     val tsStart = a.optJSONObject("timestamps")?.let { if (!it.isNull("start")) it.optLong("start") else null }
-    // sync_id univocamente identifica a faixa do Spotify; sem ele, cai para details+state+start
+    // sync_id univocamente identifica a faixa do Spotify; sem ele, cai para details+state+start -- useless comment
     // para nao confundir musicas/atividades diferentes que compartilham o mesmo name+type (ex: "Spotify").
     return "$type|$name|${syncId ?: ""}|${details ?: ""}|${state ?: ""}|${tsStart ?: ""}"
 }
@@ -993,7 +993,7 @@ class MainActivity : ComponentActivity() {
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try {
                 val sw = StringWriter(); e.printStackTrace(PrintWriter(sw))
-                val log = "Discord Token — Crash Report\nManufacturer: ${Build.MANUFACTURER}\nDevice: ${Build.MODEL}\nAndroid: ${Build.VERSION.RELEASE}\nStacktrace:\n$sw"
+                val log = "SEND THIS TO Sc-rhyan57 ON GITHUB!! \nDiscord Token — Crash Report\nManufacturer: ${Build.MANUFACTURER}\nDevice: ${Build.MODEL}\nAndroid: ${Build.VERSION.RELEASE}\nStacktrace:\n$sw"
                 getSharedPreferences(PREF_CRASH, Context.MODE_PRIVATE).edit().putString(KEY_CRASH_TRACE, log).commit()
                 startActivity(Intent(this, MainActivity::class.java).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK) })
             } catch (_: Exception) { def?.uncaughtException(t, e) }
@@ -1112,7 +1112,7 @@ class MainActivity : ComponentActivity() {
             Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Warning, null, tint = AppColors.Error, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp))
-                    Text("App Crashed", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold), color = AppColors.TextPrimary)
+                    Text("App Crashed | Send to Sc-rhyan57", style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold), color = AppColors.TextPrimary)
                 }
                 TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) { Text("Close", color = AppColors.Error, fontWeight = FontWeight.Bold) }
             }
@@ -1446,7 +1446,7 @@ class MainActivity : ComponentActivity() {
                     wv.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     wv.setBackgroundColor(android.graphics.Color.parseColor("#1E1F22"))
                     wv.settings.javaScriptEnabled = true; wv.settings.domStorageEnabled = true
-                    wv.settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; SM-S921U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36"
+                    wv.settings.userAgentString = "Mozilla/5.0 (Android 16; Mobile; rv:152.0) Gecko/152.0 Firefox/152.0"
                     wv.webViewClient = object : WebViewClient() {
                         @Deprecated("Deprecated") override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
                             if (url.contains("/app") || url.endsWith("/channels/@me")) { view.stopLoading(); Handler(Looper.getMainLooper()).postDelayed({ view.loadUrl(JS_TOKEN) }, 500); return true }
@@ -2642,7 +2642,7 @@ class MainActivity : ComponentActivity() {
             fun req(url: String) = Request.Builder().url(url)
                 .header("Authorization", token)
                 .header("Content-Type", "application/json")
-                .header("User-Agent", "Mozilla/5.0 (Android 12; Mobile; rv:148.0) Gecko/148.0 Firefox/148.0")
+                .header("User-Agent", "Mozilla/5.0 (Android 16; Mobile; rv:152.0) Gecko/152.0 Firefox/152.0")
                 .header("X-Super-Properties", superProps)
                 .header("X-Discord-Locale", "pt-BR")
                 .header("X-Discord-Timezone", "America/Sao_Paulo")
