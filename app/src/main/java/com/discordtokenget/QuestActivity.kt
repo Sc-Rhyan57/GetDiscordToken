@@ -24,11 +24,19 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -72,7 +80,7 @@ private val http = OkHttpClient.Builder()
     .writeTimeout(30, TimeUnit.SECONDS)
     .build()
 
-private const val FALLBACK_SUPER_PROPS = "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RzIjpmYWxzZSwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKEFuZHJvaWQgMTY7IE1vYmlsZTsgcnY6MTUyLjApIEdlY2tvLzE1Mi4wIEZpcmVmb3gvMTUyLjAiLCJicm93c2VyX3ZlcnNpb24iOiIxNTIuMCIsIm9zX3ZlcnNpb24iOiIxNiIsInJlZmVycmVyIjoiIiwicmVmZXJyaW5nX2RvbWFpbiI6IiIsInJlZmVycmVyX2N1cnJlbnQiOiIiLCJyZWZlcnJpbmdfZG9tYWluX2N1cnJlbnQiOiIiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfYnVpbGRfbnVtYmVyIjo1NjUzMTEsImNsaWVudF9ldmVudF9zb3VyY2UiOm51bGwsImNsaWVudF9sYXVuY2hfaWQiOiI4ZWU3ZmU2My0zYTA1LTQwOGUtOTNhNi1kOWQ2MjlkZDQ4ZWUiLCJsYXVuY2hfc2lnbmF0dXJlIjoiNTc3OGFmMDMtYjYyMi00N2E1LTk1MTItM2IzY2QwYTRjM2I4IiwiY2xpZW50X2hlYXJ0YmVhdF9zZXNzaW9uX2lkIjoiOWFhNmZlMTgtM2RkNi00OTcyLWE0YjAtZWQwNGFjNThkZWQ2IiwiY2xpZW50X2FwcF9zdGF0ZSI6ImZvY3VzZWQifQ=="
+private const val FALLBACK_SUPER_PROPS = "eyJvcyI6IkFuZHJvaWQiLCJicm93c2VyIjoiQW5kcm9pZCBNb2JpbGUiLCJkZXZpY2UiOiJBbmRyb2lkIiwic3lzdGVtX2xvY2FsZSI6InB0LUJSIiwiaGFzX2NsaWVudF9tb2RlcyI6ZmFsc2UsImJyb3dzZXJfdXNlcl9hZ2VudCI6Ik1vemlsbGEvNS4wIChBbmRyb2lkIDE2OyBNb2JpbGU7IHJ2OjE1Mi4wKSBHZWNrby8xNTIuMCBGaXJlZm94LzE1Mi4wIiwiYnJvd3Nlcl92ZXJzaW9uIjoiMTUyLjAiLCJvc192ZXJzaW9uIjoiMTYiLCJyZWZlcnJlciI6IiIsInJlZmVycmluZ19kb21haW4iOiIiLCJyZWZlcnJlcl9jdXJyZW50IjoiIiwicmVmZXJyaW5nX2RvbWFpbl9jdXJyZW50IjoiIiwicmVsZWFzZV9jaGFubmVsIjoic3RhYmxlIiwiY2xpZW50X2J1aWxkX251bWJlciI6NTY1MzExLCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsLCJjbGllbnRfbGF1bmNoX2lkIjoiOGVlN2ZlNjMtM2EwNS00MDhlLTkzYTYtZDlkNjI5ZGQ0OGVlIiwibGF1bmNoX3NpZ25hdHVyZSI6IjU3NzhhZjAzLWI2MjItNDdhNS05NTEyLTNiM2NkMGE0YzNiOCIsImNsaWVudF9oZWFydGJlYXRfc2Vzc2lvbl9pZCI6IjlhYTZmZTE4LTNkZDYtNDk3Mi1hNGIwLWVkMDRhYzU4ZGVkNiIsImNsaWVudF9hcHBfc3RhdGUiOiJmb2N1c2VkIn0="
 
 private object DC {
     val Bg        = Color(0xFF0E0F13)
@@ -1174,10 +1182,10 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                 var running = true
 
                 while (running) {
-                    val remaining = minOf(7L, needed - done)
-                    delay(remaining * 1000L)
+                    val step = minOf(7L, needed - done)
+                    delay(step * 1000L)
 
-                    val timestamp = done + 7L
+                    val timestamp = done + step
                     val sendTs = minOf(needed.toDouble(), timestamp.toDouble() + Math.random())
                     val bodyStr = JSONObject().put("timestamp", sendTs).toString()
                     val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
@@ -2034,28 +2042,13 @@ private fun QuestHeader(
     onShowWebView: () -> Unit, webViewReady: Boolean, capturedBuild: Int,
     onTitleClick: () -> Unit
 ) {
+    val ctx = LocalContext.current
     Box(Modifier.fillMaxWidth().height(240.dp)) {
-        AndroidView(
-            factory = { ctx ->
-                SurfaceView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        private var mp: MediaPlayer? = null
-                        override fun surfaceCreated(h: SurfaceHolder) {
-                            val player = MediaPlayer()
-                            mp = player
-                            try {
-                                player.setDataSource("https://raw.githubusercontent.com/Sc-Rhyan57/RandomStuff/refs/heads/main/687185569dd0ac147ad89a64_image5.jpg")
-                                player.setDisplay(h); player.isLooping = true; player.setVolume(0f, 0f)
-                                player.setOnPreparedListener { it.start() }; player.prepareAsync()
-                            } catch (_: Exception) {}
-                        }
-                        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hi: Int) {}
-                        override fun surfaceDestroyed(h: SurfaceHolder) { mp?.release(); mp = null }
-                    })
-                }
-            },
-            modifier = Modifier.fillMaxSize()
+        AsyncImage(
+            model = ImageRequest.Builder(ctx).data("https://raw.githubusercontent.com/Sc-Rhyan57/RandomStuff/refs/heads/main/687185569dd0ac147ad89a64_image5.jpg").crossfade(true).build(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
         )
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(colorStops = arrayOf(0f to Color.Black.copy(0.25f), 0.5f to Color.Black.copy(0.5f), 1f to DC.Bg))))
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(top = 40.dp, bottom = 16.dp), verticalArrangement = Arrangement.SpaceBetween) {
@@ -2135,7 +2128,11 @@ private fun QuestList(
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Spacer(Modifier.height(10.dp)) }
-        items(displayed, key = { it.quest.id }) { state -> QuestCard(state, token, region, superProps, webLoader, onUpdate, onWatch, onMore) }
+        itemsIndexed(displayed, key = { _, it -> it.quest.id }) { index, state ->
+            Box(Modifier.fadeInOnAppear(delayMillis = index * 50)) {
+                QuestCard(state, token, region, superProps, webLoader, onUpdate, onWatch, onMore)
+            }
+        }
         item { Spacer(Modifier.height(32.dp)) }
     }
 }
@@ -2148,6 +2145,7 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
     val accent = when { q.claimedAt != null -> DC.Teal; q.rewardType == "orbs" -> DC.OrbViolet; q.rewardType == "decor" || q.rewardType == "nitro" -> DC.Primary; else -> DC.Success }
     val gifLoader = remember(ctx) { ImageLoader.Builder(ctx).components { if (Build.VERSION.SDK_INT >= 28) add(ImageDecoderDecoder.Factory()) else add(GifDecoder.Factory()) }.build() }
     val pct = if (q.secondsNeeded > 0) (state.progress.coerceAtLeast(q.secondsDone).toFloat() / q.secondsNeeded).coerceIn(0f, 1f) else 0f
+    val animatedPct by animateFloatAsState(targetValue = pct, animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing), label = "pctAnim")
     val pulse = rememberInfiniteTransition(label = "p"); val pAlpha by pulse.animateFloat(0.15f, 0.6f, infiniteRepeatable(tween(850), RepeatMode.Reverse), label = "pa")
     val shimT = rememberInfiniteTransition(label = "s"); val shimX by shimT.animateFloat(-350f, 1500f, infiniteRepeatable(tween(1900, easing = LinearEasing), RepeatMode.Restart), label = "sx")
     
@@ -2181,7 +2179,7 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                     Canvas(Modifier.fillMaxSize()) {
                         val sw = 3.5f; val r = size.minDimension / 2f - sw / 2f
                         drawCircle(color = DC.Border.copy(0.8f), radius = r, style = Stroke(sw))
-                        if (pct > 0f) drawArc(color = accent, startAngle = -90f, sweepAngle = 360f * pct, useCenter = false, style = Stroke(sw, cap = StrokeCap.Round))
+                        if (animatedPct > 0f) drawArc(color = accent, startAngle = -90f, sweepAngle = 360f * animatedPct, useCenter = false, style = Stroke(sw, cap = StrokeCap.Round))
                     }
                 }
             }
@@ -2194,126 +2192,143 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                 Column(Modifier.padding(horizontal = 14.dp).padding(top = 6.dp, bottom = 2.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("Progress", fontSize = 9.sp, color = DC.Muted, fontWeight = FontWeight.Medium)
-                        Text("${(pct * 100).toInt()}%", fontSize = 9.sp, color = accent, fontWeight = FontWeight.ExtraBold)
+                        Text("${(animatedPct * 100).toInt()}%", fontSize = 9.sp, color = accent, fontWeight = FontWeight.ExtraBold)
                     }
                     Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(DC.Border)) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(pct).background(Brush.horizontalGradient(listOf(accent.copy(0.7f), accent)), RoundedCornerShape(2.dp)))
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(animatedPct).background(Brush.horizontalGradient(listOf(accent.copy(0.7f), accent)), RoundedCornerShape(2.dp)))
                     }
                 }
             }
-            if (state.log.isNotBlank() && state.runState != RunState.IDLE) {
+            AnimatedVisibility(
+                visible = state.log.isNotBlank() && state.runState != RunState.IDLE,
+                enter = fadeIn() + slideInVertically(),
+                exit = fadeOut() + slideOutVertically()
+            ) {
                 val logColor = when (state.runState) { RunState.ERROR, RunState.NOT_ENROLLED -> DC.Error; RunState.DONE -> accent; RunState.DESKTOP_ONLY -> DC.Warning; else -> DC.Muted }
                 Text(state.log, fontSize = 10.sp, color = logColor, fontFamily = FontFamily.Monospace, lineHeight = 14.sp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp).background(logColor.copy(0.07f), RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp))
             }
             HorizontalDivider(Modifier.padding(horizontal = 14.dp), color = DC.Border.copy(0.4f))
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                when {
-                    state.runState == RunState.RUNNING -> {
-                        Box(Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(0.12f)).border(1.dp, accent.copy(pAlpha), RoundedCornerShape(12.dp))
-                            .drawWithContent { drawContent(); drawRect(Brush.horizontalGradient(listOf(Color.Transparent, accent.copy(0.22f), Color.Transparent), startX = shimX, endX = shimX + 300f), size = size) }, Alignment.Center) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                CircularProgressIndicator(modifier = Modifier.size(13.dp), color = accent, strokeWidth = 2.dp)
-                                Text(state.log.lines().lastOrNull()?.take(28) ?: "Running...", fontSize = 11.sp, color = accent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                AnimatedContent(
+                    targetState = state.runState,
+                    transitionSpec = {
+                        (fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 }) togetherWith (fadeOut(tween(300)) + slideOutVertically(tween(300)) { -it / 2 })
+                    },
+                    modifier = Modifier.weight(1f),
+                    label = "btnAnim"
+                ) { runState ->
+                    when (runState) {
+                        RunState.RUNNING -> {
+                            Box(Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(0.12f)).border(1.dp, accent.copy(pAlpha), RoundedCornerShape(12.dp))
+                                .drawWithContent { drawContent(); drawRect(Brush.horizontalGradient(listOf(Color.Transparent, accent.copy(0.22f), Color.Transparent), startX = shimX, endX = shimX + 300f), size = size) }, Alignment.Center) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    CircularProgressIndicator(modifier = Modifier.size(13.dp), color = accent, strokeWidth = 2.dp)
+                                    Text(state.log.lines().lastOrNull()?.take(28) ?: "Running...", fontSize = 11.sp, color = accent, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                             }
                         }
-                    }
-                    state.runState == RunState.DONE -> {
-                        StateChip(accent, Icons.Outlined.CheckCircle, "Completed!", Modifier.weight(1f))
-                        if (q.claimedAt == null) {
-                            SecondaryBtn("Claim", Icons.Outlined.Redeem, Modifier.weight(0.5f)) {
-                                scope.launch {
-                                    try {
-                                        val (res, cap) = claimReward(token, region, superProps, q)
-                                        if (cap != null) {
-                                            showCaptcha = cap
-                                        } else {
-                                            onUpdate(state.copy(runState = RunState.DONE, quest = q.copy(claimedAt = res.optString("claimed_at")), log = "Reward claimed successfully!"))
+                        RunState.DONE -> {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                StateChip(accent, Icons.Outlined.CheckCircle, "Completed!", Modifier.weight(1f))
+                                if (q.claimedAt == null) {
+                                    SecondaryBtn("Claim", Icons.Outlined.Redeem, Modifier.weight(0.5f)) {
+                                        scope.launch {
+                                            try {
+                                                val (res, cap) = claimReward(token, region, superProps, q)
+                                                if (cap != null) {
+                                                    showCaptcha = cap
+                                                } else {
+                                                    onUpdate(state.copy(runState = RunState.DONE, quest = q.copy(claimedAt = res.optString("claimed_at")), log = "Reward claimed successfully!"))
+                                                }
+                                            } catch (e: Exception) {
+                                                onUpdate(state.copy(log = "Claim error: ${e.message}"))
+                                            }
                                         }
-                                    } catch (e: Exception) {
-                                        onUpdate(state.copy(log = "Claim error: ${e.message}"))
                                     }
                                 }
                             }
                         }
-                    }
-                    state.runState == RunState.DESKTOP_ONLY -> StateChip(DC.Warning, Icons.Outlined.Computer, "Desktop Only", Modifier.weight(1f))
-                    state.runState == RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.Info, "Accept in Discord", Modifier.weight(1f))
-                    else -> {
-                        val isVideo = q.taskName.contains("WATCH")
-                        var showCompleteMenu by remember { mutableStateOf(false) }
-                        Box(modifier = Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f)) {
-                            PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.fillMaxSize(), shimX) {
-                                showCompleteMenu = true
-                            }
-                            DropdownMenu(
-                                expanded = showCompleteMenu,
-                                onDismissRequest = { showCompleteMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Native API") },
-                                    onClick = {
-                                        showCompleteMenu = false
-                                        scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
+                        RunState.DESKTOP_ONLY -> StateChip(DC.Warning, Icons.Outlined.Computer, "Desktop Only", Modifier.fillMaxWidth())
+                        RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.Info, "Accept in Discord", Modifier.fillMaxWidth())
+                        else -> {
+                            val isVideo = q.taskName.contains("WATCH")
+                            var showCompleteMenu by remember { mutableStateOf(false) }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(modifier = Modifier.weight(if (isVideo && q.videoUrl != null) 0.55f else 1f)) {
+                                    PrimaryBtn("Auto Complete", accent, Icons.Outlined.PlayArrow, Modifier.fillMaxSize(), shimX) {
+                                        showCompleteMenu = true
                                     }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("JS Hook") },
-                                    enabled = webLoader != null && webViewReady.value,
-                                    onClick = {
-                                        showCompleteMenu = false
-                                        webLoader?.let { loader ->
-                                            loader.executeQuestJS(q.id)
-                                            addQuestLog("JS", "Quest completion JS injected for ${q.id}")
-                                            onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
-                                            
-                                            scope.launch {
-                                                while (isActive) {
-                                                    delay(5000)
-                                                    loader.executeCustomJS("""
-                                                        (function() {
-                                                            try {
-                                                                var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
-                                                                webpackChunkdiscord_app.pop();
-                                                                var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
-                                                                var quest = QuestsStore.quests.get('${q.id}');
-                                                                if (!quest) return JSON.stringify({error: "not found"});
-                                                                var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
-                                                                var taskName = Object.keys(taskConfig.tasks)[0];
-                                                                var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
-                                                                var completed = quest.userStatus && quest.userStatus.completed_at != null;
-                                                                return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
-                                                            } catch(e) { return JSON.stringify({error: e.message}); }
-                                                        })();
-                                                    """.trimIndent()) { res ->
-                                                        if (res != "null" && res.isNotEmpty()) {
-                                                            try {
-                                                                val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
-                                                                if (cleanRes != "null" && cleanRes.isNotEmpty()) {
-                                                                    val json = JSONObject(cleanRes)
-                                                                    if (json.has("progress")) {
-                                                                        val p = json.getLong("progress")
-                                                                        val n = json.getLong("needed")
-                                                                        val c = json.getBoolean("completed")
-                                                                        if (c || p >= n) {
-                                                                            onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
-                                                                            this.cancel()
-                                                                        } else {
-                                                                            onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
+                                    DropdownMenu(
+                                        expanded = showCompleteMenu,
+                                        onDismissRequest = { showCompleteMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Native API") },
+                                            onClick = {
+                                                showCompleteMenu = false
+                                                scope.launch(Dispatchers.IO) { runComplete(token, region, superProps, state, onUpdate) }
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("JS Hook") },
+                                            enabled = webLoader != null && webViewReady.value,
+                                            onClick = {
+                                                showCompleteMenu = false
+                                                webLoader?.let { loader ->
+                                                    loader.executeQuestJS(q.id)
+                                                    addQuestLog("JS", "Quest completion JS injected for ${q.id}")
+                                                    onUpdate(state.copy(runState = RunState.RUNNING, log = "JS Hook running..."))
+                                                    
+                                                    scope.launch {
+                                                        while (isActive) {
+                                                            delay(5000)
+                                                            loader.executeCustomJS("""
+                                                                (function() {
+                                                                    try {
+                                                                        var wpRequire = webpackChunkdiscord_app.push([[Symbol()], {}, r => r]);
+                                                                        webpackChunkdiscord_app.pop();
+                                                                        var QuestsStore = Object.values(wpRequire.c).find(x => x?.exports?.A?.__proto__?.getQuest)?.exports.A;
+                                                                        var quest = QuestsStore.quests.get('${q.id}');
+                                                                        if (!quest) return JSON.stringify({error: "not found"});
+                                                                        var taskConfig = quest.config.taskConfig || quest.config.taskConfigV2;
+                                                                        var taskName = Object.keys(taskConfig.tasks)[0];
+                                                                        var prog = quest.userStatus && quest.userStatus.progress && quest.userStatus.progress[taskName] ? quest.userStatus.progress[taskName].value : 0;
+                                                                        var completed = quest.userStatus && quest.userStatus.completed_at != null;
+                                                                        return JSON.stringify({progress: prog, completed: completed, needed: taskConfig.tasks[taskName].target});
+                                                                    } catch(e) { return JSON.stringify({error: e.message}); }
+                                                                })();
+                                                            """.trimIndent()) { res ->
+                                                                if (res != "null" && res.isNotEmpty()) {
+                                                                    try {
+                                                                        val cleanRes = res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
+                                                                        if (cleanRes != "null" && cleanRes.isNotEmpty()) {
+                                                                            val json = JSONObject(cleanRes)
+                                                                            if (json.has("progress")) {
+                                                                                val p = json.getLong("progress")
+                                                                                val n = json.getLong("needed")
+                                                                                val c = json.getBoolean("completed")
+                                                                                if (c || p >= n) {
+                                                                                    onUpdate(state.copy(runState = RunState.DONE, progress = n, log = "Completed via JS!"))
+                                                                                    this.cancel()
+                                                                                } else {
+                                                                                    onUpdate(state.copy(progress = p, log = "JS Progress: $p/$n s"))
+                                                                                }
+                                                                            }
                                                                         }
-                                                                    }
+                                                                    } catch (_: Exception) {}
                                                                 }
-                                                            } catch (_: Exception) {}
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
+                                        )
                                     }
-                                )
+                                }
+                                if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
                             }
                         }
-                        if (isVideo && q.videoUrl != null) SecondaryBtn("Watch", Icons.Outlined.Videocam, Modifier.weight(0.45f)) { onWatch(q) }
                     }
                 }
                 SecondaryIconBtn(Icons.Outlined.MoreVert) { onMore(q) }
@@ -2542,6 +2557,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
     var spoofActive by remember { mutableStateOf(false) }
     var completed   by remember { mutableStateOf(false) }
     val pct = if (needed > 0) (spoofDone.toFloat() / needed).coerceIn(0f, 1f) else 0f
+    val animatedPct by animateFloatAsState(targetValue = pct, animationSpec = tween(500, easing = FastOutSlowInEasing), label = "vpPctAnim")
     val pulse = rememberInfiniteTransition(label = "vp"); val pA by pulse.animateFloat(0.4f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "vpa")
     DisposableEffect(Unit) { onDispose { spoofActive = false } }
 
@@ -2564,12 +2580,12 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                     }
                                     var running = true
                                     while (running && spoofActive && spoofDone < needed) {
-                                        val remaining = minOf(7L, needed - spoofDone)
-                                        delay(remaining * 1000L)
+                                        val step = minOf(7L, needed - spoofDone)
+                                        delay(step * 1000L)
                                         if (!spoofActive) { running = false }
 
                                         if (running) {
-                                            val timestamp = spoofDone + 7L
+                                            val timestamp = spoofDone + step
                                             val sendTs = minOf(needed.toDouble(), timestamp.toDouble() + Math.random())
                                             val bodyStr = JSONObject().put("timestamp", sendTs).toString()
                                             val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
@@ -2623,7 +2639,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                         Text(log, fontSize = 11.sp, color = if (completed) DC.Success else DC.SubText, fontFamily = FontFamily.Monospace)
                     }
                     Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(DC.Border)) {
-                        Box(Modifier.fillMaxHeight().fillMaxWidth(pct).background(Brush.horizontalGradient(listOf(DC.Primary.copy(0.7f), DC.Primary)), RoundedCornerShape(2.dp)))
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(animatedPct).background(Brush.horizontalGradient(listOf(DC.Primary.copy(0.7f), DC.Primary)), RoundedCornerShape(2.dp)))
                     }
                     OutlinedButton(
                         onClick = { spoofActive = false; onDismiss() },
@@ -2701,5 +2717,27 @@ private fun describeTask(name: String, seconds: Long): String {
         "PLAY_ON_XBOX"                         -> "Play on Xbox for $dur"
         "PLAY_ON_PLAYSTATION"                  -> "Play on PlayStation for $dur"
         else -> name
+    }
+}
+
+fun Modifier.fadeInOnAppear(delayMillis: Int = 0): Modifier = composed {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(delayMillis.toLong())
+        visible = true
+    }
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        label = "alpha"
+    )
+    val offsetY by animateFloatAsState(
+        targetValue = if (visible) 0f else 50f,
+        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        label = "offsetY"
+    )
+    graphicsLayer {
+        this.alpha = alpha
+        this.translationY = offsetY
     }
 }
