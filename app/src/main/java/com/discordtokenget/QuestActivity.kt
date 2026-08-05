@@ -51,7 +51,9 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -990,6 +992,14 @@ data class CaptchaData(
     val token: String = ""
 )
 
+private fun parseLongSafe(obj: JSONObject?, key: String): Long {
+    if (obj == null) return 0L
+    val l = obj.optLong(key, 0L)
+    if (l > 0) return l
+    val s = obj.optString(key, "0")
+    return s.toDoubleOrNull()?.toLong() ?: 0L
+}
+
 private fun parseQuest(q: JSONObject): QuestItem? {
     val id  = q.optString("id").takeIf { it.isNotEmpty() } ?: return null
     val cfg = q.optJSONObject("config") ?: return null
@@ -1000,8 +1010,8 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         ?: cfg.optJSONObject("taskConfigV2") ?: cfg.optJSONObject("task_config_v2")
     val tasks = taskCfgObj?.optJSONObject("tasks") ?: return null
     val taskName = SUPPORTED.firstOrNull { tasks.has(it) } ?: return null
-    val needed   = tasks.optJSONObject(taskName)?.optLong("target", 0L) ?: 0L
-    val done     = us?.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", 0L) ?: 0L
+    val needed   = parseLongSafe(tasks.optJSONObject(taskName), "target")
+    val done     = parseLongSafe(us?.optJSONObject("progress")?.optJSONObject(taskName), "value")
     val rewardsArr = cfg.optJSONObject("rewards_config")?.optJSONArray("rewards")
         ?: cfg.optJSONObject("rewardsConfig")?.optJSONArray("rewards")
     var reward = ""; var rewardType = "prize"
@@ -1217,6 +1227,12 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
             return
         }
 
+        if (needed > 0 && done >= needed) {
+            upd("Quest is already complete! You can claim your reward.", done, RunState.DONE)
+            withContext(Dispatchers.Main) { onUpdate(cur) }
+            return
+        }
+
         when (taskName) {
             "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
                 upd("Syncing video progress...", done)
@@ -1225,11 +1241,11 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                 var running = true
 
                 while (running) {
-                    val step = minOf(7L, needed - done)
+                    val step = if (needed > 0) minOf(7L, needed - done) else 0L
                     delay(step * 1000L)
 
                     val timestamp = done + step
-                    val sendTs = minOf(needed.toDouble(), timestamp.toDouble() + Math.random())
+                    val sendTs = if (needed > 0) minOf(needed.toDouble(), timestamp.toDouble() + Math.random()) else 0.0
                     val bodyStr = JSONObject().put("timestamp", sendTs).toString()
                     val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
 
@@ -1254,7 +1270,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     }
 
                     completed = rj.optString("completed_at", "").isNotEmpty()
-                    done = minOf(needed, timestamp)
+                    done = if (needed > 0) minOf(needed, timestamp) else needed
 
                     upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
@@ -1318,7 +1334,7 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     done = if (q.configVersion == 1)
                         rj.optJSONObject("user_status")?.optLong("stream_progress_seconds", done) ?: done
                     else
-                        rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY")?.optLong("value", done) ?: done
+                        parseLongSafe(rj.optJSONObject("progress")?.optJSONObject("PLAY_ACTIVITY"), "value")
 
                     upd("Activity: ${done}s / ${needed}s (~${maxOf(0L, (needed - done) / 60)} min left)", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
@@ -2621,16 +2637,28 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
     val pulse = rememberInfiniteTransition(label = "vp"); val pA by pulse.animateFloat(0.4f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "vpa")
     DisposableEffect(Unit) { onDispose { spoofActive = false } }
 
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() } * 0.96f
+    var videoHeight by remember { mutableStateOf(220.dp) }
+
     Dialog(onDismissRequest = { spoofActive = false; onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxWidth(0.96f).clip(RoundedCornerShape(22.dp)).background(DC.Card).border(1.dp, DC.Border, RoundedCornerShape(22.dp))) {
             Column {
-                Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(Color.Black)) {
+                Box(Modifier.fillMaxWidth().height(videoHeight).clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(Color.Black)) {
                     AndroidView(factory = { ctx ->
                         android.widget.VideoView(ctx).apply {
                             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                             setMediaController(android.widget.MediaController(ctx).also { it.setAnchorView(this) })
                             setVideoURI(Uri.parse(quest.videoUrl))
                             setOnPreparedListener { mp ->
+                                val w = mp.videoWidth
+                                val h = mp.videoHeight
+                                if (w > 0 && h > 0) {
+                                    val targetWidthPx = screenWidthPx
+                                    val targetHeightPx = targetWidthPx * (h.toFloat() / w.toFloat())
+                                    videoHeight = with(density) { targetHeightPx.toDp() }
+                                }
                                 mp.isLooping = true; mp.start(); log = "Watching & syncing..."; spoofActive = true
                                 scope.launch(Dispatchers.IO) {
                                     val ea = quest.enrolledAt
@@ -2638,15 +2666,19 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                         withContext(Dispatchers.Main) { log = "Accept the quest in the Discord app first." }
                                         return@launch
                                     }
+                                    if (needed > 0 && spoofDone >= needed) {
+                                        withContext(Dispatchers.Main) { log = "Quest is already complete! You can claim your reward."; completed = true }
+                                        return@launch
+                                    }
                                     var running = true
-                                    while (running && spoofActive && spoofDone < needed) {
-                                        val step = minOf(7L, needed - spoofDone)
+                                    while (running && spoofActive && (needed <= 0 || spoofDone < needed)) {
+                                        val step = if (needed > 0) minOf(7L, needed - spoofDone) else 0L
                                         delay(step * 1000L)
                                         if (!spoofActive) { running = false }
 
                                         if (running) {
                                             val timestamp = spoofDone + step
-                                            val sendTs = minOf(needed.toDouble(), timestamp.toDouble() + Math.random())
+                                            val sendTs = if (needed > 0) minOf(needed.toDouble(), timestamp.toDouble() + Math.random()) else 0.0
                                             val bodyStr = JSONObject().put("timestamp", sendTs).toString()
                                             val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
 
@@ -2664,7 +2696,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                             } catch (_: Exception) { JSONObject() }
 
                                             completed = rj.optString("completed_at", "").isNotEmpty()
-                                            spoofDone = minOf(needed, timestamp)
+                                            spoofDone = if (needed > 0) minOf(needed, timestamp) else needed
                                             if (spoofDone >= needed) completed = true
                                             val p = if (needed > 0) (spoofDone * 100 / needed).toInt() else 0
                                             withContext(Dispatchers.Main) { log = "${spoofDone}s / ${needed}s ($p%)" }
