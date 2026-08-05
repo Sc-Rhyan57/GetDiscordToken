@@ -1235,24 +1235,28 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
 
         when (taskName) {
             "WATCH_VIDEO", "WATCH_VIDEO_ON_MOBILE" -> {
+                if (needed <= 0) {
+                    upd("Invalid task target.", rs = RunState.ERROR)
+                    withContext(Dispatchers.Main) { onUpdate(cur) }
+                    return
+                }
                 upd("Syncing video progress...", done)
                 withContext(Dispatchers.Main) { onUpdate(cur) }
+                
+                var lastReported = done.toDouble()
                 var completed = false
                 var running = true
 
                 while (running) {
-                    val step = if (needed > 0) minOf(7L, needed - done) else 0L
+                    val step = minOf(7L, (needed - lastReported.toLong()).coerceAtLeast(0L))
+                    if (step <= 0) break
                     delay(step * 1000L)
 
-                    val timestamp = done + step
-                    val sendTs = if (needed > 0) minOf(needed.toDouble(), timestamp.toDouble() + Math.random()) else 0.0
-                    val bodyStr = JSONObject().put("timestamp", sendTs).toString()
-                    val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
-
-                    addQuestLog("API", "POST /video-progress", "Payload: $bodyStr")
-
+                    val timestamp = min(needed.toDouble(), lastReported + step + Math.random())
+                    
                     val rj = try {
                         retryApi {
+                            val reqBody = JSONObject().put("timestamp", timestamp).toString().toRequestBody("application/json".toMediaType())
                             val postReq = buildReq(
                                 "https://discord.com/api/v9/quests/$questId/video-progress",
                                 token, region, superProps, "https://discord.com/quest-home"
@@ -1270,31 +1274,16 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     }
 
                     completed = rj.optString("completed_at", "").isNotEmpty()
-                    done = if (needed > 0) minOf(needed, timestamp) else needed
+                    val progressVal = rj.optJSONObject("progress")?.optJSONObject(taskName)?.optLong("value", 0L) ?: 0L
+                    lastReported = maxOf(timestamp, progressVal.toDouble())
+                    done = lastReported.toLong()
 
-                    upd("Video: ${done}s / ${needed}s (${if (needed > 0) done * 100 / needed else 0}%)", done)
+                    upd("Video: ${done}s / ${needed}s", done)
                     withContext(Dispatchers.Main) { onUpdate(cur) }
 
-                    if (timestamp >= needed) {
+                    if (completed || done >= needed) {
                         running = false
                     }
-                }
-
-                if (!completed) {
-                    try {
-                        retryApi {
-                            val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
-                            addQuestLog("API", "POST /video-progress (Final)", "Payload: $finalBody")
-                            val postReq = buildReq(
-                                "https://discord.com/api/v9/quests/$questId/video-progress",
-                                token, region, superProps, "https://discord.com/quest-home"
-                            ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
-                            val resp = http.newCall(postReq).execute()
-                            val respBody = resp.body?.string() ?: "{}"
-                            addQuestLog("API", "Response ${resp.code}", respBody.take(2000))
-                            JSONObject(respBody)
-                        }
-                    } catch (_: Exception) {}
                 }
 
                 done = needed
@@ -2627,22 +2616,97 @@ private fun CollectibleCard(c: CollectibleItem, gifLoader: ImageLoader, ctx: Con
 
 @Composable
 private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, superProps: String, onDismiss: () -> Unit, onComplete: (QuestState) -> Unit) {
-    val scope = rememberCoroutineScope(); val needed = quest.secondsNeeded
-    var spoofDone   by remember { mutableLongStateOf(quest.secondsDone) }
-    var log         by remember { mutableStateOf("Preparing video...") }
-    var spoofActive by remember { mutableStateOf(false) }
-    var completed   by remember { mutableStateOf(false) }
-    val pct = if (needed > 0) (spoofDone.toFloat() / needed).coerceIn(0f, 1f) else 0f
-    val animatedPct by animateFloatAsState(targetValue = pct, animationSpec = tween(500, easing = FastOutSlowInEasing), label = "vpPctAnim")
-    val pulse = rememberInfiniteTransition(label = "vp"); val pA by pulse.animateFloat(0.4f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "vpa")
-    DisposableEffect(Unit) { onDispose { spoofActive = false } }
-
+    val scope = rememberCoroutineScope()
+    val needed = quest.secondsNeeded
+    var lastReported by remember { mutableStateOf(quest.secondsDone.toDouble()) }
+    var videoCompleted by remember { mutableStateOf(false) }
+    var reporting by remember { mutableStateOf(false) }
+    var log by remember { mutableStateOf("Preparing video...") }
+    var videoHeight by remember { mutableStateOf(220.dp) }
+    
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() } * 0.96f
-    var videoHeight by remember { mutableStateOf(220.dp) }
 
-    Dialog(onDismissRequest = { spoofActive = false; onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    var reportJob by remember { mutableStateOf<Job?>(null) }
+
+    val pct = if (needed > 0) (lastReported.toFloat() / needed).coerceIn(0f, 1f) else 0f
+    val animatedPct by animateFloatAsState(targetValue = pct, animationSpec = tween(500, easing = FastOutSlowInEasing), label = "vpPctAnim")
+    val pulse = rememberInfiniteTransition(label = "vp"); val pA by pulse.animateFloat(0.4f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "vpa")
+
+    DisposableEffect(Unit) { 
+        onDispose { 
+            reportJob?.cancel()
+        } 
+    }
+
+    fun scheduleReport(mp: MediaPlayer) {
+        reportJob?.cancel()
+        reportJob = scope.launch {
+            delay(7500)
+            reportProgress(mp)
+        }
+    }
+
+    fun reportProgress(mp: MediaPlayer) {
+        if (videoCompleted) return
+        if (reporting) return
+        if (!videoCompleted && !mp.isPlaying) {
+            scheduleReport(mp)
+            return
+        }
+
+        val playbackPosition = if (videoCompleted) {
+            needed.toDouble()
+        } else {
+            min(needed.toDouble(), mp.currentPosition / 1000.0)
+        }
+        val timestamp = min(playbackPosition, lastReported + 7.0)
+
+        if (timestamp < lastReported + 6.0 && timestamp < needed) {
+            scheduleReport(mp)
+            return
+        }
+
+        reporting = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                val bodyStr = JSONObject().put("timestamp", timestamp).toString()
+                val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
+                val postReq = buildReq(
+                    "https://discord.com/api/v9/quests/${quest.id}/video-progress",
+                    token, region, superProps, "https://discord.com/quest-home"
+                ).post(reqBody).build()
+                val resp = http.newCall(postReq).execute()
+                val respBody = resp.body?.string() ?: "{}"
+                val rj = JSONObject(respBody)
+
+                withContext(Dispatchers.Main) {
+                    reporting = false
+                    if (rj.optString("completed_at").isNotEmpty()) {
+                        videoCompleted = true
+                        mp.pause()
+                        log = "Done! Claim your reward."
+                        lastReported = needed.toDouble()
+                    } else {
+                        val progressVal = rj.optJSONObject("progress")?.optJSONObject(quest.taskName)?.optLong("value", 0L) ?: 0L
+                        lastReported = maxOf(timestamp, progressVal.toDouble())
+                        val currentSec = min(lastReported.toInt(), needed.toInt())
+                        log = "Progress: ${currentSec}s / ${needed}s"
+                        scheduleReport(mp)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    reporting = false
+                    log = "Error: ${e.message}"
+                    scheduleReport(mp)
+                }
+            }
+        }
+    }
+
+    Dialog(onDismissRequest = { reportJob?.cancel(); onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxWidth(0.96f).clip(RoundedCornerShape(22.dp)).background(DC.Card).border(1.dp, DC.Border, RoundedCornerShape(22.dp))) {
             Column {
                 Box(Modifier.fillMaxWidth().height(videoHeight).clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(Color.Black)) {
@@ -2659,65 +2723,11 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                     val targetHeightPx = targetWidthPx * (h.toFloat() / w.toFloat())
                                     videoHeight = with(density) { targetHeightPx.toDp() }
                                 }
-                                mp.isLooping = true; mp.start(); log = "Watching & syncing..."; spoofActive = true
-                                scope.launch(Dispatchers.IO) {
-                                    val ea = quest.enrolledAt
-                                    if (ea == null) {
-                                        withContext(Dispatchers.Main) { log = "Accept the quest in the Discord app first." }
-                                        return@launch
-                                    }
-                                    if (needed > 0 && spoofDone >= needed) {
-                                        withContext(Dispatchers.Main) { log = "Quest is already complete! You can claim your reward."; completed = true }
-                                        return@launch
-                                    }
-                                    var running = true
-                                    while (running && spoofActive && (needed <= 0 || spoofDone < needed)) {
-                                        val step = if (needed > 0) minOf(7L, needed - spoofDone) else 0L
-                                        delay(step * 1000L)
-                                        if (!spoofActive) { running = false }
-
-                                        if (running) {
-                                            val timestamp = spoofDone + step
-                                            val sendTs = if (needed > 0) minOf(needed.toDouble(), timestamp.toDouble() + Math.random()) else 0.0
-                                            val bodyStr = JSONObject().put("timestamp", sendTs).toString()
-                                            val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
-
-                                            addQuestLog("API", "POST /video-progress (Dialog)", "Payload: $bodyStr")
-
-                                            val rj = try {
-                                                val postReq = buildReq(
-                                                    "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                                                    token, region, superProps, "https://discord.com/quest-home"
-                                                ).post(reqBody).build()
-                                                val resp = http.newCall(postReq).execute()
-                                                val respBody = resp.body?.string() ?: "{}"
-                                                addQuestLog("API", "Response ${resp.code} (Dialog)", respBody.take(2000))
-                                                JSONObject(respBody)
-                                            } catch (_: Exception) { JSONObject() }
-
-                                            completed = rj.optString("completed_at", "").isNotEmpty()
-                                            spoofDone = if (needed > 0) minOf(needed, timestamp) else needed
-                                            if (spoofDone >= needed) completed = true
-                                            val p = if (needed > 0) (spoofDone * 100 / needed).toInt() else 0
-                                            withContext(Dispatchers.Main) { log = "${spoofDone}s / ${needed}s ($p%)" }
-
-                                            if (completed || spoofDone >= needed) {
-                                                if (!completed) {
-                                                    try {
-                                                        val finalBody = JSONObject().put("timestamp", needed.toDouble()).toString()
-                                                        val postReq = buildReq(
-                                                            "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                                                            token, region, superProps, "https://discord.com/quest-home"
-                                                        ).post(finalBody.toRequestBody("application/json".toMediaType())).build()
-                                                        JSONObject(http.newCall(postReq).execute().body?.string() ?: "{}")
-                                                    } catch (_: Exception) {}
-                                                }
-                                                withContext(Dispatchers.Main) { log = "Done! Claim your reward in the Discord app."; completed = true }
-                                                running = false
-                                            }
-                                        }
-                                    }
-                                }
+                                mp.isLooping = true
+                                mp.seekTo((lastReported * 1000).toInt())
+                                mp.start()
+                                log = "Watching & syncing..."
+                                reportProgress(mp)
                             }
                             setOnErrorListener { _, _, _ -> log = "Video unavailable. Use Auto Complete."; false }
                         }
@@ -2726,15 +2736,15 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(quest.reward, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = DC.White)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (spoofActive && !completed) CircularProgressIndicator(modifier = Modifier.size(12.dp).graphicsLayer { alpha = pA }, color = DC.Primary, strokeWidth = 2.dp)
-                        else if (completed) Icon(Icons.Outlined.CheckCircle, null, tint = DC.Success, modifier = Modifier.size(13.dp))
-                        Text(log, fontSize = 11.sp, color = if (completed) DC.Success else DC.SubText, fontFamily = FontFamily.Monospace)
+                        if (!videoCompleted && reportJob?.isActive == true) CircularProgressIndicator(modifier = Modifier.size(12.dp).graphicsLayer { alpha = pA }, color = DC.Primary, strokeWidth = 2.dp)
+                        else if (videoCompleted) Icon(Icons.Outlined.CheckCircle, null, tint = DC.Success, modifier = Modifier.size(13.dp))
+                        Text(log, fontSize = 11.sp, color = if (videoCompleted) DC.Success else DC.SubText, fontFamily = FontFamily.Monospace)
                     }
                     Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(DC.Border)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(animatedPct).background(Brush.horizontalGradient(listOf(DC.Primary.copy(0.7f), DC.Primary)), RoundedCornerShape(2.dp)))
                     }
                     OutlinedButton(
-                        onClick = { spoofActive = false; onDismiss() },
+                        onClick = { reportJob?.cancel(); onDismiss() },
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, DC.Border)
