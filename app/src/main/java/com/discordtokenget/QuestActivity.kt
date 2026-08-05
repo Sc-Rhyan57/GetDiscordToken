@@ -900,14 +900,18 @@ private fun parseIso(s: String?): Long =
 private fun fmtShort(ms: Long): String =
     try { SimpleDateFormat("d/M", Locale.getDefault()).format(Date(ms)) } catch (_: Exception) { "" }
 
+private fun questAssetUrl(asset: String, questId: String): String {
+    return if (asset.startsWith("http")) asset
+    else if (asset.startsWith("quests/")) "https://cdn.discordapp.com/$asset"
+    else "https://cdn.discordapp.com/quests/$questId/$asset"
+}
+
 private fun buildBannerUrl(id: String, cfg: JSONObject): String? {
     val a = cfg.optJSONObject("assets") ?: return null
-    for (k in listOf("quest_bar_hero", "hero", "logotype", "game_tile")) {
+    for (k in listOf("quest_bar_hero", "hero", "logotype_light", "logotype_dark", "game_tile")) {
         val v = a.optString(k, "").takeIf { it.isNotEmpty() && it != "null" } ?: continue
         if (v.contains(".mp4") || v.contains(".m3u8") || v.contains(".webm")) continue
-        return if (v.startsWith("http")) v
-               else if (v.startsWith("quests/")) "https://cdn.discordapp.com/$v"
-               else "https://cdn.discordapp.com/quests/$id/$v"
+        return questAssetUrl(v, id)
     }
     val appId = cfg.optJSONObject("application")?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" }
     return if (appId != null) "https://cdn.discordapp.com/app-assets/$appId/store/header.jpg" else null
@@ -915,29 +919,42 @@ private fun buildBannerUrl(id: String, cfg: JSONObject): String? {
 
 private fun buildRewardIconUrl(id: String, cfg: JSONObject): String? {
     val a = cfg.optJSONObject("assets")
-    if (a != null) for (k in listOf("reward_generic_android", "reward", "collectible_preview", "quest_reward", "reward_tile", "game_tile")) {
-        val v = a.optString(k, "").takeIf { it.isNotEmpty() && it != "null" } ?: continue
-        return if (v.startsWith("http")) v else "https://cdn.discordapp.com/quests/$id/$v"
+    if (a != null) {
+        for (k in listOf("reward_generic_android", "reward", "collectible_preview", "quest_reward", "reward_tile", "game_tile")) {
+            val v = a.optString(k, "").takeIf { it.isNotEmpty() && it != "null" } ?: continue
+            return questAssetUrl(v, id)
+        }
     }
     val skuId = cfg.optJSONObject("rewards_config")?.optJSONArray("rewards")
         ?.optJSONObject(0)?.optString("sku_id")?.takeIf { it.isNotEmpty() && it != "null" }
     return if (skuId != null) "https://cdn.discordapp.com/collectibles-assets/$skuId/icon.png?size=80" else null
 }
 
-private fun buildVideoUrl(id: String, cfg: JSONObject): String? {
-    cfg.optJSONObject("video_metadata")?.optString("video_url", "")?.takeIf { it.isNotEmpty() && it != "null" }?.let { return it }
-    val a = cfg.optJSONObject("assets")
-    if (a != null) {
+private fun buildVideoUrl(id: String, cfg: JSONObject, taskName: String): String? {
+    val taskCfgObj = cfg.optJSONObject("task_config") ?: cfg.optJSONObject("taskConfig")
+        ?: cfg.optJSONObject("taskConfigV2") ?: cfg.optJSONObject("task_config_v2")
+    val tasks = taskCfgObj?.optJSONObject("tasks")
+    val taskObj = tasks?.optJSONObject(taskName)
+    val assets = taskObj?.optJSONObject("assets")
+    val media = assets?.optJSONObject("video_low_res") ?: assets?.optJSONObject("video")
+    if (media != null) {
+        val url = media.optString("url", "").takeIf { it.isNotEmpty() && it != "null" }
+        if (url != null) return questAssetUrl(url, id)
+    }
+
+    val rootAssets = cfg.optJSONObject("assets")
+    if (rootAssets != null) {
         for (k in listOf("quest_bar_video", "hero_video", "quest_bar_hero_video", "video", "promo_video")) {
-            val v = a.optString(k, "").takeIf { it.isNotEmpty() && it != "null" } ?: continue
-            return if (v.startsWith("http")) v else if (v.startsWith("quests/")) "https://cdn.discordapp.com/$v" else "https://cdn.discordapp.com/quests/$id/$v"
+            val v = rootAssets.optString(k, "").takeIf { it.isNotEmpty() && it != "null" } ?: continue
+            return questAssetUrl(v, id)
         }
-        for (k in a.keys()) {
-            val v = a.optString(k, "")
+        for (k in rootAssets.keys()) {
+            val v = rootAssets.optString(k, "")
             if (v.contains(".mp4") || v.contains(".m3u8") || v.contains(".webm"))
-                return if (v.startsWith("http")) v else if (v.startsWith("quests/")) "https://cdn.discordapp.com/$v" else "https://cdn.discordapp.com/quests/$id/$v"
+                return questAssetUrl(v, id)
         }
     }
+    cfg.optJSONObject("video_metadata")?.optString("video_url", "")?.takeIf { it.isNotEmpty() && it != "null" }?.let { return questAssetUrl(it, id) }
     val appId = cfg.optJSONObject("application")?.optString("id")?.takeIf { it.isNotEmpty() && it != "null" } ?: return null
     return "https://cdn.discordapp.com/quests/$id/${appId}_mx480.m3u8"
 }
@@ -1005,7 +1022,7 @@ private fun parseQuest(q: JSONObject): QuestItem? {
         expiresMs = parseIso(cfg.optString("expires_at", cfg.optString("expiresAt", ""))), taskName = taskName,
         secondsNeeded = needed, secondsDone = done, publisher = msg.optString("game_publisher", msg.optString("gamePublisher", "")),
         bannerUrl = buildBannerUrl(id, cfg), rewardIconUrl = buildRewardIconUrl(id, cfg),
-        videoUrl = buildVideoUrl(id, cfg),
+        videoUrl = buildVideoUrl(id, cfg, taskName),
         questLink = cfg.optJSONObject("application")?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" }
                     ?: cfg.optJSONObject("cta_config")?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" }
                     ?: cfg.optJSONObject("ctaConfig")?.optString("link")?.takeIf { it.isNotEmpty() && it != "null" },
@@ -1110,6 +1127,32 @@ private suspend fun retryApi(maxAttempts: Int = 5, initialDelayMs: Long = 500, m
             delay = minOf(maxDelayMs, delay * 2)
         }
     }
+}
+
+private suspend fun apiEnrollQuest(token: String, region: Region, superProps: String, quest: QuestItem): JSONObject = withContext(Dispatchers.IO) {
+    val url = "https://discord.com/api/v9/quests/${quest.id}/enroll"
+    val trafficRaw = quest.rawConfig.optString("traffic_metadata_raw", "")
+    val trafficSealed = quest.rawConfig.optString("traffic_metadata_sealed", "")
+    val bodyStr = JSONObject().apply {
+        put("location", 12)
+        put("is_targeted", false)
+        put("metadata_sealed", JSONObject.NULL)
+        put("traffic_metadata_raw", trafficRaw)
+        put("traffic_metadata_sealed", trafficSealed)
+    }.toString()
+    
+    val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
+    val req = buildReq(url, token, region, superProps).post(reqBody).build()
+    
+    val resp = http.newCall(req).execute()
+    val respBody = resp.body?.string() ?: "{}"
+    val json = JSONObject(respBody)
+    
+    if (!resp.isSuccessful) {
+        throw Exception(json.optString("message", "HTTP ${resp.code}"))
+    }
+    
+    return@withContext json
 }
 
 private suspend fun claimReward(token: String, region: Region, superProps: String, quest: QuestItem, captcha: CaptchaData? = null): Pair<JSONObject, CaptchaData?> = withContext(Dispatchers.IO) {
@@ -2250,7 +2293,24 @@ private fun QuestCard(state: QuestState, token: String, region: Region, superPro
                             }
                         }
                         RunState.DESKTOP_ONLY -> StateChip(DC.Warning, Icons.Outlined.Computer, "Desktop Only", Modifier.fillMaxWidth())
-                        RunState.NOT_ENROLLED -> StateChip(DC.Warning, Icons.Outlined.Info, "Accept in Discord", Modifier.fillMaxWidth())
+                        RunState.NOT_ENROLLED -> {
+                            PrimaryBtn("Accept Quest", accent, Icons.Outlined.Add, Modifier.fillMaxWidth(), shimX) {
+                                scope.launch {
+                                    try {
+                                        onUpdate(state.copy(runState = RunState.RUNNING, log = "Accepting quest..."))
+                                        val res = apiEnrollQuest(token, region, superProps, q)
+                                        val newEnrolledAt = res.optString("enrolled_at").takeIf { it.isNotEmpty() && it != "null" }
+                                        if (newEnrolledAt != null) {
+                                            onUpdate(state.copy(runState = RunState.IDLE, quest = q.copy(enrolledAt = newEnrolledAt), log = ""))
+                                        } else {
+                                            onUpdate(state.copy(runState = RunState.NOT_ENROLLED, log = "Failed to accept quest."))
+                                        }
+                                    } catch (e: Exception) {
+                                        onUpdate(state.copy(runState = RunState.NOT_ENROLLED, log = "Accept error: ${e.message}"))
+                                    }
+                                }
+                            }
+                        }
                         else -> {
                             val isVideo = q.taskName.contains("WATCH")
                             var showCompleteMenu by remember { mutableStateOf(false) }
