@@ -1252,11 +1252,11 @@ private suspend fun runComplete(token: String, region: Region, superProps: Strin
                     if (step <= 0) break
                     delay(step * 1000L)
 
-                    val timestamp = min(needed.toDouble(), lastReported + step + Math.random())
+                    val timestamp = kotlin.math.min(needed.toDouble(), lastReported + step + Math.random())
                     
                     val rj = try {
                         retryApi {
-                            val reqBody = JSONObject().put("timestamp", timestamp).toString().toRequestBody("application/json".toMediaType())
+                            val reqBody = JSONObject().put("timestamp", timestamp.toDouble()).toString().toRequestBody("application/json".toMediaType())
                             val postReq = buildReq(
                                 "https://discord.com/api/v9/quests/$questId/video-progress",
                                 token, region, superProps, "https://discord.com/quest-home"
@@ -2640,67 +2640,51 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
         } 
     }
 
-    fun scheduleReport(mp: MediaPlayer) {
+    fun startReporting(mp: MediaPlayer) {
         reportJob?.cancel()
         reportJob = scope.launch {
-            delay(7500)
-            reportProgress(mp)
-        }
-    }
+            while (isActive && !videoCompleted) {
+                delay(7500)
+                if (!isActive || videoCompleted) break
+                
+                if (reporting) continue
+                if (!mp.isPlaying) continue
 
-    fun reportProgress(mp: MediaPlayer) {
-        if (videoCompleted) return
-        if (reporting) return
-        if (!videoCompleted && !mp.isPlaying) {
-            scheduleReport(mp)
-            return
-        }
+                val playbackPosition = kotlin.math.min(needed.toDouble(), mp.currentPosition / 1000.0)
+                val timestamp = kotlin.math.min(playbackPosition, lastReported + 7.0)
 
-        val playbackPosition = if (videoCompleted) {
-            needed.toDouble()
-        } else {
-            min(needed.toDouble(), mp.currentPosition / 1000.0)
-        }
-        val timestamp = min(playbackPosition, lastReported + 7.0)
+                if (timestamp < lastReported + 6.0 && timestamp < needed) {
+                    continue
+                }
 
-        if (timestamp < lastReported + 6.0 && timestamp < needed) {
-            scheduleReport(mp)
-            return
-        }
+                reporting = true
+                try {
+                    val bodyStr = JSONObject().put("timestamp", timestamp.toDouble()).toString()
+                    val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
+                    val postReq = buildReq(
+                        "https://discord.com/api/v9/quests/${quest.id}/video-progress",
+                        token, region, superProps, "https://discord.com/quest-home"
+                    ).post(reqBody).build()
+                    val resp = http.newCall(postReq).execute()
+                    val respBody = resp.body?.string() ?: "{}"
+                    val rj = JSONObject(respBody)
 
-        reporting = true
-        scope.launch(Dispatchers.IO) {
-            try {
-                val bodyStr = JSONObject().put("timestamp", timestamp).toString()
-                val reqBody = bodyStr.toRequestBody("application/json".toMediaType())
-                val postReq = buildReq(
-                    "https://discord.com/api/v9/quests/${quest.id}/video-progress",
-                    token, region, superProps, "https://discord.com/quest-home"
-                ).post(reqBody).build()
-                val resp = http.newCall(postReq).execute()
-                val respBody = resp.body?.string() ?: "{}"
-                val rj = JSONObject(respBody)
-
-                withContext(Dispatchers.Main) {
-                    reporting = false
                     if (rj.optString("completed_at").isNotEmpty()) {
                         videoCompleted = true
-                        mp.pause()
+                        withContext(Dispatchers.Main) { mp.pause() }
                         log = "Done! Claim your reward."
                         lastReported = needed.toDouble()
+                        onComplete(QuestState(quest = quest, runState = RunState.DONE, progress = needed, log = "Completed! Claim your reward in the Discord app."))
                     } else {
                         val progressVal = rj.optJSONObject("progress")?.optJSONObject(quest.taskName)?.optLong("value", 0L) ?: 0L
-                        lastReported = maxOf(timestamp, progressVal.toDouble())
-                        val currentSec = min(lastReported.toInt(), needed.toInt())
+                        lastReported = kotlin.math.max(timestamp, progressVal.toDouble())
+                        val currentSec = kotlin.math.min(lastReported.toInt(), needed.toInt())
                         log = "Progress: ${currentSec}s / ${needed}s"
-                        scheduleReport(mp)
                     }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    reporting = false
+                } catch (e: Exception) {
                     log = "Error: ${e.message}"
-                    scheduleReport(mp)
+                } finally {
+                    reporting = false
                 }
             }
         }
@@ -2727,7 +2711,7 @@ private fun VideoPlayerDialog(quest: QuestItem, token: String, region: Region, s
                                 mp.seekTo((lastReported * 1000).toInt())
                                 mp.start()
                                 log = "Watching & syncing..."
-                                reportProgress(mp)
+                                startReporting(mp)
                             }
                             setOnErrorListener { _, _, _ -> log = "Video unavailable. Use Auto Complete."; false }
                         }
